@@ -14,7 +14,10 @@ size_t row = 0;
 uint8_t color = VGA_COLOR_WHITE | VGA_COLOR_BLACK << 4;
 
 void clear_row(size_t row) {
-    struct Char empty = (struct Char) { ' ', color };
+    struct Char empty = (struct Char) {
+        character: ' ',
+        color: color,
+    };
 
     for (size_t col = 0; col < NUM_COLS; col++) {
         buffer[col + NUM_COLS * row] = empty;
@@ -56,13 +59,14 @@ void putc_vga(char character) {
     }
 
     buffer[col + NUM_COLS * row] = (struct Char) {
-        (uint8_t) character, color
+        character: (uint8_t) character,
+        color: color,
     };
 
     col++;
 }
 
-void puts_vga(const char* str) {
+void puts_vga(char* str) {
     for (size_t i = 0; 1; i++) {
         char character = (uint8_t) str[i];
 

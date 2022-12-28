@@ -1,10 +1,9 @@
 #ifndef KPRINT_H
 #define KPRINT_H
-#include <stddef.h>
 #include <stdint.h>
-
+#include <stddef.h>
 #ifdef __cplusplus
-extern "C"{
+extern "C" {
 #endif
 enum {
     VGA_COLOR_BLACK = 0,
@@ -27,7 +26,7 @@ enum {
 
 void clearVGABuf();
 void putc_vga(char character);
-void puts_vga(const char* string);
+void puts_vga(char* string);
 void set_color_vga(uint8_t foreground, uint8_t background);
 #ifdef __cplusplus
 }
