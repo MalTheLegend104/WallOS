@@ -1,9 +1,9 @@
 MAKEFLAGS = -s
 #default things for all platforms. This includes things like LIBC, the WallOS, and compile flags.
-C_FLAGS 		:= -ffreestanding -std=gnu99 -O2 -g -Wall -Wextra -Wno-format -fbuiltin -fno-pic -isystem=/usr/include
-CXX_FLAGS 		:= -ffreestanding -D__is_kernel -fno-rtti -Wall -Wextra -Wno-format -fbuiltin -fno-pic -isystem=/usr/include
+C_FLAGS 		:= -ffreestanding -std=gnu99 -O2 -g -Wall -Wextra -Wno-format -nostdlib -lgcc
+CXX_FLAGS 		:= -ffreestanding -D__is_kernel -fno-rtti -Wall -Wextra -Wno-format -nostdlib -lgcc 
 NASM_FLAGS 		:= 
-LINKER_FLAGS 	:= -nostdlib -lk -lgcc -O0 -n
+LINKER_FLAGS 	:= 
 
 LIBC_INCLUDE	:= src/libc/include
 KLIBC_INCLUDE 	:= src/kernel/klibc/include
@@ -70,7 +70,7 @@ KCORE_CPP_SRC 	:= $(shell find src/kernel/kcore -name *.cpp)
 KCORE_CPP_OBJ 	:= $(patsubst src/kernel/kcore/%.cpp, build/kcore/%.o, $(KCORE_CPP_SRC))
 KCORE_C_SRC   	:= $(shell find src/kernel/kcore -name *.c)
 KCORE_C_OBJ   	:= $(patsubst src/kernel/kcore/%.c, build/kcore/%.o, $(KCORE_C_SRC))
-KCORE_OBJ	  	:= $(KCORE_ASM_OBJ) $(KCORE_CPP_OBJ) $(KCORE_C_OBJ)
+KCORE_OBJ	  	:= $(KCORE_ASM_OBJ) $(KCORE_C_OBJ) $(KCORE_CPP_OBJ) 
 
 $(KCORE_ASM_OBJ): build/kcore/%.o : src/kernel/kcore/%.asm
 	echo "Compiling kcore asm  -> $(patsubst build/kcore/%.o, src/kernel/kcore/%.asm, $@)"
@@ -85,7 +85,7 @@ $(KCORE_C_OBJ): build/kcore/%.o : src/kernel/kcore/%.c
 $(KCORE_CPP_OBJ): build/kcore/%.o : src/kernel/kcore/%.cpp
 	echo "Compiling kcore C++  -> $(patsubst build/kcore/%.o, src/kernel/kcore/%.cpp, $@)"
 	mkdir -p $(dir $@) && \
-	x86_64-elf-g++ -c $(patsubst build/kcore/%.o, src/kernel/kcore/%.cpp, $@) -o $@ -I $(KCORE_INCLUDE) -I $(KLIBC_INCLUDE) -I $(LIBC_INCLUDE) $(CPP_FLAGS)
+	x86_64-elf-g++ -c $(patsubst build/kcore/%.o, src/kernel/kcore/%.cpp, $@) -o $@ -I $(LIBC_INCLUDE) -I $(KLIBC_INCLUDE) -I $(KCORE_INCLUDE) $(CPP_FLAGS)
 
 # ----------------------------------------------------
 # x86-64
@@ -126,7 +126,8 @@ build-all:
 build: $(LIBC_OBJ) $(KLIBC_OBJ) $(KCORE_OBJ) $(x86_64_OBJ) 
 	mkdir -p dist/x86_64 && .
 	echo "<---------------Linking--------------->"
-	x86_64-elf-ld -n -o dist/x86_64/WallOS.bin -T targets/x86_64/linker.ld $(LIBC_OBJ) $(KLIBC_OBJ) $(KCORE_OBJ) $(x86_64_OBJ) 
+	echo "$(LIBC_OBJ)$(KLIBC_OBJ)$(KCORE_OBJ)$(x86_64_OBJ)"
+	x86_64-elf-ld -O0 -o dist/x86_64/WallOS.bin -T targets/x86_64/linker.ld $(LIBC_OBJ) $(KLIBC_OBJ) $(KCORE_OBJ) $(x86_64_OBJ)
 	echo "<------------Compiling ISO------------>"
 	cp dist/x86_64/WallOS.bin targets/x86_64/iso/boot/WallOS.bin && \
 	grub-mkrescue /usr/lib/grub/i386-pc -o dist/x86_64/WallOS.iso targets/x86_64/iso
