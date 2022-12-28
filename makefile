@@ -1,9 +1,9 @@
 MAKEFLAGS = -s
 #default things for all platforms. This includes things like LIBC, the WallOS, and compile flags.
-C_FLAGS 		:= -ffreestanding -std=gnu99
-CXX_FLAGS 		:= -ffreestanding
+C_FLAGS 		:= -ffreestanding -std=gnu99 -O2 -g -Wall -Wextra -Wno-format -fbuiltin -fno-pic -isystem=/usr/include
+CXX_FLAGS 		:= -ffreestanding -D__is_kernel -fno-rtti -Wall -Wextra -Wno-format -fbuiltin -fno-pic -isystem=/usr/include
 NASM_FLAGS 		:= 
-LINKER_FLAGS 	:= 
+LINKER_FLAGS 	:= -nostdlib -lk -lgcc -O0 -n
 
 LIBC_INCLUDE	:= src/libc/include
 KLIBC_INCLUDE 	:= src/kernel/klibc/include
@@ -54,12 +54,12 @@ $(KLIBC_ASM_OBJ): build/klibc/%.o : src/kernel/klibc/%.asm
 $(KLIBC_CPP_OBJ): build/klibc/%.o : src/kernel/klibc/%.cpp
 	echo "Compiling klibc C++  -> $(patsubst build/klibc/%.o, src/kernel/klibc/%.cpp, $@)"
 	mkdir -p $(dir $@) && \
-	x86_64-elf-g++ -c $(patsubst build/klibc/%.o, src/kernel/klibc/%.cpp, $@) -o $@ -I $(KLIBC_INCLUDE) -I $(LIBC_INCLUDE) $(CPP_FLAGS)
+	x86_64-elf-c++ -c $(patsubst build/klibc/%.o, src/kernel/klibc/%.cpp, $@) -o $@ $(CPP_FLAGS) -I $(KLIBC_INCLUDE) -I $(LIBC_INCLUDE) 
 
 $(KLIBC_C_OBJ): build/klibc/%.o : src/kernel/klibc/%.c
 	echo "Compiling klibc C    -> $(patsubst build/klibc/%.o, src/kernel/klibc/%.c, $@)"
 	mkdir -p $(dir $@) && \
-	x86_64-elf-gcc -c $(patsubst build/klibc/%.o, src/kernel/klibc/%.c, $@) -o $@ -I $(KLIBC_INCLUDE) -I $(LIBC_INCLUDE) $(C_FLAGS)
+	x86_64-elf-gcc -c $(patsubst build/klibc/%.o, src/kernel/klibc/%.c, $@) -o $@ $(C_FLAGS) -I $(KLIBC_INCLUDE) -I $(LIBC_INCLUDE) 
 
 # ----------------------------------------------------
 # KCORE
@@ -77,15 +77,15 @@ $(KCORE_ASM_OBJ): build/kcore/%.o : src/kernel/kcore/%.asm
 	mkdir -p $(dir $@) && \
 	nasm -f elf64 $(patsubst build/kcore/%.o, src/kernel/kcore/%.asm, $@) $(NASM_FLAGS) -o $@
 
-$(KCORE_CPP_OBJ): build/kcore/%.o : src/kernel/kcore/%.cpp
-	echo "Compiling kcore C++  -> $(patsubst build/kcore/%.o, src/kernel/kcore/%.cpp, $@)"
-	mkdir -p $(dir $@) && \
-	x86_64-elf-g++ -c $(patsubst build/kcore/%.o, src/kernel/kcore/%.cpp, $@) -o $@ -I $(KCORE_INCLUDE) -I $(KLIBC_INCLUDE) -I $(LIBC_INCLUDE) $(CPP_FLAGS)
-
 $(KCORE_C_OBJ): build/kcore/%.o : src/kernel/kcore/%.c
 	echo "Compiling kcore C    -> $(patsubst build/kcore/%.o, src/kernel/kcore/%.c, $@)"
 	mkdir -p $(dir $@) && \
 	x86_64-elf-gcc -c $(patsubst build/kcore/%.o, src/kernel/kcore/%.c, $@) -o $@ -I $(KCORE_INCLUDE) -I $(KLIBC_INCLUDE) -I $(LIBC_INCLUDE) $(C_FLAGS)
+
+$(KCORE_CPP_OBJ): build/kcore/%.o : src/kernel/kcore/%.cpp
+	echo "Compiling kcore C++  -> $(patsubst build/kcore/%.o, src/kernel/kcore/%.cpp, $@)"
+	mkdir -p $(dir $@) && \
+	x86_64-elf-g++ -c $(patsubst build/kcore/%.o, src/kernel/kcore/%.cpp, $@) -o $@ -I $(KCORE_INCLUDE) -I $(KLIBC_INCLUDE) -I $(LIBC_INCLUDE) $(CPP_FLAGS)
 
 # ----------------------------------------------------
 # x86-64
