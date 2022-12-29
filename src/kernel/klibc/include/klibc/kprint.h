@@ -28,7 +28,7 @@ extern "C" {
 	void putc_vga(char character);
 	void puts_vga(const char* string);
 	void set_color_vga(uint8_t foreground, uint8_t background);
-
+	void center_text(const char* buf);
 #ifdef __is_kernel_
 	void pink_screen(const char* error);
 #endif // __is_kernel_

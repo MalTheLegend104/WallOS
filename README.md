@@ -65,14 +65,15 @@ int test(int a);
 1. GDT
 2. IDT
 3. Virtual Memory (paging/malloc/free/new/delete)
+1. Basic I/O (requires IDT)
 
 ### Unordered/Long Term
 
-- Basic I/O (requires IDT)
+- Command Handling
+- System Calls
 - GUI
-- Command Handler
-- Userspace Applications
 - Multitasking
+- Userspace Applications
 
 ## Building
 
