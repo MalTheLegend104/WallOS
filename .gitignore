@@ -1,3 +1,6 @@
 /build/
 /dist/
 /.vscode/
+/html/
+/latex/
+/Doxyfile

@@ -22,6 +22,10 @@ void clear_row(size_t row) {
 	}
 }
 
+/**
+ * @brief Clears the entire vga buffer, effectively clearing the screen.
+ *
+ */
 void clearVGABuf() {
 	for (size_t i = 0; i < NUM_ROWS; i++) {
 		clear_row(i);
@@ -53,6 +57,11 @@ void print_newline() {
 	clear_row(NUM_COLS - 1);
 }
 
+/**
+ * @brief The normal putc(), although for the vga text buffer.
+ *
+ * @param character Character to be printed.
+ */
 void putc_vga(char character) {
 	if (character == '\n') {
 		print_newline();
@@ -68,6 +77,11 @@ void putc_vga(char character) {
 	col++;
 }
 
+/**
+ * @brief The normal puts(), although for the vga text buffer.
+ *
+ * @param str Text to be printed.
+ */
 void puts_vga(const char* str) {
 	for (size_t i = 0; 1; i++) {
 		char character = (uint8_t) str[i];
@@ -80,18 +94,21 @@ void puts_vga(const char* str) {
 	}
 }
 
+/**
+ * @brief Set the color for the vga buffer. This lasts until this function is called with different values.
+ *
+ * @param foreground Color of the text. Value should be 0 < x < 16.
+ * @param background Color of the background. Value should be 0 < x < 16.
+ */
 void set_color_vga(uint8_t foreground, uint8_t background) {
 	color = foreground + (background << 4);
 }
 
-void fill_row() {
-	for (size_t i = col; i < NUM_COLS; i++) {
-		putc_vga(' ');
-	}
-	row++;
-	col = 0;
-}
-
+/**
+ * @brief Centers the provided buffer on the screen
+ *
+ * @param buf text to be centered
+ */
 void center_text(const char* buf) {
 	size_t size = strlen(buf);
 	size_t index = 0;
@@ -118,15 +135,32 @@ void center_text(const char* buf) {
 	}
 }
 
+/**
+ * @brief Associated with kernel panics, it makes the entire screen pink, displays "Kernel Panic!", along with the error.
+ *
+ * @param error Error message to be printed to the screen.
+ */
 void pink_screen(const char* error) {
 	clearVGABuf();
 	set_color_vga(VGA_COLOR_WHITE, VGA_COLOR_MAGENTA);
-	fill_row();
+	for (size_t i = col; i < NUM_COLS; i++) {
+		putc_vga(' ');
+	}
+	row++;
+	col = 0;
 	center_text("Kernel Panic!\n");
 	// puts_vga("Kernel Panic!");
-	fill_row();
+	for (size_t i = col; i < NUM_COLS; i++) {
+		putc_vga(' ');
+	}
+	row++;
+	col = 0;
 	center_text(error);
 	while (row < NUM_ROWS) {
-		fill_row();
+		for (size_t i = col; i < NUM_COLS; i++) {
+			putc_vga(' ');
+		}
+		row++;
+		col = 0;
 	}
 }
