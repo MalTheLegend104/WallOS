@@ -1,4 +1,5 @@
 section .multiboot_header
+; This is basically the same as defining a struct in C
 header_start:
 	; magic number
 	dd 0xe85250d6 ; multiboot2
