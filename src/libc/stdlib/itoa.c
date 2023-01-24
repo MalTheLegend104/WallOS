@@ -2,8 +2,8 @@
 #include <string.h>
 
 /* Function that converts an int to a string. */
-char* itoa(int value, char* buffer, int base) {
-    int i = 0, r, negative = 0;
+char* itoa(long long value, char* buffer, int base) {
+    long long i = 0, r, negative = 0;
     if (value == 0) {
         buffer[i] = '0';
         buffer[i + 1] = '\0';
