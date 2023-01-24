@@ -18,6 +18,7 @@ start:
 
 	hlt
 
+; Check if there is a multiboot compliant bootloader
 check_multiboot:
 	cmp eax, 0x36d76289
 	jne .no_multiboot
@@ -26,6 +27,7 @@ check_multiboot:
 	mov al, "M"
 	jmp error
 
+; Make sure this is an x86_64 CPU
 check_cpuid:
 	pushfd
 	pop eax
@@ -60,6 +62,7 @@ check_long_mode:
 	mov al, "L"
 	jmp error
 
+; Sets up 32bit paging
 setup_page_tables:
 	mov eax, page_table_l3
 	or eax, 0b11 ; present, writable
