@@ -22,6 +22,8 @@ void clear_row(size_t row) {
 	}
 }
 
+// TODO Text scrolling does not work correctly. 
+// We should also probably load into a different mode than vga text mode......
 /**
  * @brief Clears the entire vga buffer, effectively clearing the screen.
  *
