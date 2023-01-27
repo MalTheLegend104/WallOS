@@ -37,7 +37,7 @@ extern "C" {
 	void set_default();
 	void putc_vga(const char c);
 	void puts_vga(const char* buf);
-		// this is temp here
+	// this is temporarily here
 	inline void outb(uint16_t port, uint8_t val) {
 		__asm volatile ("outb %0, %1" : : "a"(val), "Nd"(port));
 	}
