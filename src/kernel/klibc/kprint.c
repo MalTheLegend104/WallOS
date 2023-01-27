@@ -1,109 +1,160 @@
-#include "include/klibc/kprint.h"
+// vga_controller
+// Has functions that control the screen
+// It knows how to place chars on the screen
+// change text color
+// move the cursor
+
 #include <string.h>
+#include <stdarg.h>
+#include <stddef.h>
+#include <stdint.h>
 #include <stdlib.h>
-static const size_t NUM_COLS = 80;
-static const size_t NUM_ROWS = 25;
+#include <klibc/kprint.h>
+static const size_t vga_width = 80;
+static const size_t vga_height = 25;
 
-struct Char {
-	uint8_t character;
-	uint8_t color;
-};
+size_t coursor_x = 0;
+size_t coursor_y = 0;
 
-struct Char* buffer = (struct Char*) 0xb8000;
-size_t col = 0;
-size_t row = 0;
-uint8_t color = VGA_COLOR_WHITE | VGA_COLOR_BLACK << 4;
+uint8_t text_colors = VGA_COLOR_LIGHT_GREY;
+int8_t background = VGA_COLOR_BLACK;
 
-void clear_row(size_t row) {
-	struct Char empty = (struct Char){ ' ', color };
+uint16_t* screen_buffer = (uint16_t*) 0xB8000; // location of screen memory
 
-	for (size_t col = 0; col < NUM_COLS; col++) {
-		buffer[col + NUM_COLS * row] = empty;
-	}
+VGA_COLOR default_colors = { VGA_COLOR_LIGHT_GREY, VGA_COLOR_BLACK };
+
+void set_colors(char text, char back) {
+	text_colors = text;
+	background = back;
 }
 
-// TODO Text scrolling does not work correctly. 
-// We should also probably load into a different mode than vga text mode......
-/**
- * @brief Clears the entire vga buffer, effectively clearing the screen.
- *
- */
-void clearVGABuf() {
-	for (size_t i = 0; i < NUM_ROWS; i++) {
-		clear_row(i);
+void set_colors_(VGA_COLOR colors) {
+	text_colors = colors.text_colors;
+	background = colors.background;
+}
+
+void set_default() {
+	text_colors = default_colors.text_colors;
+	background = default_colors.background;
+}
+
+void enable_cursor(uint8_t cursor_start, uint8_t cursor_end) {
+	outb(0x3D4, 0x0A);
+	outb(0x3D5, (inb(0x3D5) & 0xC0) | cursor_start);
+
+	outb(0x3D4, 0x0B);
+	outb(0x3D5, (inb(0x3D5) & 0xE0) | cursor_end);
+}
+
+void update_cursor(int x, int y) {
+	uint16_t pos = (x * vga_width) + y;
+
+	outb(0x3D4, 0x0F);
+	outb(0x3D5, (uint8_t) (pos & 0xFF));
+	outb(0x3D4, 0x0E);
+	outb(0x3D5, (uint8_t) ((pos >> 8) & 0xFF));
+}
+
+void disable_cursor() {
+	outb(0x3D4, 0x0A);
+	outb(0x3D5, 0x20);
+}
+
+// blends the char with the color bits that are needed for vga
+uint16_t format_char_data(char c) {
+	uint8_t colors = (background << 4) | text_colors;
+
+	uint16_t colored_char = ((uint16_t) colors << 8 | (uint16_t) c);
+	return colored_char;
+}
+
+// places a single character at the specified location
+void place_char_at_location(char c, size_t x, size_t y) {
+	screen_buffer[(x * vga_width) + y] = format_char_data(c); // put the char at the location
+}
+
+void scroll_screen() {
+	for (size_t i = 0; i < vga_height; i++) {
+		memcpy(screen_buffer + (vga_width * i), screen_buffer + (vga_width * (i + 1)), vga_width * 2);
 	}
-	row = 0;
-	col = 0;
+	short c = format_char_data(' ');
+	memsetw(screen_buffer + (vga_width * vga_height), c, vga_width);
+}
+
+void puts_vga(const char* buf) {
+	for (int i = 0; i < strlen(buf); i++) {
+		putc_vga(buf[i]);
+	}
 }
 
 void print_newline() {
-
-	for (size_t i = col; i < NUM_COLS; i++) {
+	for (size_t i = coursor_x; i < vga_width; i++) {
 		putc_vga(' ');
 	}
 
-	if (row < NUM_ROWS - 1) {
-		col = 0;
-		row++;
+	if (coursor_x < vga_height - 1) {
+		coursor_y = 0;
+		coursor_x++;
 		return;
 	}
-
-	// Scrolls the buffer if the new line is at the bottom of the screen.
-	for (size_t row = 1; row < NUM_ROWS; row++) {
-		for (size_t col = 0; col < NUM_COLS; col++) {
-			struct Char character = buffer[col + NUM_COLS * row];
-			buffer[col + NUM_COLS * (row - 1)] = character;
-		}
-	}
-
-	clear_row(NUM_COLS - 1);
 }
 
-/**
- * @brief The normal putc(), although for the vga text buffer.
- *
- * @param character Character to be printed.
- */
-void putc_vga(char character) {
-	if (character == '\n') {
-		print_newline();
-		return;
-	}
-
-	if (col >= NUM_COLS) {
-		print_newline();
-	}
-
-	buffer[col + NUM_COLS * row] = (struct Char){ (uint8_t) character, color };
-
-	col++;
-}
-
-/**
- * @brief The normal puts(), although for the vga text buffer.
- *
- * @param str Text to be printed.
- */
-void puts_vga(const char* str) {
-	for (size_t i = 0; 1; i++) {
-		char character = (uint8_t) str[i];
-
-		if (character == '\0') {
-			return;
+// prints a single char to the screen, and keeps track of when
+// there needs to be a carrage return
+void putc_vga(const char c) {
+	if ((coursor_y > vga_width - 1) || (c == '\n')) {
+		if (coursor_x >= vga_height - 1) {
+			scroll_screen();
+		} else {
+			coursor_x++;
 		}
 
-		putc_vga(character);
+		coursor_y = 0;
+		if (c != '\n') {
+			place_char_at_location(c, coursor_x, coursor_y);
+		}
+	} else if (coursor_x > vga_height - 1) {
+		scroll_screen();
+		place_char_at_location(c, coursor_x, coursor_y);
+	} else {
+		place_char_at_location(c, coursor_x, coursor_y);
 	}
+	coursor_y++;
+	update_cursor(coursor_x, coursor_y);
 }
 
-/**
- * @brief Set the color for the vga buffer. This lasts until this function is called with different values.
- *
- * @param foreground Color of the text. Value should be 0 < x < 16.
- * @param background Color of the background. Value should be 0 < x < 16.
- */
-void set_color_vga(uint8_t foreground, uint8_t background) {
-	color = foreground + (background << 4);
+// goes through the entire screen and puts in blank spaces
+void clearVGABuf() {
+	enable_cursor(0, 25);
+	update_cursor(0, 0);
+	unsigned short c = format_char_data(' ');
+	for (size_t i = 0; i < vga_width * vga_height; i++) {
+		screen_buffer[i] = c;
+	}
+	coursor_x = 0;
+	coursor_y = 0;
+}
+
+void set_text_red() {
+	set_colors(VGA_COLOR_LIGHT_RED, VGA_COLOR_BLACK);
+}
+
+void set_text_green() {
+	set_colors(VGA_COLOR_LIGHT_GREEN, VGA_COLOR_BLACK);
+}
+
+void set_text_blue() {
+	set_colors(VGA_COLOR_LIGHT_BLUE, VGA_COLOR_BLACK);
+}
+
+void set_text_grey() {
+	set_colors(VGA_COLOR_LIGHT_GREY, VGA_COLOR_BLACK);
+}
+
+void clear_row(size_t row) {
+	for (size_t col = 0; col < vga_width; col++) {
+		screen_buffer[col + vga_width * row] = format_char_data(' ');
+	}
 }
 
 /**
@@ -132,7 +183,7 @@ void center_text(const char* buf) {
 	for (uint8_t i = 0; i < size; i++) {
 		putc_vga(buf[index + i]);
 	}
-	for (size_t i = col; i < NUM_COLS; i++) {
+	for (size_t i = coursor_x; i < vga_width; i++) {
 		putc_vga(' ');
 	}
 }
@@ -143,26 +194,33 @@ void center_text(const char* buf) {
  * @param error Error message to be printed to the screen.
  */
 void pink_screen(const char* error) {
-	clearVGABuf();
-	set_color_vga(VGA_COLOR_WHITE, VGA_COLOR_MAGENTA);
-	for (size_t i = col; i < NUM_COLS; i++) {
+	disable_cursor();
+	set_colors(VGA_COLOR_WHITE, VGA_COLOR_PINK);
+	coursor_x = 0;
+	coursor_y = 0;
+	for (size_t i = coursor_y; i < vga_width; i++) {
 		putc_vga(' ');
 	}
-	row++;
-	col = 0;
-	center_text("Kernel Panic!\n");
-	// puts_vga("Kernel Panic!");
-	for (size_t i = col; i < NUM_COLS; i++) {
+
+	coursor_x = 1;
+	coursor_y = 0;
+	center_text("Kernel Panic!");
+
+	for (size_t i = coursor_y; i < vga_width; i++) {
 		putc_vga(' ');
 	}
-	row++;
-	col = 0;
+
+	coursor_x++;
+	coursor_y = 0;
+
 	center_text(error);
-	while (row < NUM_ROWS) {
-		for (size_t i = col; i < NUM_COLS; i++) {
+
+	while (coursor_x < vga_height) {
+		for (size_t i = coursor_y; i < vga_width; i++) {
 			putc_vga(' ');
 		}
-		row++;
-		col = 0;
+		coursor_x++;
+		coursor_y = 0;
 	}
+
 }
