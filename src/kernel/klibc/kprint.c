@@ -1,9 +1,3 @@
-// vga_controller
-// Has functions that control the screen
-// It knows how to place chars on the screen
-// change text color
-// move the cursor
-
 #include <string.h>
 #include <stdarg.h>
 #include <stddef.h>
@@ -13,31 +7,15 @@
 static const size_t vga_width = 80;
 static const size_t vga_height = 25;
 
-size_t coursor_x = 0;
-size_t coursor_y = 0;
+size_t cursor_row = 0;
+size_t cursor_col = 0;
 
 uint8_t text_colors = VGA_COLOR_LIGHT_GREY;
 int8_t background = VGA_COLOR_BLACK;
 
 uint16_t* screen_buffer = (uint16_t*) 0xB8000; // location of screen memory
 
-VGA_COLOR default_colors = { VGA_COLOR_LIGHT_GREY, VGA_COLOR_BLACK };
-
-void set_colors(char text, char back) {
-	text_colors = text;
-	background = back;
-}
-
-void set_colors_(VGA_COLOR colors) {
-	text_colors = colors.text_colors;
-	background = colors.background;
-}
-
-void set_default() {
-	text_colors = default_colors.text_colors;
-	background = default_colors.background;
-}
-
+/* These three functions do exactly what they say. https://wiki.osdev.org/Text_Mode_Cursor */
 void enable_cursor(uint8_t cursor_start, uint8_t cursor_end) {
 	outb(0x3D4, 0x0A);
 	outb(0x3D5, (inb(0x3D5) & 0xC0) | cursor_start);
@@ -60,7 +38,18 @@ void disable_cursor() {
 	outb(0x3D5, 0x20);
 }
 
-// blends the char with the color bits that are needed for vga
+/**
+ * @brief Set the colors for the text to be displayed.
+ *
+ * @param text Color for the text.
+ * @param back Color for the background.
+ */
+void set_colors(char text, char back) {
+	text_colors = text;
+	background = back;
+}
+
+/* Formats the character to correctly display with the selected colors. */
 uint16_t format_char_data(char c) {
 	uint8_t colors = (background << 4) | text_colors;
 
@@ -68,11 +57,19 @@ uint16_t format_char_data(char c) {
 	return colored_char;
 }
 
-// places a single character at the specified location
+/* Places the character at the provided location..... */
 void place_char_at_location(char c, size_t x, size_t y) {
 	screen_buffer[(x * vga_width) + y] = format_char_data(c); // put the char at the location
 }
 
+/* It clears the provided row... */
+void clear_row(size_t row) {
+	for (size_t col = 0; col < vga_width; col++) {
+		screen_buffer[col + vga_width * row] = format_char_data(' ');
+	}
+}
+
+/* Well... it scrolls the screen. What else were you expecting? */
 void scroll_screen() {
 	for (size_t i = 0; i < vga_height; i++) {
 		memcpy(screen_buffer + (vga_width * i), screen_buffer + (vga_width * (i + 1)), vga_width * 2);
@@ -81,49 +78,46 @@ void scroll_screen() {
 	memsetw(screen_buffer + (vga_width * vga_height), c, vga_width);
 }
 
+// prints a single char to the screen, and keeps track of when
+// there needs to be a carrage return
+void putc_vga(const char c) {
+	if ((cursor_col > vga_width - 1) || (c == '\n')) {
+		if (cursor_row >= vga_height - 1) {
+			scroll_screen();
+		} else {
+			cursor_row++;
+		}
+
+		cursor_col = 0;
+		if (c != '\n') {
+			place_char_at_location(c, cursor_row, cursor_col);
+		}
+	} else if (cursor_row > vga_height - 1) {
+		scroll_screen();
+		place_char_at_location(c, cursor_row, cursor_col);
+	} else {
+		place_char_at_location(c, cursor_row, cursor_col);
+	}
+	cursor_col++;
+	update_cursor(cursor_row, cursor_col);
+}
+
+/**
+ * @brief The normal puts(), although for the vga text buffer.
+ *
+ * @param buf Text to be printed.
+ */
 void puts_vga(const char* buf) {
 	for (int i = 0; i < strlen(buf); i++) {
 		putc_vga(buf[i]);
 	}
 }
 
-void print_newline() {
-	for (size_t i = coursor_x; i < vga_width; i++) {
-		putc_vga(' ');
-	}
-
-	if (coursor_x < vga_height - 1) {
-		coursor_y = 0;
-		coursor_x++;
-		return;
-	}
-}
-
-// prints a single char to the screen, and keeps track of when
-// there needs to be a carrage return
-void putc_vga(const char c) {
-	if ((coursor_y > vga_width - 1) || (c == '\n')) {
-		if (coursor_x >= vga_height - 1) {
-			scroll_screen();
-		} else {
-			coursor_x++;
-		}
-
-		coursor_y = 0;
-		if (c != '\n') {
-			place_char_at_location(c, coursor_x, coursor_y);
-		}
-	} else if (coursor_x > vga_height - 1) {
-		scroll_screen();
-		place_char_at_location(c, coursor_x, coursor_y);
-	} else {
-		place_char_at_location(c, coursor_x, coursor_y);
-	}
-	coursor_y++;
-	update_cursor(coursor_x, coursor_y);
-}
-
-// goes through the entire screen and puts in blank spaces
+/**
+ * @brief Clears the entire textbuffer.
+ * TAKE NOTE: it will use whatever color background is set.
+ * It WILL NOT make entire screen black.
+ */
 void clearVGABuf() {
 	enable_cursor(0, 25);
 	update_cursor(0, 0);
@@ -131,30 +125,8 @@ void clearVGABuf() {
 	for (size_t i = 0; i < vga_width * vga_height; i++) {
 		screen_buffer[i] = c;
 	}
-	coursor_x = 0;
-	coursor_y = 0;
-}
-
-void set_text_red() {
-	set_colors(VGA_COLOR_LIGHT_RED, VGA_COLOR_BLACK);
-}
-
-void set_text_green() {
-	set_colors(VGA_COLOR_LIGHT_GREEN, VGA_COLOR_BLACK);
-}
-
-void set_text_blue() {
-	set_colors(VGA_COLOR_LIGHT_BLUE, VGA_COLOR_BLACK);
-}
-
-void set_text_grey() {
-	set_colors(VGA_COLOR_LIGHT_GREY, VGA_COLOR_BLACK);
-}
-
-void clear_row(size_t row) {
-	for (size_t col = 0; col < vga_width; col++) {
-		screen_buffer[col + vga_width * row] = format_char_data(' ');
-	}
+	cursor_row = 0;
+	cursor_col = 0;
 }
 
 /**
@@ -183,7 +155,7 @@ void center_text(const char* buf) {
 	for (uint8_t i = 0; i < size; i++) {
 		putc_vga(buf[index + i]);
 	}
-	for (size_t i = coursor_x; i < vga_width; i++) {
+	for (size_t i = cursor_row; i < vga_width; i++) {
 		putc_vga(' ');
 	}
 }
@@ -196,31 +168,28 @@ void center_text(const char* buf) {
 void pink_screen(const char* error) {
 	disable_cursor();
 	set_colors(VGA_COLOR_WHITE, VGA_COLOR_PINK);
-	coursor_x = 0;
-	coursor_y = 0;
-	for (size_t i = coursor_y; i < vga_width; i++) {
+	cursor_row = 0;
+	cursor_col = 0;
+	for (size_t i = cursor_col; i < vga_width; i++) {
 		putc_vga(' ');
 	}
-
-	coursor_x = 1;
-	coursor_y = 0;
+	// Header text
+	cursor_row = 1;
+	cursor_col = 0;
 	center_text("Kernel Panic!");
-
-	for (size_t i = coursor_y; i < vga_width; i++) {
+	for (size_t i = cursor_col; i < vga_width; i++) {
 		putc_vga(' ');
 	}
 
-	coursor_x++;
-	coursor_y = 0;
-
+	// Body text
+	cursor_row++;
+	cursor_col = 0;
 	center_text(error);
-
-	while (coursor_x < vga_height) {
-		for (size_t i = coursor_y; i < vga_width; i++) {
+	while (cursor_row < vga_height) {
+		for (size_t i = cursor_col; i < vga_width; i++) {
 			putc_vga(' ');
 		}
-		coursor_x++;
-		coursor_y = 0;
+		cursor_row++;
+		cursor_col = 0;
 	}
-
 }

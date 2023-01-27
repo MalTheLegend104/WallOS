@@ -24,17 +24,8 @@ extern "C" {
 		VGA_COLOR_WHITE = 15,
 	};
 
-	typedef struct VGA_COLOR {
-		uint8_t text_colors;
-		int8_t background;
-	} VGA_COLOR;
-
-	// Sets the color of the text in console
-	// (Foreground color, Background color)
 	void clearVGABuf();
 	void set_colors(char text, char back);
-	void set_colors_(VGA_COLOR colors);
-	void set_default();
 	void putc_vga(const char c);
 	void puts_vga(const char* buf);
 	// this is temporarily here
