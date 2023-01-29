@@ -11,7 +11,7 @@ void set_red() {
 }
 
 void printTime() {
-	// print good stuff here 
+	// TODO print good stuff here 
 }
 
 void set_default() {

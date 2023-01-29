@@ -101,8 +101,13 @@ void putc_vga(const unsigned char c) {
 		}
 
 		cursor_col = 0;
-		if (c != '\n') {
+		if (c != '\n' && c != '\t') {
 			place_char_at_location(c, cursor_row, cursor_col);
+		} else if (c == '\t') {
+			place_char_at_location(' ', cursor_row, cursor_col);
+			place_char_at_location(' ', cursor_row, cursor_col);
+			place_char_at_location(' ', cursor_row, cursor_col);
+			place_char_at_location(' ', cursor_row, cursor_col);
 		}
 	} else if (cursor_row > vga_height - 1) {
 		scroll_screen();
