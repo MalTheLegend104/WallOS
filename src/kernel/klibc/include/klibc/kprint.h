@@ -1,3 +1,11 @@
+/*
+ * This supports printing to vga text mode.
+ * This mode supports an extention of ASCII called code page 437
+ * https://en.wikipedia.org/wiki/Code_page_437
+ * It supports a few extra characters such as ☺,▓, and ►
+ * This allows for some interesting things.
+ */
+
 #ifndef KPRINT_H
 #define KPRINT_H
 #include <stdint.h>
@@ -26,8 +34,12 @@ extern "C" {
 
 	void clearVGABuf();
 	void set_colors(char text, char back);
-	void putc_vga(const char c);
+	void set_to_last();
+	void putc_vga(const unsigned char c);
 	void puts_vga(const char* buf);
+	void putuc_vga(const uint8_t* buf, size_t size);
+
+
 	// this is temporarily here
 	inline void outb(uint16_t port, uint8_t val) {
 		__asm volatile ("outb %0, %1" : : "a"(val), "Nd"(port));

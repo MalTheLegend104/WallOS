@@ -23,7 +23,6 @@ char* convertbinarytoascii(exx reg, char* buf) {
 	itoa(reg, regValue, 2);
 
 	int length = strlen(regValue);
-	char test[10];
 
 	// If the 32nd bit isn't set, itoa wont put it in the string
 	if (length == 31) {
@@ -143,9 +142,6 @@ cpu_features cpuFeatures() {
 	itoa(dx, edx, 2);
 	padding_32(edx);
 	strrev(edx, 0, 31);
-	puts_vga("\n");
-	puts_vga(edx);
-	puts_vga("\n");
 	// 31:29 are reserved
 	features.HTT = edx[28];
 	// 27 is reserved

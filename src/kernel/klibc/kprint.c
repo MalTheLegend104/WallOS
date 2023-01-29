@@ -11,7 +11,10 @@ size_t cursor_row = 0;
 size_t cursor_col = 0;
 
 uint8_t text_colors = VGA_COLOR_LIGHT_GREY;
-int8_t background = VGA_COLOR_BLACK;
+int8_t 	background = VGA_COLOR_BLACK;
+
+uint8_t last_text;
+int8_t 	last_bg;
 
 uint16_t* screen_buffer = (uint16_t*) 0xB8000; // location of screen memory
 
@@ -45,12 +48,21 @@ void disable_cursor() {
  * @param back Color for the background.
  */
 void set_colors(char text, char back) {
+	last_text = text_colors;
+	last_bg = background;
 	text_colors = text;
 	background = back;
 }
 
+void set_to_last() {
+	text_colors = last_text;
+	background = last_bg;
+}
+
 /* Formats the character to correctly display with the selected colors. */
-uint16_t format_char_data(char c) {
+uint16_t format_char_data(unsigned char c) {
+	// add an exception for our logo
+
 	uint8_t colors = (background << 4) | text_colors;
 
 	uint16_t colored_char = ((uint16_t) colors << 8 | (uint16_t) c);
@@ -58,7 +70,7 @@ uint16_t format_char_data(char c) {
 }
 
 /* Places the character at the provided location..... */
-void place_char_at_location(char c, size_t x, size_t y) {
+void place_char_at_location(unsigned char c, size_t x, size_t y) {
 	screen_buffer[(x * vga_width) + y] = format_char_data(c); // put the char at the location
 }
 
@@ -80,7 +92,7 @@ void scroll_screen() {
 
 // prints a single char to the screen, and keeps track of when
 // there needs to be a carrage return
-void putc_vga(const char c) {
+void putc_vga(const unsigned char c) {
 	if ((cursor_col > vga_width - 1) || (c == '\n')) {
 		if (cursor_row >= vga_height - 1) {
 			scroll_screen();
@@ -108,7 +120,18 @@ void putc_vga(const char c) {
  * @param buf Text to be printed.
  */
 void puts_vga(const char* buf) {
-	for (int i = 0; i < strlen(buf); i++) {
+	for (size_t i = 0; i < strlen(buf); i++) {
+		putc_vga(buf[i]);
+	}
+}
+
+/**
+ * @brief Puts but for uint8_t arrays (unsigned chars) instead of normal strings.
+ *
+ * @param buf the array to be printed.
+ */
+void putuc_vga(const uint8_t* buf, size_t size) {
+	for (size_t i = 0; i < size; i++) {
 		putc_vga(buf[i]);
 	}
 }
