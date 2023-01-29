@@ -5,7 +5,7 @@
 #include <klibc/kprint.h>
 #include <klibc/cpuid_calls.h>
 #include <klibc/logger.h>
-
+#include <klibc/features.hpp>
 cpu_features features;
 
 /*
@@ -53,20 +53,22 @@ void kernel_main(void) {
 	set_to_last();
 
 	// INITIALIZE STUFF
-	puts_vga("Intializing OS.\n");
-	Logger::logf("This is a log message. %d\n", 10);
-	Logger::infof("This is a info message. %d\n", 10);
-	Logger::warnf("This is a warn message. %d\n", 10);
-	Logger::errorf("This is a error message. %d\n", 10);
-	Logger::fatalf("This is a fatal message. %d\n", 10);
+	puts_vga("\n\nIntializing OS.\n");
+	// Logger::logf("This is a log message. %d\n", 10);
+	// Logger::infof("This is a info message. %d\n", 10);
+	// Logger::warnf("This is a warn message. %d\n", 10);
+	// Logger::errorf("This is a error message. %d\n", 10);
+	// Logger::fatalf("This is a fatal message. %d\n", 10);
 
-	Logger::Checklist::blankEntry("This is a test.");
-	Logger::Checklist::checkEntry("This is a test.");
-	Logger::Checklist::noCheckEntry("This is a test.");
-	puts_vga("CPU Features:\n");
+	// Logger::Checklist::blankEntry("This is a test.");
+	// Logger::Checklist::checkEntry("This is a test.");
+	// Logger::Checklist::noCheckEntry("This is a test.");
+
+	puts_vga("Checking CPU Features:\n");
 	// We really only need to do this once. 
 	// Really this should be moved elsewhere though.
 	features = cpuFeatures();
+	check_features(features); // this will halt the OS if needed features aren't present
 
 	// Test the panic system
 	// panic_s("This is a really long message to test the way the buffer works. qwertyuiop[]\\asdaghjkl;'zxcvbnm,./1234567890-=!@#$%^&*()_+\"?<>{}|");
