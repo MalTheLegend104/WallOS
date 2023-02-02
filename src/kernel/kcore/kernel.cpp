@@ -55,11 +55,13 @@ void kernel_main(void) {
    // Logger::Checklist::noCheckEntry("This is a test.");
 
 	puts_vga("Checking CPU Features:\n");
-	/* Okay imma keep it real C++ hates structs and idk why
-	 * It will NOT let me call cpuFeatures() from the class itself. At all.
-	 * It's marked as extern C. It know's that it's C code.
-	 * If I had to guess it has something to do with how C++ treats structs.
-	 * Regardless, this is how this code has to be, and it is how it will stay.
+	/* C++ treats structs as classes.
+	 * As far as I can tell, when I try to call cpuFeatures() from a C++ class,
+	 * it tries to call new. We dont have new. We dont even have the memory to put a 
+	 * new object yet. Therefore we have to call cpuFeatures() from C code, or at least 
+	 * what GCC THINKS is C code. Calling it this way works, so we have to pass the pointer
+	 * to the function. Not ideal, but it works. We will likely have to do this until 
+	 * we have paging, new, delete, malloc, and free.
 	 */
 	cpu_features f = cpuFeatures();
 	Features::checkFeatures(&f);// this will halt the OS if needed features aren't present

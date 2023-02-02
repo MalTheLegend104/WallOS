@@ -90,7 +90,11 @@ void padding_32(char* array) {
 	}
 }
 
-
+/**
+ * @brief Returns a struct of cpu features and whether or not they are supported.
+ * 
+ * @return cpu_features struct containing the features and their values.
+ */
 cpu_features cpuFeatures() {
 	exx ax, bx, cx, dx;
 	__cpuid(1, ax, bx, cx, dx);
