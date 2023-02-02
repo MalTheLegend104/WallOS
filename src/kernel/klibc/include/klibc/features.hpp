@@ -15,8 +15,7 @@ private:
 	static bool listFeatureCheck(const char* name, bool a);
 	static void checkFloatingPointSupport();
 public:
-	static void setFeatures(struct cpu_features* f);
-	static void checkFeatures();
+	static void checkFeatures(struct cpu_features* f);
 };
 
 #endif // FEATURES_HPP

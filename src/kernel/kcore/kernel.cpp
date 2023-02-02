@@ -62,8 +62,7 @@ void kernel_main(void) {
 	 * Regardless, this is how this code has to be, and it is how it will stay.
 	 */
 	cpu_features f = cpuFeatures();
-	Features::setFeatures(&f);
-	Features::checkFeatures();// this will halt the OS if needed features aren't present
+	Features::checkFeatures(&f);// this will halt the OS if needed features aren't present
 
 	// Test the panic system
 	// panic_s("This is a really long message to test the way the buffer works. qwertyuiop[]\\asdaghjkl;'zxcvbnm,./1234567890-=!@#$%^&*()_+\"?<>{}|");

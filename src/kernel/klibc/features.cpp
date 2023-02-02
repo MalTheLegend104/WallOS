@@ -69,19 +69,12 @@ void Features::checkFloatingPointSupport() {
 }
 
 /**
- * @brief Sets the cpu_features that will be checked.
- *
- * @param f pointer to the cpu_features struct that will be checked.
- */
-void Features::setFeatures(struct cpu_features* f) {
-	features = f;
-}
-
-/**
  * @brief Check all important features.
  * It will call abort() if needed features do not exist.
+ * @param f struct of features that will be checked.
  */
-void Features::checkFeatures() {
+void Features::checkFeatures(struct cpu_features* f) {
+	features = f;
 	// Ideally we are going to be avoiding floats for as long as possible.
 	// Still good to know if we have support for it though.
 	checkFloatingPointSupport();
