@@ -38,7 +38,7 @@ extern "C" {
 	void putc_vga(const unsigned char c);
 	void puts_vga(const char* buf);
 	void putuc_vga(const uint8_t* buf, size_t size);
-
+	void print_logo();
 
 	// this is temporarily here
 	inline void outb(uint16_t port, uint8_t val) {

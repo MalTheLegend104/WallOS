@@ -1,13 +1,33 @@
 MAKEFLAGS = -s
 #default things for all platforms. This includes things like LIBC, the WallOS, and compile flags.
 C_FLAGS 		:= -ffreestanding -std=gnu99 -O2 -g -Wall -Wextra -Wno-format -nostdlib -lgcc 
-CXX_FLAGS 		:= -ffreestanding -fno-rtti -O2 -g -Wall -Wextra -Wno-format -nostdlib -lgcc 
+CPP_FLAGS 		:= -ffreestanding -fno-rtti -O2 -g -Wall -Wextra -Wno-format -nostdlib -lgcc 
 NASM_FLAGS 		:= 
-LINKER_FLAGS 	:= 
+LINKER_FLAGS 	:=
 
 LIBC_INCLUDE	:= src/libc/include
 KLIBC_INCLUDE 	:= src/kernel/klibc/include
 KCORE_INCLUDE	:= src/kernel/kcore/include
+
+CRTBEGIN_OBJ:=$(shell $(CC) $(CFLAGS) -print-file-name=crtbegin.o)
+CRTEND_OBJ:=$(shell $(CC) $(CFLAGS) -print-file-name=crtend.o)
+
+# ----------------------------------------------------
+# CRTI/CRTN (stuff required for full C++ support)
+# ----------------------------------------------------
+CRTI_SRC	:= $(shell find src/kernel -name crti.s)
+CRTI_OBJ	:= $(patsubst src/kernel/%.s, build/crt/%.o, $(CRTI_SRC))
+$(CRTI_OBJ): build/crt/%.o : src/kernel/%.s
+	echo "Compiling CRTI       -> $(patsubst build/crt/%.o, src/kernel/%.s, $@)"
+	mkdir -p $(dir $@) && \
+	as $(patsubst build/crt/%.o, src/kernel/%.s, $@) $(NASM_FLAGS) -o $@
+
+CRTN_SRC	:= $(shell find src/kernel -name crtn.s)
+CRTN_OBJ	:= $(patsubst src/kernel/%.s, build/crt/%.o, $(CRTN_SRC))
+$(CRTN_OBJ): build/crt/%.o : src/kernel/%.s
+	echo "Compiling CRTN       -> $(patsubst build/crt/%.o, src/kernel/%.s, $@)"
+	mkdir -p $(dir $@) && \
+	as $(patsubst build/crt/%.o, src/kernel/%.s, $@) $(NASM_FLAGS) -o $@
 
 # ----------------------------------------------------
 # LIBC
@@ -94,7 +114,7 @@ x86_64_INCLUDE 	:= src/kernel/x86_64/include
 x86_64_ASM_SRCS := $(shell find src/kernel/x86_64 -name *.asm)
 x86_64_ASM_OBJ 	:= $(patsubst src/kernel/x86_64/%.asm, build/x86_64/%.o, $(x86_64_ASM_SRCS))
 x86_64_C_SRC	:= $(shell find src/kernel/x86_64 -name *.c)
-x86_64_C_OBJ	:= $(patsubst src/WallOkernelS/x86_64/%.c, build/x86_64/%.o, $(x86_64_C_SRC))
+x86_64_C_OBJ	:= $(patsubst src/kernel/x86_64/%.c, build/x86_64/%.o, $(x86_64_C_SRC))
 
 x86_64_OBJ := $(x86_64_ASM_OBJ) $(x86_64_C_OBJ)
 
@@ -107,6 +127,7 @@ $(x86_64_C_OBJ): build/x86_64/%.o : src/impl/x86_64/%.c
 	echo "Compiling x86_64 C   -> $(patsubst build/x86_64/%.o, src/kernel/x86_64/%.c, $@)"
 	mkdir -p $(dir $@) && \
 	x86_64-elf-gcc -c $(patsubst build/x86_64/%.o, src/impl/x86_64/%.c, $@) -o $@ -I $(x86_64_INCLUDE) $(C_FLAGS)
+
 
 # ----------------------------------------------------
 # COMMANDS
@@ -123,10 +144,10 @@ build-all:
 	echo "<-----------Compiling x86_64---------->"
 	$(call build)
 
-build: $(LIBC_OBJ) $(KLIBC_OBJ) $(KCORE_OBJ) $(x86_64_OBJ) 
+build: $(LIBC_OBJ) $(KLIBC_OBJ) $(KCORE_OBJ) $(x86_64_OBJ) $(CRTI_OBJ) $(CRTN_OBJ) $(CRTBEGIN_OBJ) $(CRTEND_OBJ) 
 	mkdir -p dist/x86_64 && .
 	echo "<---------------Linking--------------->"
-	x86_64-elf-ld -n -o dist/x86_64/WallOS.bin -T targets/x86_64/linker.ld $(LIBC_OBJ) $(KLIBC_OBJ) $(x86_64_OBJ) $(KCORE_OBJ) 
+	x86_64-elf-ld -n -o dist/x86_64/WallOS.bin -T targets/x86_64/linker.ld $(CRTI_OBJ) $(CRTBEGIN_OBJ) $(LIBC_OBJ) $(KLIBC_OBJ) $(x86_64_OBJ) $(KCORE_OBJ) $(CRTEND_OBJ) $(CRTN_OBJ)
 	echo "<------------Compiling ISO------------>"
 	cp dist/x86_64/WallOS.bin targets/x86_64/iso/boot/WallOS.bin && \
 	grub-mkrescue /usr/lib/grub/i386-pc -o dist/x86_64/WallOS.iso targets/x86_64/iso
