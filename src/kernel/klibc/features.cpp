@@ -6,11 +6,13 @@
 
 bool Features::AVX;
 bool Features::FXSR;
+bool Features::APIC;
 bool Features::floating_point;
 const char* Features::highest_supported_float;
 struct cpu_features* Features::features;
 
 bool Features::listFeature(const char* name, bool a) {
+	puts_vga("    ");
 	if (a) {
 		Logger::Checklist::checkEntry("%s is supported.", name);
 	} else {
@@ -20,6 +22,7 @@ bool Features::listFeature(const char* name, bool a) {
 }
 
 bool Features::listFeatureCheck(const char* name, bool a) {
+	puts_vga("    ");
 	if (a) {
 		Logger::Checklist::checkEntry("%s is supported.", name);
 	} else {
@@ -31,7 +34,7 @@ bool Features::listFeatureCheck(const char* name, bool a) {
 void Features::checkFloatingPointSupport() {
 	/*
 	 * Testing for cpu features is simple:
-	 * if (features.feature == FEATURE_SUPPORTED) {
+	 * if (features->feature == FEATURE_SUPPORTED) {
 	 *     // feature is supported
 	 * } else {
 	 *     // feature isnt supported
@@ -42,6 +45,12 @@ void Features::checkFloatingPointSupport() {
 		putc_vga('\t');
 		FXSR = features->FXSR == FEATURE_SUPPORTED;
 		listFeature("FXSR", FXSR);
+		if (FXSR) {
+			highest_supported_float = "FXSR";
+		} else {
+			highest_supported_float = "AVX";
+		}
+		return;
 	}
 	if (listFeature("SSE4.2", features->SSE4_2 == FEATURE_SUPPORTED)) {
 		highest_supported_float = "SSE4.2";
@@ -77,6 +86,7 @@ void Features::checkFeatures(struct cpu_features* f) {
 	features = f;
 	// Ideally we are going to be avoiding floats for as long as possible.
 	// Still good to know if we have support for it though.
+	Logger::Checklist::blankEntry("Checking Floating Point Support");
 	checkFloatingPointSupport();
 	if (highest_supported_float == nullptr) {
 		Logger::Checklist::noCheckEntry("No Floating Point support.");
@@ -85,4 +95,32 @@ void Features::checkFeatures(struct cpu_features* f) {
 		Logger::Checklist::checkEntry("%s is highest supported Float Point instruction set.", Features::highest_supported_float);
 		floating_point = true;
 	}
+
+	if (features->APIC == FEATURE_SUPPORTED) {
+		APIC = true;
+		Logger::Checklist::checkEntry("APIC exists.");
+	} else {
+		APIC = false;
+		Logger::Checklist::noCheckEntry("APIC does not exists.");
+	}
+}
+
+/**
+ * @brief Returns the string equalivent of
+ * the highest supported floating point instruction set
+ *
+ * @return const char* String of the highest supported floating point instruction set
+ */
+const char* Features::highestFloat() {
+	return highest_supported_float;
+}
+
+/**
+ * @brief Returns whether or not the APIC exists.
+ *
+ * @return true Does exist.
+ * @return false Does not exist.
+ */
+bool Features::getAPIC() {
+	return APIC;
 }

@@ -7,6 +7,7 @@ class Features {
 private:
 	static bool AVX;
 	static bool FXSR;
+	static bool APIC;
 	static bool floating_point;
 	static const char* highest_supported_float;
 	static struct cpu_features* features;
@@ -16,6 +17,8 @@ private:
 	static void checkFloatingPointSupport();
 public:
 	static void checkFeatures(struct cpu_features* f);
+	static const char* highestFloat();
+	static bool getAPIC();
 };
 
 #endif // FEATURES_HPP
