@@ -8,7 +8,6 @@ private:
 	static bool AVX;
 	static bool FXSR;
 	static bool APIC;
-	static bool floating_point;
 	static const char* highest_supported_float;
 	static struct cpu_features* features;
 

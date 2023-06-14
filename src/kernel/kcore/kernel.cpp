@@ -58,14 +58,15 @@ void kernel_main(void) {
 	cpu_features f = cpuFeatures();
 	Features::checkFeatures(&f);
 
-
 	// Enable CPU features
+	/* SSE2 is requried support on x86_64 systems.
+	 * FPU SHOULD be automatically enabled on x86 systems.
+	 * IDK about ARM
+	 * */
 	if (Features::highestFloat()[0] == 'S') {
 		Logger::Checklist::checkEntry("Enabling floating point operations: %s", Features::highestFloat());
 		enable_sse();
 	}
-
-
 
 	// After we're done checking features, we need to set up our terminal.
 

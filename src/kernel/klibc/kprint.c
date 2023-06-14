@@ -102,6 +102,8 @@ void putc_vga(const unsigned char c) {
 
 		cursor_col = 0;
 		if (c != '\n' && c != '\t') {
+			// Text wrap
+			cursor_col = 1;
 			place_char_at_location(c, cursor_row, cursor_col);
 		} else if (c == '\t') {
 			place_char_at_location(' ', cursor_row, cursor_col);
@@ -223,7 +225,7 @@ void pink_screen(const char* error) {
 }
 
 /**
- * @brief Prints the logo to the screen. 
+ * @brief Prints the logo to the screen.
  */
 void print_logo() {
 	// OS LOGO IGNORE THIS STUPID ARRAY

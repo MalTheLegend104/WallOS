@@ -7,7 +7,6 @@
 bool Features::AVX;
 bool Features::FXSR;
 bool Features::APIC;
-bool Features::floating_point;
 const char* Features::highest_supported_float;
 struct cpu_features* Features::features;
 
@@ -84,24 +83,34 @@ void Features::checkFloatingPointSupport() {
  */
 void Features::checkFeatures(struct cpu_features* f) {
 	features = f;
-	// Ideally we are going to be avoiding floats for as long as possible.
-	// Still good to know if we have support for it though.
+	// Ideally we are going to be avoiding floats as much as possible
+	// Halts the cpu if not present.
 	Logger::Checklist::blankEntry("Checking Floating Point Support");
 	checkFloatingPointSupport();
 	if (highest_supported_float == nullptr) {
 		Logger::Checklist::noCheckEntry("No Floating Point support.");
-		floating_point = false;
+		Logger::fatalf("This OS requires floating point operations.\
+Any x86_64 CPU is required to support a minimum of SSE2.\
+If this system has a x86_64 CPU, then this is an issue on our side, \
+report it to our GitHub Repo.\n");
+		__asm volatile ("hlt");
 	} else {
-		Logger::Checklist::checkEntry("%s is highest supported Float Point instruction set.", Features::highest_supported_float);
-		floating_point = true;
+		Logger::Checklist::checkEntry("%s is highest supported Floating Point instruction set.", Features::highest_supported_float);
 	}
 
+	// Check APIC
 	if (features->APIC == FEATURE_SUPPORTED) {
 		APIC = true;
 		Logger::Checklist::checkEntry("APIC exists.");
 	} else {
 		APIC = false;
 		Logger::Checklist::noCheckEntry("APIC does not exists.");
+	}
+
+	if (features->FXSR == FEATURE_SUPPORTED) {
+		// Just set this up so we can properly use floating point stuff later.
+		char fxsave_region[512] __attribute__((aligned(16)));
+		asm volatile(" fxsave %0 "::"m"(fxsave_region));
 	}
 }
 
