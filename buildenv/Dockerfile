@@ -1,6 +1,5 @@
 FROM randomdude/gcc-cross-x86_64-elf
 
-# honestly I should ideally make a new image that doesn't use debian 9 but this works so idrc
 RUN echo "deb http://archive.debian.org/debian stretch main contrib non-free" > /etc/apt/sources.list
 RUN apt-get update 
 RUN apt-get upgrade -y
