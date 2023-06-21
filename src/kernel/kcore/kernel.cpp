@@ -2,6 +2,7 @@
 #include <string.h>
 #include <cpuid.h>
 #include <panic.h>
+#include <paging.h>
 #include <klibc/kprint.h>
 #include <klibc/cpuid_calls.h>
 #include <klibc/logger.h>
