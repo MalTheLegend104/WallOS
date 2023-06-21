@@ -1,0 +1,24 @@
+./build64
+echo -e "<------------Running QEMU------------->"
+
+native_flag_found=false
+
+# See if native was included in the args
+for arg in "$@"; do
+  if [[ "$arg" == "--native" || "$arg" == "-n" ]]; then
+    native_flag_found=true
+  fi
+done
+
+# Check the value of the native_flag_found variable outside the loop
+if [ "$native_flag_found" = true ]; then
+  	echo -e "Running native QEMU. This should only have an effect if you are using WSL.\nIf you run into an error, or a window does not open, try running again without --native."
+	qemu-system-x86_64 -cdrom ../dist/x86_64/WallOS.iso
+else
+	if [[ $(grep -i Microsoft /proc/version) ]]; then
+		echo -e "WSL Detected - Running QEMU for Windows"
+		qemu-system-x86_64.exe -cdrom ../dist/x86_64/WallOS.iso
+	else 
+		qemu-system-x86_64 -cdrom ../dist/x86_64/WallOS.iso
+	fi
+fi
