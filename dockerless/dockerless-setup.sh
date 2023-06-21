@@ -2,6 +2,8 @@ sudo apt update
 sudo apt upgrade -y
 sudo apt install -y build-essential bison flex libgmp3-dev libmpc-dev libmpfr-dev texinfo xorriso grub-pc-bin grub-common nasm qemu qemu-system-x86 patch 
 
+sudo chmod +xwr build build64 qemu clean
+
 # Build GCC and Binutils
 echo "Do you want to build GCC & Binutils (only recommended for first time setup)? [Y/n]"
 read answer
@@ -52,6 +54,3 @@ if [[ $answer == y* ]]; then
 		sudo echo -e "\nexport PATH=\"\$HOME/opt/cross/bin:\$PATH\"" >> ~/.profile
 	fi
 fi
-
-
-sudo chmod +xwr build build64 qemu
