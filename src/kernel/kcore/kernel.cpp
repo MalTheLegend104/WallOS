@@ -7,6 +7,8 @@
 #include <klibc/cpuid_calls.h>
 #include <klibc/logger.h>
 #include <klibc/features.hpp>
+#include <stdio.h>
+#include <multiboot.h>
 
 /* Okay, this is where the fun begins. Literally and figuratively.
  * We mark these extern c because we need to call it from asm,
@@ -20,7 +22,7 @@
  */
 extern "C" {
 	void kernel_early(void);
-	void kernel_main(void);
+	void kernel_main(unsigned int magic, multiboot_header* mbt);
 	void __cxa_pure_virtual() { }; // needed for pure virtual functions
 }
 
@@ -36,11 +38,21 @@ void kernel_early(void) {
 
 }
 
-void kernel_main(void) {
+void kernel_main(unsigned int magic, multiboot_header* mbt) {    
 	kernel_early();
 	clearVGABuf();
 	set_colors(VGA_COLOR_YELLOW, VGA_COLOR_BLACK);
 	print_logo();
+	
+	if (mbt != NULL) {
+        printf("Multiboot header address: %d\n", mbt);
+    } else {
+        printf("Multiboot header is NULL\n");
+    }
+	printf("Provided magic nubmer: %d\n", magic);
+	printf("Magic number: %d\n", 0x36d76289);
+
+
 	// Do stuff that needs to be enabled before interrupts here.
 
 	// Enable interrupts

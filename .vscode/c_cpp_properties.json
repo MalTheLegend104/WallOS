@@ -15,7 +15,7 @@
                 "__is_kernel_"
             ],
             "windowsSdkVersion": "10.0.19041.0",
-            "compilerPath": "C:/gcc/bin/g++.exe",
+            "compilerPath": "C:/msys64/ucrt64/bin/gcc.exe",
             "cStandard": "c99",
             "cppStandard": "c++17",
             "intelliSenseMode": "linux-gcc-x64",

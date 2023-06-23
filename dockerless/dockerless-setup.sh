@@ -47,7 +47,7 @@ if [[ $answer == y* ]]; then
 	make install-gcc
 	make install-target-libgcc
 	cd $(pwd)
-
+	export PATH="$HOME/opt/cross/bin:$PATH"
 	echo "Do you want to add the cross compiler to the path (if no, you have to run `export PATH="$HOME/opt/cross/bin:$PATH"` every time you open a new terminal)? [Y/n]"
 	read answer
 	if [[ $answer == y* ]]; then

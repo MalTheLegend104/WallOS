@@ -1,15 +1,26 @@
 global start
 extern long_mode_start
 
+section .data
+multiboot_data_magic:     dq 0
+multiboot_data_address:   dq 0
+global multiboot_data_magic
+global multiboot_data_address
+
 section .text
 bits 32
 start:
 	mov esp, stack_top
-
+	
 	call check_multiboot
+	; Move multiboot pointer to ebx (assuming it exists)s
+	mov DWORD [multiboot_data_magic],    eax
+	mov DWORD [multiboot_data_address],  ebx
+	
 	call check_cpuid
 	call check_long_mode
-
+	
+	;This is just 32 bit paging, it's only used to get to long mode
 	call setup_page_tables
 	call enable_paging
 
