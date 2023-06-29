@@ -2,14 +2,13 @@
 #include <string.h>
 #include <cpuid.h>
 #include <panic.h>
+#include <stdio.h>
 #include <paging.h>
 #include <klibc/kprint.h>
 #include <klibc/cpuid_calls.h>
 #include <klibc/logger.h>
 #include <klibc/features.hpp>
-#include <stdio.h>
-#include <multiboot.h>
-
+#include <idt.h>
 /* Okay, this is where the fun begins. Literally and figuratively.
  * We mark these extern c because we need to call it from asm,
  * because asm can't see c++ functions. Cool, no big deal.
@@ -22,7 +21,7 @@
  */
 extern "C" {
 	void kernel_early(void);
-	void kernel_main(unsigned int magic, multiboot_header* mbt);
+	void kernel_main(void);
 	void __cxa_pure_virtual() { }; // needed for pure virtual functions
 }
 
@@ -38,25 +37,15 @@ void kernel_early(void) {
 
 }
 
-void kernel_main(unsigned int magic, multiboot_header* mbt) {    
+void kernel_main(void) {
 	kernel_early();
 	clearVGABuf();
 	set_colors(VGA_COLOR_YELLOW, VGA_COLOR_BLACK);
 	print_logo();
-	
-	if (mbt != NULL) {
-        printf("Multiboot header address: %d\n", mbt);
-    } else {
-        printf("Multiboot header is NULL\n");
-    }
-	printf("Provided magic nubmer: %d\n", magic);
-	printf("Magic number: %d\n", 0x36d76289);
-
-
 	// Do stuff that needs to be enabled before interrupts here.
 
 	// Enable interrupts
-
+	setup_idt();
 	// Everything else
 
 	// INITIALIZE STUFF
@@ -80,6 +69,9 @@ void kernel_main(unsigned int magic, multiboot_header* mbt) {
 		Logger::Checklist::checkEntry("Enabling floating point operations: %s", Features::highestFloat());
 		enable_sse();
 	}
+
+	// test divide by zero
+	__attribute__((optimize(0))) int result = 10 / 0;
 
 	// After we're done checking features, we need to set up our terminal.
 
