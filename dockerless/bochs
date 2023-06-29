@@ -1,0 +1,3 @@
+./build64
+echo $(pwd)
+bochs -q
