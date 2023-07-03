@@ -40,12 +40,14 @@ done
 # Check the value of the native_flag_found variable outside the loop
 if [ "$native_flag_found" = true ]; then
   	if [ "$debug" = true ]; then
+		echo "Running with debug config. Connect using GDB on port \`localhost:1234\`"
 		run_native_db
 	else
 		run_native
 	fi
 else
 	if [ "$debug" = true ]; then
+		echo "Running with debug config. Connect using GDB on port `localhost:1234`"
 		run_with_debug
 	else
 		run_default
