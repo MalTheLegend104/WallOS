@@ -8,7 +8,6 @@ multiboot_info* MultibootManager::mbt_info;
 multiboot_tag_mmap* MultibootManager::mmap;
 multiboot_tag_framebuffer* MultibootManager::framebuffer_tag;
 
-
 // See https://www.gnu.org/software/grub/manual/multiboot2/multiboot.html#Boot-information
 void MultibootManager::loadTags(){
 	//  Get the pointer to the first tag
@@ -126,8 +125,7 @@ void MultibootManager::loadTags(){
 void MultibootManager::initialize(uint32_t m, multiboot_info* info){
 	magic = m;
 	mbt_info = info;
-	header = (multiboot_header*) 0x1BADB002;
-
+	header = &header_start;
 }
 
 /**
@@ -189,9 +187,7 @@ bool MultibootManager::validateInfo(){
  * @return false If not all aspects are valid, or if any necessary tags are not present.
  */
 bool MultibootManager::validateAll(){
-	// The header checksum returns -4 on bochs, idk why. 
-	// Everything else is correct, so we're just going to ignore it. 
-	//if (!validateHeader()) return false;
+	if (!validateHeader()) return false;
 	if (!validateMagic()) return false;
 	if (!validateInfo()) return false;
 	puts_vga("\n");
