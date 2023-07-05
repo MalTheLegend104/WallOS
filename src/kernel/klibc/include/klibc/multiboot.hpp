@@ -3,6 +3,19 @@
 #include <stdint.h>
 #include <multiboot.h>
 #include <stdbool.h>
+
+extern "C"{
+	extern struct multiboot_header header_start;
+	
+	struct multiboot_info {
+		uint32_t total_size;
+		uint32_t reserved;
+		struct multiboot_tag tags[0];
+	};
+}
+
+
+
 /**
  * @brief Manages the multiboot information provided by grub and other Multiboot2 compliant bootloaders.
  */

@@ -67,7 +67,7 @@ void kernel_main(unsigned int magic, multiboot_info* mbt_info) {
 	/* SSE2 is requried support on x86_64 systems.
 	 * FPU SHOULD be automatically enabled on x86 systems.
 	 * IDK about ARM
-	 * */
+	 */
 	if (Features::highestFloat()[0] == 'S') {
 		Logger::Checklist::checkEntry("Enabling floating point operations: %s", Features::highestFloat());
 		enable_sse();
@@ -79,6 +79,6 @@ void kernel_main(unsigned int magic, multiboot_info* mbt_info) {
 	// Enable interrupts
 
 	// Everything else
-	// After we're done checking features, we need to set up our terminal.
+	// After we're done setting everything up, we need to set up our terminal.
 
 }

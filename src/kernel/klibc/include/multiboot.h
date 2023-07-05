@@ -412,12 +412,6 @@ struct multiboot_tag_load_base_addr
   multiboot_uint32_t load_base_addr;
 };
 
-struct multiboot_info {
-    uint32_t total_size;
-    uint32_t reserved;
-    struct multiboot_tag tags[0];
-};
-
 #endif /*  ! ASM_FILE */
 
 #endif /*  ! MULTIBOOT_HEADER */
