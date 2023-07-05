@@ -9,7 +9,7 @@
 #include <klibc/features.hpp>
 #include <stdio.h>
 #include <multiboot.h>
-
+#include <klibc/multiboot.hpp>
 /* Okay, this is where the fun begins. Literally and figuratively.
  * We mark these extern c because we need to call it from asm,
  * because asm can't see c++ functions. Cool, no big deal.
@@ -22,7 +22,7 @@
  */
 extern "C" {
 	void kernel_early(void);
-	void kernel_main(unsigned int magic, multiboot_header* mbt);
+	void kernel_main(unsigned int magic, multiboot_info* mbt_info);
 	void __cxa_pure_virtual() { }; // needed for pure virtual functions
 }
 
@@ -38,29 +38,21 @@ void kernel_early(void) {
 
 }
 
-void kernel_main(unsigned int magic, multiboot_header* mbt) {    
+void kernel_main(unsigned int magic, multiboot_info* mbt_info) {    
 	kernel_early();
 	clearVGABuf();
 	set_colors(VGA_COLOR_YELLOW, VGA_COLOR_BLACK);
 	print_logo();
-	
-	if (mbt != NULL) {
-        printf("Multiboot header address: %d\n", mbt);
-    } else {
-        printf("Multiboot header is NULL\n");
-    }
-	printf("Provided magic nubmer: %d\n", magic);
-	printf("Magic number: %d\n", 0x36d76289);
-
-
-	// Do stuff that needs to be enabled before interrupts here.
-
-	// Enable interrupts
-
-	// Everything else
 
 	// INITIALIZE STUFF
 	puts_vga("\n\nIntializing OS.\n");
+
+	puts_vga("Checking Multiboot Configuration:\n");
+	MultibootManager::initialize(magic, mbt_info);
+	if (!MultibootManager::validateAll()){
+		panic_s("Multiboot is invalid.");
+	}
+
 	puts_vga("Checking CPU Features:\n");
 	/* Okay imma keep it real C++ hates structs and idk why
 	 * It will NOT let me call cpuFeatures() from the class itself. At all.
@@ -81,6 +73,12 @@ void kernel_main(unsigned int magic, multiboot_header* mbt) {
 		enable_sse();
 	}
 
+	// We should enable stuff before we enable interrupts(unless they require interrupts ofc)
+	// Do stuff that needs to be enabled before interrupts here.
+
+	// Enable interrupts
+
+	// Everything else
 	// After we're done checking features, we need to set up our terminal.
 
 }
