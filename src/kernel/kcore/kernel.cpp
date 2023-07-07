@@ -21,7 +21,6 @@
  * The linker trust us. It shouldn't. This isn't the only time we abuse it.
  */
 extern "C" {
-	void kernel_early(void);
 	void kernel_main(unsigned int magic, multiboot_info* mbt_info);
 	void __cxa_pure_virtual() { }; // needed for pure virtual functions
 }
@@ -34,12 +33,7 @@ extern "C" {
  */
 extern "C" void enable_sse();
 
-void kernel_early(void) {
-
-}
-
 void kernel_main(unsigned int magic, multiboot_info* mbt_info) {    
-	kernel_early();
 	clearVGABuf();
 	set_colors(VGA_COLOR_YELLOW, VGA_COLOR_BLACK);
 	print_logo();
@@ -47,7 +41,7 @@ void kernel_main(unsigned int magic, multiboot_info* mbt_info) {
 	// INITIALIZE STUFF
 	puts_vga("\n\nIntializing OS.\n");
 
-	puts_vga("Checking Multiboot Configuration:\n");
+	puts_vga("\nChecking Multiboot Configuration:\n");
 	MultibootManager::initialize(magic, mbt_info);
 	if (!MultibootManager::validateAll()){
 		panic_s("Multiboot is invalid.");

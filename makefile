@@ -90,7 +90,11 @@ KCORE_CPP_SRC 	:= $(shell find src/kernel/kcore -name *.cpp)
 KCORE_CPP_OBJ 	:= $(patsubst src/kernel/kcore/%.cpp, build/kcore/%.o, $(KCORE_CPP_SRC))
 KCORE_C_SRC   	:= $(shell find src/kernel/kcore -name *.c)
 KCORE_C_OBJ   	:= $(patsubst src/kernel/kcore/%.c, build/kcore/%.o, $(KCORE_C_SRC))
-KCORE_OBJ	  	:= $(KCORE_ASM_OBJ) $(KCORE_CPP_OBJ) $(KCORE_C_OBJ)
+KCORE_OBJ	 	:= $(KCORE_ASM_OBJ) $(KCORE_CPP_OBJ) $(KCORE_C_OBJ)
+#filter out the 32 bit files
+#KCORE_C_SRC 	:= $(filter-out src/kernel/kcore/kernel_early.c, $(KCORE_C_SRC))
+# 32_KCORE_C_SRC	:= src/kernel/kcore/kernel_early.c
+# 32_KCORE_C_OBJ 	:= build/kcore/kernel_early.o
 
 $(KCORE_ASM_OBJ): build/kcore/%.o : src/kernel/kcore/%.asm
 	echo "Compiling kcore asm  -> $(patsubst build/kcore/%.o, src/kernel/kcore/%.asm, $@)"
@@ -106,6 +110,13 @@ $(KCORE_C_OBJ): build/kcore/%.o : src/kernel/kcore/%.c
 	echo "Compiling kcore C    -> $(patsubst build/kcore/%.o, src/kernel/kcore/%.c, $@)"
 	mkdir -p $(dir $@) && \
 	x86_64-elf-gcc -D__is_kernel_ -c $(patsubst build/kcore/%.o, src/kernel/kcore/%.c, $@) -o $@ -I $(KCORE_INCLUDE) -I $(KLIBC_INCLUDE) -I $(LIBC_INCLUDE) $(C_FLAGS)
+
+# Compile kernel_early in 32 bit mode. kernel_early does NOT have access to any includes.
+# $(32_KCORE_C_OBJ): build/kcore/%.o : src/kernel/kcore/%.c
+# 	echo "Compiling kcore C    -> $(patsubst build/kcore/%.o, src/kernel/kcore/%.c, $@)"
+# 	mkdir -p $(dir $@) && \
+# 	i686-elf-gcc -D__is_kernel_ -c $(patsubst build/kcore/%.o, src/kernel/kcore/%.c, $@) -o $@ -m32 $(C_FLAGS)
+
 
 # ----------------------------------------------------
 # x86-64
@@ -147,7 +158,7 @@ build-all:
 build: $(LIBC_OBJ) $(KLIBC_OBJ) $(KCORE_OBJ) $(x86_64_OBJ) $(CRTI_OBJ) $(CRTN_OBJ) $(CRTBEGIN_OBJ) $(CRTEND_OBJ) 
 	mkdir -p dist/x86_64 && .
 	echo "<---------------Linking--------------->"
-	x86_64-elf-ld -n -o dist/x86_64/WallOS.bin -T targets/x86_64/linker.ld $(CRTI_OBJ) $(CRTBEGIN_OBJ) $(LIBC_OBJ) $(KLIBC_OBJ) $(x86_64_OBJ) $(KCORE_OBJ) $(CRTEND_OBJ) $(CRTN_OBJ)
+	x86_64-elf-ld -n -o dist/x86_64/WallOS.bin -T targets/x86_64/linker.ld $(CRTI_OBJ) $(CRTBEGIN_OBJ) $(LIBC_OBJ) $(KLIBC_OBJ) $(x86_64_OBJ) $(KCORE_OBJ) $(CRTEND_OBJ) $(CRTN_OBJ)	
 	echo "<------------Compiling ISO------------>"
 	cp dist/x86_64/WallOS.bin targets/x86_64/iso/boot/WallOS.bin && \
 	grub-mkrescue /usr/lib/grub/i386-pc -o dist/x86_64/WallOS.iso targets/x86_64/iso

@@ -29,6 +29,7 @@ private:
 	static void loadTags();
 public:
 	static multiboot_tag_mmap* getMMap() { return mmap; }
+	static multiboot_tag_framebuffer* getFramebufferTag(){ return framebuffer_tag; }
 	static void initialize(uint32_t m, multiboot_info* info);
 	static bool validateHeader();
 	static bool validateMagic();
