@@ -134,10 +134,10 @@ $(x86_64_ASM_OBJ): build/x86_64/%.o : src/kernel/x86_64/%.asm
 	mkdir -p $(dir $@) && \
 	nasm -f elf64 $(patsubst build/x86_64/%.o, src/kernel/x86_64/%.asm, $@) $(NASM_FLAGS) -o $@
 
-$(x86_64_C_OBJ): build/x86_64/%.o : src/impl/x86_64/%.c
+$(x86_64_C_OBJ): build/x86_64/%.o : src/kernel/x86_64/%.c
 	echo "Compiling x86_64 C   -> $(patsubst build/x86_64/%.o, src/kernel/x86_64/%.c, $@)"
 	mkdir -p $(dir $@) && \
-	x86_64-elf-gcc -c $(patsubst build/x86_64/%.o, src/impl/x86_64/%.c, $@) -o $@ -I $(x86_64_INCLUDE) $(C_FLAGS)
+	x86_64-elf-gcc -c $(patsubst build/x86_64/%.o, src/kernel/x86_64/%.c, $@) -o $@ -I $(x86_64_INCLUDE) -I $(KCORE_INCLUDE) -I $(KLIBC_INCLUDE) -I $(LIBC_INCLUDE) $(C_FLAGS)
 
 
 # ----------------------------------------------------

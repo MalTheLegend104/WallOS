@@ -2,6 +2,7 @@
 #include <string.h>
 #include <cpuid.h>
 #include <panic.h>
+#include <stdio.h>
 #include <paging.h>
 #include <klibc/kprint.h>
 #include <klibc/cpuid_calls.h>
@@ -10,6 +11,8 @@
 #include <stdio.h>
 #include <multiboot.h>
 #include <klibc/multiboot.hpp>
+#include <idt.h>
+
 /* Okay, this is where the fun begins. Literally and figuratively.
  * We mark these extern c because we need to call it from asm,
  * because asm can't see c++ functions. Cool, no big deal.
@@ -37,8 +40,8 @@ void kernel_main(unsigned int magic, multiboot_info* mbt_info) {
 	clearVGABuf();
 	set_colors(VGA_COLOR_YELLOW, VGA_COLOR_BLACK);
 	print_logo();
-
-	// INITIALIZE STUFF
+  
+	// Do stuff that needs to be enabled before interrupts here.
 	puts_vga("\n\nIntializing OS.\n");
 
 	puts_vga("\nChecking Multiboot Configuration:\n");
@@ -66,13 +69,14 @@ void kernel_main(unsigned int magic, multiboot_info* mbt_info) {
 		Logger::Checklist::checkEntry("Enabling floating point operations: %s", Features::highestFloat());
 		enable_sse();
 	}
-
-	// We should enable stuff before we enable interrupts(unless they require interrupts ofc)
-	// Do stuff that needs to be enabled before interrupts here.
-
+  
 	// Enable interrupts
+	setup_idt();
 
-	// Everything else
-	// After we're done setting everything up, we need to set up our terminal.
+	// test divide by zero
+	__attribute__((optimize(0))) int result = 10 / 0;
+  
+  // Things that need interrupts here (like keyboard, mouse, etc.)
+	// After we're done checking features, we need to set up our terminal.
 
 }
