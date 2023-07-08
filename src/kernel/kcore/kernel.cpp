@@ -8,7 +8,11 @@
 #include <klibc/cpuid_calls.h>
 #include <klibc/logger.h>
 #include <klibc/features.hpp>
+#include <stdio.h>
+#include <multiboot.h>
+#include <klibc/multiboot.hpp>
 #include <idt.h>
+
 /* Okay, this is where the fun begins. Literally and figuratively.
  * We mark these extern c because we need to call it from asm,
  * because asm can't see c++ functions. Cool, no big deal.
@@ -20,8 +24,7 @@
  * The linker trust us. It shouldn't. This isn't the only time we abuse it.
  */
 extern "C" {
-	void kernel_early(void);
-	void kernel_main(void);
+	void kernel_main(unsigned int magic, multiboot_info* mbt_info);
 	void __cxa_pure_virtual() { }; // needed for pure virtual functions
 }
 
@@ -33,23 +36,20 @@ extern "C" {
  */
 extern "C" void enable_sse();
 
-void kernel_early(void) {
-
-}
-
-void kernel_main(void) {
-	kernel_early();
+void kernel_main(unsigned int magic, multiboot_info* mbt_info) {    
 	clearVGABuf();
 	set_colors(VGA_COLOR_YELLOW, VGA_COLOR_BLACK);
 	print_logo();
+  
 	// Do stuff that needs to be enabled before interrupts here.
-
-	// Enable interrupts
-	setup_idt();
-	// Everything else
-
-	// INITIALIZE STUFF
 	puts_vga("\n\nIntializing OS.\n");
+
+	puts_vga("\nChecking Multiboot Configuration:\n");
+	MultibootManager::initialize(magic, mbt_info);
+	if (!MultibootManager::validateAll()){
+		panic_s("Multiboot is invalid.");
+	}
+
 	puts_vga("Checking CPU Features:\n");
 	/* Okay imma keep it real C++ hates structs and idk why
 	 * It will NOT let me call cpuFeatures() from the class itself. At all.
@@ -64,15 +64,19 @@ void kernel_main(void) {
 	/* SSE2 is requried support on x86_64 systems.
 	 * FPU SHOULD be automatically enabled on x86 systems.
 	 * IDK about ARM
-	 * */
+	 */
 	if (Features::highestFloat()[0] == 'S') {
 		Logger::Checklist::checkEntry("Enabling floating point operations: %s", Features::highestFloat());
 		enable_sse();
 	}
+  
+	// Enable interrupts
+	setup_idt();
 
 	// test divide by zero
 	__attribute__((optimize(0))) int result = 10 / 0;
-
+  
+  // Things that need interrupts here (like keyboard, mouse, etc.)
 	// After we're done checking features, we need to set up our terminal.
 
 }

@@ -8,7 +8,7 @@
 
 long strtol(const char* restrict nptr, char** restrict endptr, int base) {
 	const char* p = nptr, * endp;
-	_Bool is_neg = 0, overflow = 0;
+	bool is_neg = 0, overflow = 0;
 	/* Need unsigned so (-LONG_MIN) can fit in these: */
 	unsigned long n = 0UL, cutoff;
 	int cutlim;

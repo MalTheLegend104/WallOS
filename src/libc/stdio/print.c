@@ -59,7 +59,7 @@ int vprintf(const char* format, va_list arg) {
 					print_until_null(s);
 					break;
 
-				case 'x': i = va_arg(arg, unsigned int);
+				case 'X': i = va_arg(arg, unsigned int);
 					print_until_null(convert(i, 16));
 					break;
 
