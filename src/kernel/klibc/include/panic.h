@@ -5,7 +5,7 @@
 #ifdef __cplusplus
 extern "C" {
 #endif
-// Common Kernel Panics
+	// Common Kernel Panics
 	enum KERNEL_PANIC {
 		GENERAL_PURPOSE_PANIC,
 

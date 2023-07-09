@@ -24,7 +24,7 @@
 #ifndef _CPUID_H_INCLUDED
 #define _CPUID_H_INCLUDED
 
-/* %eax */
+ /* %eax */
 #define bit_RAOINT	(1 << 3)
 #define bit_AVXVNNI	(1 << 4)
 #define bit_AVX512BF16	(1 << 5)
@@ -216,9 +216,9 @@
 #define signature_SHANGHAI_edx	0x68676e61
 
 #ifndef __x86_64__
-/* At least one cpu (Winchip 2) does not set %ebx and %ecx
-   for cpuid leaf 1. Forcibly zero the two registers before
-   calling cpuid as a precaution.  */
+   /* At least one cpu (Winchip 2) does not set %ebx and %ecx
+	  for cpuid leaf 1. Forcibly zero the two registers before
+	  calling cpuid as a precaution.  */
 #define __cpuid(level, a, b, c, d)					\
   do {									\
     if (__builtin_constant_p (level) && (level) != 1)			\
@@ -243,19 +243,19 @@
 			: "0" (level), "2" (count))
 
 
-/* Return highest supported input value for cpuid instruction.  ext can
-   be either 0x0 or 0x80000000 to return highest supported value for
-   basic or extended cpuid information.  Function returns 0 if cpuid
-   is not supported or whatever cpuid returns in eax register.  If sig
-   pointer is non-null, then first four bytes of the signature
-   (as found in ebx register) are returned in location pointed by sig.  */
+   /* Return highest supported input value for cpuid instruction.  ext can
+	  be either 0x0 or 0x80000000 to return highest supported value for
+	  basic or extended cpuid information.  Function returns 0 if cpuid
+	  is not supported or whatever cpuid returns in eax register.  If sig
+	  pointer is non-null, then first four bytes of the signature
+	  (as found in ebx register) are returned in location pointed by sig.  */
 
 static __inline unsigned int
 __get_cpuid_max(unsigned int __ext, unsigned int* __sig) {
 	unsigned int __eax, __ebx, __ecx, __edx;
 
 #ifndef __x86_64__
-  /* See if we can use cpuid.  On AMD64 we always can.  */
+	/* See if we can use cpuid.  On AMD64 we always can.  */
 #if __GNUC__ >= 3
 	__asm__("pushf{l|d}\n\t"
 		"pushf{l|d}\n\t"
@@ -290,7 +290,7 @@ __get_cpuid_max(unsigned int __ext, unsigned int* __sig) {
 		return 0;
 #endif
 
-  /* Host supports cpuid.  Return highest supported cpuid input value.  */
+	/* Host supports cpuid.  Return highest supported cpuid input value.  */
 	__cpuid(__ext, __eax, __ebx, __ecx, __edx);
 
 	if (__sig)

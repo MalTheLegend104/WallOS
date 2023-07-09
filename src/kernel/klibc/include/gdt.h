@@ -4,7 +4,7 @@
 #ifdef __cplusplus
 extern "C" {
 #endif
-// Define the GDT entry structure
+	// Define the GDT entry structure
 	typedef struct {
 		uint16_t limit_low;
 		uint16_t base_low;

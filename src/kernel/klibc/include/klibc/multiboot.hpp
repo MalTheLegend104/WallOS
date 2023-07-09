@@ -4,9 +4,9 @@
 #include <multiboot.h>
 #include <stdbool.h>
 
-extern "C"{
+extern "C" {
 	extern struct multiboot_header header_start;
-	
+
 	struct multiboot_info {
 		uint32_t total_size;
 		uint32_t reserved;
@@ -19,7 +19,7 @@ extern "C"{
 /**
  * @brief Manages the multiboot information provided by grub and other Multiboot2 compliant bootloaders.
  */
-class MultibootManager{
+class MultibootManager {
 private:
 	static uint32_t magic;
 	static multiboot_info* mbt_info;
@@ -29,7 +29,7 @@ private:
 	static void loadTags();
 public:
 	static multiboot_tag_mmap* getMMap() { return mmap; }
-	static multiboot_tag_framebuffer* getFramebufferTag(){ return framebuffer_tag; }
+	static multiboot_tag_framebuffer* getFramebufferTag() { return framebuffer_tag; }
 	static void initialize(uint32_t m, multiboot_info* info);
 	static bool validateHeader();
 	static bool validateMagic();

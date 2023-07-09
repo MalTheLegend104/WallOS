@@ -26,7 +26,7 @@
  */
 extern "C" {
 	void kernel_main(unsigned int magic, multiboot_info* mbt_info);
-	void __cxa_pure_virtual() { }; // needed for pure virtual functions
+	void __cxa_pure_virtual() {}; // needed for pure virtual functions
 }
 
 /* This enables floating point operations.
@@ -83,7 +83,7 @@ void kernel_main(unsigned int magic, multiboot_info* mbt_info) {
 
 	// Enable interrupts
 	//gdt_init();
-	//setup_idt();
+	setup_idt();
 
 	// test divide by zero
 
