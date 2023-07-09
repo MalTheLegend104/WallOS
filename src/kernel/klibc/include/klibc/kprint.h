@@ -41,12 +41,12 @@ extern "C" {
 	void print_logo();
 
 	// this is temporarily here
-	inline void outb(uint16_t port, uint8_t val) {
+	static inline void outb(uint16_t port, uint8_t val) {
 		__asm volatile ("outb %0, %1" : : "a"(val), "Nd"(port));
 	}
 
 	//read a value from a port
-	inline uint8_t inb(uint16_t port) {
+	static inline uint8_t inb(uint16_t port) {
 		uint8_t ret;
 		__asm volatile ("inb %1, %0" : "=a"(ret) : "Nd"(port));
 		return ret;

@@ -1,7 +1,7 @@
 MAKEFLAGS = -s
 #default things for all platforms. This includes things like LIBC, the WallOS, and compile flags.
-C_FLAGS 		:= -ffreestanding -std=gnu99 -O2 -g -Wall -Wextra -Wno-format -nostdlib -lgcc -mno-red-zone
-CPP_FLAGS 		:= -ffreestanding -fno-rtti -O2 -g -Wall -Wextra -Wno-format -nostdlib -lgcc -mno-red-zone
+C_FLAGS 		:= -ffreestanding -std=gnu99 -O2 -g -Wall -Wextra -Wno-format -nostdlib -lgcc -mno-red-zone -O0
+CPP_FLAGS 		:= -ffreestanding -fno-rtti -O2 -g -Wall -Wextra -Wno-format -nostdlib -lgcc -mno-red-zone -O0
 NASM_FLAGS 		:= 
 LINKER_FLAGS 	:=
 
