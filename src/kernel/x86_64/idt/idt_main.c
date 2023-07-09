@@ -59,7 +59,12 @@ void invalid_opcode_handler() {
 	__asm volatile("hlt");
 }
 void device_not_available_handler() { panic_s("Device Not Available Exception has occurred."); }
-void double_fault_handler() { panic_s("Double Fault Exception has occurred."); }
+
+void double_fault_handler() {
+	panic_s("Double Fault Exception has occurred.");
+	//return;
+}
+
 void invalid_tss_handler() { panic_s("Invalid TSS Exception has occurred."); }
 void segment_not_present_handler() { panic_s("Segment Not Present Exception has occurred."); }
 void stack_segment_fault_handler() { panic_s("Stack-Segment Fault Exception has occurred."); }

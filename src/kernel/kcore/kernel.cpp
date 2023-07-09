@@ -12,6 +12,7 @@
 #include <multiboot.h>
 #include <klibc/multiboot.hpp>
 #include <idt.h>
+#include <gdt.h>
 
 /* Okay, this is where the fun begins. Literally and figuratively.
  * We mark these extern c because we need to call it from asm,
@@ -36,17 +37,24 @@ extern "C" {
  */
 extern "C" void enable_sse();
 
-void kernel_main(unsigned int magic, multiboot_info* mbt_info) {    
+// static void putpixel(unsigned char* screen, int x, int y, int color, int pixelwidth, int pitch) {
+// 	unsigned where = x * pixelwidth + y * pitch;
+// 	screen[where] = color & 255;              // BLUE
+// 	screen[where + 1] = (color >> 8) & 255;   // GREEN
+// 	screen[where + 2] = (color >> 16) & 255;  // RED
+// }
+
+void kernel_main(unsigned int magic, multiboot_info* mbt_info) {
 	clearVGABuf();
 	set_colors(VGA_COLOR_YELLOW, VGA_COLOR_BLACK);
 	print_logo();
-  
+
 	// Do stuff that needs to be enabled before interrupts here.
 	puts_vga("\n\nIntializing OS.\n");
 
 	puts_vga("\nChecking Multiboot Configuration:\n");
 	MultibootManager::initialize(magic, mbt_info);
-	if (!MultibootManager::validateAll()){
+	if (!MultibootManager::validateAll()) {
 		panic_s("Multiboot is invalid.");
 	}
 
@@ -69,14 +77,17 @@ void kernel_main(unsigned int magic, multiboot_info* mbt_info) {
 		Logger::Checklist::checkEntry("Enabling floating point operations: %s", Features::highestFloat());
 		enable_sse();
 	}
-  
+
+	//multiboot_tag_framebuffer* e = MultibootManager::getFramebufferTag();
+	//putpixel(e->common.framebuffer_addr, 50, 50, 50, e->common.framebuffer_bpp, e->common.framebuffer_pitch);
+
 	// Enable interrupts
-	setup_idt();
+	//gdt_init();
+	//setup_idt();
 
 	// test divide by zero
-	__attribute__((optimize(0))) int result = 10 / 0;
-  
-  // Things that need interrupts here (like keyboard, mouse, etc.)
+
+	// Things that need interrupts here (like keyboard, mouse, etc.)
 	// After we're done checking features, we need to set up our terminal.
 
 }

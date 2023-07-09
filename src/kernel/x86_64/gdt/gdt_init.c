@@ -1,21 +1,5 @@
 #include <stdint.h>
-
-// Define the GDT entry structure
-typedef struct {
-    uint16_t limit_low;
-    uint16_t base_low;
-    uint8_t base_middle;
-    uint8_t access;
-    uint8_t granularity;
-    uint8_t base_high;
-} __attribute__((packed)) gdt_entry_t;
-
-// Define the GDT descriptor structure
-typedef struct {
-    uint16_t limit;
-    uint64_t base;
-} __attribute__((packed)) gdt_descriptor_t;
-
+#include <gdt.h>
 // Define the GDT
 gdt_entry_t gdt[3];
 gdt_descriptor_t gdtr;
@@ -41,7 +25,7 @@ void gdt_entry_init(uint32_t index, uint32_t base, uint32_t limit, uint8_t acces
 extern void gdt_load(uint64_t gdtr_ptr);
 
 // Function to initialize the GDT
-void gdt_init() {
+void gdt_init(void) {
     // Set up null descriptor
     gdt_entry_init(0, 0, 0, 0, 0);
 

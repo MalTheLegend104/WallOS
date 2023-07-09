@@ -20,10 +20,10 @@ if [[ $answer == y* ]]; then
     echo -e "<------------Downloading GCC Binary----------->\n"
 	mkdir ~/src/
 	cd ~/src/
-	#wget -c https://ftp.gnu.org/gnu/gcc/gcc-10.2.0/gcc-10.2.0.tar.gz -O - | tar -xz
+	wget -c https://ftp.gnu.org/gnu/gcc/gcc-10.2.0/gcc-10.2.0.tar.gz -O - | tar -xz
 
     echo -e "<---------Downloading Binutils Binary--------->\n"
-	#wget -c https://ftp.gnu.org/gnu/binutils/binutils-2.34.tar.gz -O - | tar -xz
+	wget -c https://ftp.gnu.org/gnu/binutils/binutils-2.34.tar.gz -O - | tar -xz
 
 	export PREFIX="$HOME/opt/cross"
 	export TARGET=x86_64-elf
