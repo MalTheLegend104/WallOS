@@ -1,24 +1,24 @@
 run_default () {
 	if [[ $(grep -i Microsoft /proc/version) ]]; then
 		echo -e "WSL Detected - Running QEMU for Windows"
-		qemu-system-x86_64.exe -cdrom ../dist/x86_64/WallOS.iso 
+		qemu-system-x86_64.exe -cdrom ../dist/x86_64/WallOS.iso -cpu max
 	else 
-		qemu-system-x86_64 -cdrom ../dist/x86_64/WallOS.iso 
+		qemu-system-x86_64 -cdrom ../dist/x86_64/WallOS.iso -cpu max
 	fi
 }
 
 run_with_debug () {
-	qemu-system-x86_64 -cdrom ../dist/x86_64/WallOS.iso -s -S
+	qemu-system-x86_64 -cdrom ../dist/x86_64/WallOS.iso -s -S -cpu max
 }
 
 run_native () {
 	echo -e "Running native QEMU. This should only have an effect if you are using WSL.\nIf you run into an error, or a window does not open, try running again without --native."
-	qemu-system-x86_64 -cdrom ../dist/x86_64/WallOS.iso
+	qemu-system-x86_64 -cdrom ../dist/x86_64/WallOS.iso -cpu max
 }
 
 run_native_db () {
 	echo -e "Running native QEMU. This should only have an effect if you are using WSL.\nIf you run into an error, or a window does not open, try running again without --native."
-	qemu-system-x86_64 -cdrom ../dist/x86_64/WallOS.iso -s -S
+	qemu-system-x86_64 -cdrom ../dist/x86_64/WallOS.iso -s -S -cpu max
 }
 
 ./build64
