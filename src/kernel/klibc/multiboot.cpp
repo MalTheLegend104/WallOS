@@ -7,7 +7,7 @@ multiboot_info* MultibootManager::mbt_info;
 // See https://www.gnu.org/software/grub/manual/multiboot2/multiboot.html#Memory-map
 multiboot_tag_mmap* MultibootManager::mmap;
 multiboot_tag_framebuffer* MultibootManager::framebuffer_tag;
-
+multiboot_tag_basic_meminfo* MultibootManager::meminfo;
 // See https://www.gnu.org/software/grub/manual/multiboot2/multiboot.html#Boot-information
 void MultibootManager::loadTags(){
 	//  Get the pointer to the first tag
@@ -33,7 +33,8 @@ void MultibootManager::loadTags(){
                 break;
             case MULTIBOOT_TAG_TYPE_BASIC_MEMINFO:
                 puts_vga("    ");
-                Logger::Checklist::blankEntry("BASIC_MEMINFO tag exists.");
+                Logger::Checklist::checkEntry("BASIC_MEMINFO tag exists.");
+                meminfo = (multiboot_tag_basic_meminfo*) tag;
                 break;
             case MULTIBOOT_TAG_TYPE_BOOTDEV:
                 puts_vga("    ");

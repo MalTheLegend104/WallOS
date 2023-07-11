@@ -1,17 +1,8 @@
 #ifndef PAGING_H
 #define PAGING_H
 
-#ifdef __is_kernel_
+typedef struct {
 
-#ifdef __cplusplus
-extern "C" {
-#endif
-    
-    
+} page;
 
-#ifdef __cplusplus
-}
-#endif // __cplusplus
-
-#endif // __is_kernel__
 #endif // PAGING_H

@@ -1,3 +1,4 @@
+#!/bin/bash
 sudo apt update
 sudo apt upgrade -y
 sudo apt install -y build-essential bison flex libgmp3-dev libmpc-dev libmpfr-dev texinfo xorriso grub-pc-bin grub-common nasm qemu qemu-system-x86 patch 

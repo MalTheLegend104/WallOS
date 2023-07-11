@@ -47,6 +47,18 @@ void kernel_main(unsigned int magic, multiboot_info* mbt_info) {
 		panic_s("Multiboot is invalid.");
 	}
 
+    //REMOVE THIS LATER
+
+    multiboot_tag_basic_meminfo meminfo = MultibootManager::getMemInfo()[0];
+    Logger::logf("\n%d | %d | %d | %d", meminfo.type, meminfo.size, meminfo.mem_lower, meminfo.mem_upper);
+
+
+    puts_vga("\nCalculating page table size:");
+    puts_vga("\nUsing multi-level paging:");
+    puts_vga("\nCalculating page size:\n\n");
+
+
+
 	puts_vga("Checking CPU Features:\n");
 	/* Okay imma keep it real C++ hates structs and idk why
 	 * It will NOT let me call cpuFeatures() from the class itself. At all.
