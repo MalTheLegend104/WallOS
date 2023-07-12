@@ -36,7 +36,16 @@ extern "C" void enable_sse();
 /* Help me please
  * send help im going insane
  */
-uint64_t get_total_memory_size(multiboot_tag_mmap* mmap_tag) {
+uint64_t get_memory_size(multiboot_tag_mmap *mmap_tag) {
+    multiboot_memory_map_t *mmap = mmap_tag->entries;
+    uint64_t memory_size = 0;
+
+    while ((uint64_t)mmap < (uint64_t)mmap_tag + mmap_tag->size) {
+        memory_size += mmap->len;
+        mmap = (multiboot_memory_map_t *)((unsigned long)mmap + mmap->len + sizeof(unsigned int));
+    }
+
+    return memory_size;
 }
 
 void kernel_main(unsigned int magic, multiboot_info* mbt_info) {    
@@ -54,13 +63,13 @@ void kernel_main(unsigned int magic, multiboot_info* mbt_info) {
 	}
 
     //REMOVE THIS LATER
-    uint64_t size = get_total_memory_size(MultibootManager::getMMap());
+    uint64_t size = get_memory_size(MultibootManager::getMMap());
     Logger::logf("\n%d big size", size);
 
 
     puts_vga("\nCalculating page table size:");
-    puts_vga("\nUsing multi-level paging:");
-    puts_vga("\nCalculating page size:\n\n");
+    puts_vga("\nPage table amount:");
+    puts_vga("\n");
 
 
 
