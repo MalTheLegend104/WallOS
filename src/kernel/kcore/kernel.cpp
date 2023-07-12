@@ -35,13 +35,23 @@ extern "C" void enable_sse();
 
 /* Help me please
  * send help im going insane
+ * this dont work dont use dont make fun of me im learning the header still
  */
 uint64_t get_memory_size(multiboot_tag_mmap *mmap_tag) {
     multiboot_memory_map_t *mmap = mmap_tag->entries;
     uint64_t memory_size = 0;
 
+    int totalLen = mmap_tag->size / mmap_tag->entry_size;
+
+    printf("%d\n\n", totalLen);
+    /*
+    for(size_t i = 0; i < totalLen; ++i) {
+        memory_size += mmap[i].len;
+    }
+*/
+
     while ((uint64_t)mmap < (uint64_t)mmap_tag + mmap_tag->size) {
-        memory_size += mmap->len;
+        memory_size += mmap_tag->size;
         mmap = (multiboot_memory_map_t *)((unsigned long)mmap + mmap->len + sizeof(unsigned int));
     }
 
@@ -63,13 +73,12 @@ void kernel_main(unsigned int magic, multiboot_info* mbt_info) {
 	}
 
     //REMOVE THIS LATER
-    uint64_t size = get_memory_size(MultibootManager::getMMap());
-    Logger::logf("\n%d big size", size);
-
-
-    puts_vga("\nCalculating page table size:");
-    puts_vga("\nPage table amount:");
-    puts_vga("\n");
+    //uint64_t size = get_memory_size(MultibootManager::getMMap());
+    //no touchy pls
+    //printf("%" PRId64 "\n", size);
+    //puts_vga("\nCalculating page table size:");
+    //puts_vga("\nPage table amount:");
+    //puts_vga("\n");
 
 
 
