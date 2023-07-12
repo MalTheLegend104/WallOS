@@ -33,6 +33,12 @@ extern "C" {
  */
 extern "C" void enable_sse();
 
+/* Help me please
+ * send help im going insane
+ */
+uint64_t get_total_memory_size(multiboot_tag_mmap* mmap_tag) {
+}
+
 void kernel_main(unsigned int magic, multiboot_info* mbt_info) {    
 	clearVGABuf();
 	set_colors(VGA_COLOR_YELLOW, VGA_COLOR_BLACK);
@@ -48,9 +54,8 @@ void kernel_main(unsigned int magic, multiboot_info* mbt_info) {
 	}
 
     //REMOVE THIS LATER
-
-    multiboot_tag_basic_meminfo meminfo = MultibootManager::getMemInfo()[0];
-    Logger::logf("\n%d | %d | %d | %d", meminfo.type, meminfo.size, meminfo.mem_lower, meminfo.mem_upper);
+    uint64_t size = get_total_memory_size(MultibootManager::getMMap());
+    Logger::logf("\n%d big size", size);
 
 
     puts_vga("\nCalculating page table size:");
