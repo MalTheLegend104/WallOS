@@ -113,37 +113,31 @@ int vprintf(const char* format, va_list arg) {
                     break;
                 }
                 case 'd': {
-                    signed int i = va_arg(arg, int);
-                    ret += print_until_null(convert_i(i, 10));
+                    ret += print_until_null(convert_i(va_arg(arg, int), 10));
                     break;
                 }
                 case 'f': {
-                    double f = va_arg(arg, double);
-                    char buf[FLOAT_BUF_SIZE]; //49 cause it makes most sense trust, dont touch
-                    ftoa(f, buf, 10);
+                    char buf[FLOAT_BUF_SIZE];
+                    ftoa(va_arg(arg, double), buf, 10);
                     ret += print_until_null(buf);
                     break;
                 }
                 case 'u':
                 case 'i': {
-                    unsigned int ui = va_arg(arg, unsigned int);
-                    ret += print_until_null(convert_ui(ui, 10));
+                    ret += print_until_null(convert_ui(va_arg(arg, unsigned int), 10));
                     break;
                 }
                 case 'o': {
-                    unsigned int ui = va_arg(arg, unsigned int);
-                    ret += print_until_null(convert_ui(ui, 8));
+                    ret += print_until_null(convert_ui(va_arg(arg, unsigned int), 8));
                     break;
                 }
                 case 's': {
-                    char *s = va_arg(arg, char*);
-                    ret += print_until_null(s);
+                    ret += print_until_null(va_arg(arg, char*));
                     break;
                 }
                 case 'x':
                 case 'X': {
-                    unsigned long ui = va_arg(arg, unsigned long);
-                    ret += print_until_null(convert_ui(ui, 16));
+                    ret += print_until_null(convert_ui(va_arg(arg, unsigned long), 16));
                     break;
                 }
                 case 'n': {
@@ -160,18 +154,15 @@ int vprintf(const char* format, va_list arg) {
                     switch (*traverse) {
                         case 'i':
                         case 'd': {
-                            signed long i = va_arg(arg, long);
-                            ret += print_until_null(convert_i(i, 10));
+                            ret += print_until_null(convert_i(va_arg(arg, long), 10));
                             break;
                         }
                         case 'f': {
-                            long double ld = va_arg(arg, long double);
-                            ret += print_until_null(dtoa(ld, 1, 1, 0, 0, 0));
+                            ret += print_until_null(dtoa(va_arg(arg, long double), 1, 1, 0, 0, 0));
                             break;
                         }
                         case 'u': {
-                            unsigned int ui = va_arg(arg, unsigned int);
-                            ret += print_until_null(convert_ui(ui, 10));
+                            ret += print_until_null(convert_ui(va_arg(arg, unsigned int), 10));
                             break;
                         }
                         case 'l': {
@@ -179,13 +170,11 @@ int vprintf(const char* format, va_list arg) {
                                 switch(*traverse) {
                                     case 'i':
                                     case 'd': {
-                                        long long ll = va_arg(arg, long long);
-                                        ret += print_until_null(convert_ll(ll, 10));
+                                        ret += print_until_null(convert_ll(va_arg(arg, long long), 10));
                                         break;
                                     }
                                     case 'u': {
-                                        unsigned long long ull = va_arg(arg, unsigned long long);
-                                        ret += print_until_null(convert_ull(ull, 10));
+                                        ret += print_until_null(convert_ull(va_arg(arg, unsigned long long), 10));
                                         break;
                                     }
                                     default: break;
@@ -199,8 +188,7 @@ int vprintf(const char* format, va_list arg) {
                 case 'L': {
                     traverse++;
                     if(*traverse == 'f') {
-                        long double ld = va_arg(arg, long double);
-                        ret += print_until_null(dtoa(ld, 1, 1, 0, 0, 0));
+                        ret += print_until_null(dtoa(va_arg(arg, long double), 1, 1, 0, 0, 0));
                     }
                     break;
                 }
