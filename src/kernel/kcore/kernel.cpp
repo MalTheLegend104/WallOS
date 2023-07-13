@@ -35,7 +35,6 @@ extern "C" void enable_sse();
 
 /* Help me please
  * send help im going insane
- * this dont work dont use dont make fun of me im learning the header still
  */
 uint64_t get_memory_size(multiboot_tag_mmap *mmap_tag) {
     multiboot_memory_map_t *mmap = mmap_tag->entries;
@@ -43,16 +42,8 @@ uint64_t get_memory_size(multiboot_tag_mmap *mmap_tag) {
 
     int totalLen = mmap_tag->size / mmap_tag->entry_size;
 
-    printf("%d\n\n", totalLen);
-    /*
-    for(size_t i = 0; i < totalLen; ++i) {
+    for(int i = 0; i < totalLen; ++i) {
         memory_size += mmap[i].len;
-    }
-*/
-
-    while ((uint64_t)mmap < (uint64_t)mmap_tag + mmap_tag->size) {
-        memory_size += mmap_tag->size;
-        mmap = (multiboot_memory_map_t *)((unsigned long)mmap + mmap->len + sizeof(unsigned int));
     }
 
     return memory_size;
@@ -71,16 +62,6 @@ void kernel_main(unsigned int magic, multiboot_info* mbt_info) {
 	if (!MultibootManager::validateAll()){
 		panic_s("Multiboot is invalid.");
 	}
-
-    //REMOVE THIS LATER
-    //uint64_t size = get_memory_size(MultibootManager::getMMap());
-    //no touchy pls
-    //printf("%" PRId64 "\n", size);
-    //puts_vga("\nCalculating page table size:");
-    //puts_vga("\nPage table amount:");
-    //puts_vga("\n");
-
-
 
 	puts_vga("Checking CPU Features:\n");
 	/* Okay imma keep it real C++ hates structs and idk why
@@ -101,6 +82,15 @@ void kernel_main(unsigned int magic, multiboot_info* mbt_info) {
 		Logger::Checklist::checkEntry("Enabling floating point operations: %s", Features::highestFloat());
 		enable_sse();
 	}
+
+    uint64_t mem_amount = get_memory_size(MultibootManager::getMMap());
+    //no touchy pls
+    printf("\nTotal Physical Memory: %llu", mem_amount);
+    printf("\nPage table amount: ");
+    printf("\nPage table size: ");
+    printf("\nPage tables take up x space");
+    puts_vga("\n");
+
 
 	// We should enable stuff before we enable interrupts(unless they require interrupts ofc)
 	// Do stuff that needs to be enabled before interrupts here.
