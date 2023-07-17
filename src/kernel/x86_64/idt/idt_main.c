@@ -1,6 +1,16 @@
 #include <stdint.h>
 #include <stdio.h>
 #include <panic.h>
+#include <klibc/logger.h>
+// I aint touching the interrupt frame on 90% of these
+#pragma GCC diagnostic ignored "-Wunused-parameter" 
+
+#ifdef __x86_64__
+typedef unsigned long long int uword_t;
+#else
+typedef unsigned int uword_t;
+#endif
+
 
 // Define the structure of an IDT entry
 struct idt_entry {
@@ -23,17 +33,27 @@ struct idt_descriptor {
 struct idt_entry idt[256];
 struct idt_descriptor idt_desc;
 
-void general_fault() { panic_s("EA Sports, In the game."); }
+// I stole this from gcc
+struct interrupt_frame {
+	uword_t ip;
+	uword_t cs;
+	uword_t flags;
+	uword_t sp;
+	uword_t ss;
+};
+// __attribute__((interrupt)) forces gcc to mess with regiesters and use iret 
+// it's required for interrupt handlers
+__attribute__((interrupt)) void general_fault(struct interrupt_frame* frame) { panic_s("EA Sports, In the game."); }
 
 // First 32(really it's 22) hardware exceptions.
 // We will properly deal with these later.
-void divide_by_zero_handler() { panic_s("Divide By Zero Exception has occurred."); }
-void debug_handler() { panic_s("Debug Exception has occurred."); }
-void nmi_handler() { panic_s("NMI (Non-Maskable Interrupt) has occurred."); }
-void breakpoint_handler() { panic_s("Breakpoint Exception has occurred."); }
-void overflow_handler() { panic_s("Overflow Exception has occurred."); }
-void bound_range_exceeded_handler() { panic_s("Bound Range Exceeded Exception has occurred."); }
-void invalid_opcode_handler() {
+__attribute__((interrupt)) void divide_by_zero_handler(struct interrupt_frame* frame) { panic_s("Divide By Zero Exception has occurred."); }
+__attribute__((interrupt)) void debug_handler(struct interrupt_frame* frame) { panic_s("Debug Exception has occurred."); }
+__attribute__((interrupt)) void nmi_handler(struct interrupt_frame* frame) { panic_s("NMI (Non-Maskable Interrupt) has occurred."); }
+__attribute__((interrupt)) void breakpoint_handler(struct interrupt_frame* frame) { panic_s("Breakpoint Exception has occurred."); }
+__attribute__((interrupt)) void overflow_handler(struct interrupt_frame* frame) { panic_s("Overflow Exception has occurred."); }
+__attribute__((interrupt)) void bound_range_exceeded_handler(struct interrupt_frame* frame) { panic_s("Bound Range Exceeded Exception has occurred."); }
+__attribute__((interrupt)) void invalid_opcode_handler(struct interrupt_frame* frame) {
 	// // Obtain the opcode information
 	// uint8_t* opcode_address = (uint8_t*) __builtin_return_address(0);
 	// uint8_t invalid_opcode = *opcode_address;
@@ -58,24 +78,24 @@ void invalid_opcode_handler() {
 	// 	savedInstructionPointer, opcode);
 	__asm volatile("hlt");
 }
-void device_not_available_handler() { panic_s("Device Not Available Exception has occurred."); }
+__attribute__((interrupt)) void device_not_available_handler(struct interrupt_frame* frame) { panic_s("Device Not Available Exception has occurred."); }
 
-void double_fault_handler() {
+__attribute__((interrupt)) void double_fault_handler(struct interrupt_frame* frame) {
 	panic_s("Double Fault Exception has occurred.");
 	//return;
 }
 
-void invalid_tss_handler() { panic_s("Invalid TSS Exception has occurred."); }
-void segment_not_present_handler() { panic_s("Segment Not Present Exception has occurred."); }
-void stack_segment_fault_handler() { panic_s("Stack-Segment Fault Exception has occurred."); }
-void general_protection_fault_handler() { panic_s("General Protection Fault Exception has occurred."); }
-void page_fault_handler() { panic_s("Page Fault has occurred."); }
-void x87_fpu_floating_point_error_handler() { panic_s("x87 FPU Floating-Point Error Exception has occurred."); }
-void alignment_check_handler() { panic_s("Alignment Check Exception has occurred."); }
-void machine_check_handler() { panic_s("Machine Check Exception has occurred."); }
-void simd_floating_point_exception_handler() { panic_s("SIMD Floating-Point Exception has occurred."); }
-void virtualization_exception_handler() { panic_s("Virtualization Exception has occurred."); }
-void control_protection_exception_handler() { panic_s("Control Protection Exception has occurred."); }
+__attribute__((interrupt)) void invalid_tss_handler(struct interrupt_frame* frame) { panic_s("Invalid TSS Exception has occurred."); }
+__attribute__((interrupt)) void segment_not_present_handler(struct interrupt_frame* frame) { panic_s("Segment Not Present Exception has occurred."); }
+__attribute__((interrupt)) void stack_segment_fault_handler(struct interrupt_frame* frame) { panic_s("Stack-Segment Fault Exception has occurred."); }
+__attribute__((interrupt)) void general_protection_fault_handler(struct interrupt_frame* frame) { panic_s("General Protection Fault Exception has occurred."); }
+__attribute__((interrupt)) void page_fault_handler(struct interrupt_frame* frame) { panic_s("Page Fault has occurred."); }
+__attribute__((interrupt)) void x87_fpu_floating_point_error_handler(struct interrupt_frame* frame) { panic_s("x87 FPU Floating-Point Error Exception has occurred."); }
+__attribute__((interrupt)) void alignment_check_handler(struct interrupt_frame* frame) { panic_s("Alignment Check Exception has occurred."); }
+__attribute__((interrupt)) void machine_check_handler(struct interrupt_frame* frame) { panic_s("Machine Check Exception has occurred."); }
+__attribute__((interrupt)) void simd_floating_point_exception_handler(struct interrupt_frame* frame) { panic_s("SIMD Floating-Point Exception has occurred."); }
+__attribute__((interrupt)) void virtualization_exception_handler(struct interrupt_frame* frame) { panic_s("Virtualization Exception has occurred."); }
+__attribute__((interrupt)) void control_protection_exception_handler(struct interrupt_frame* frame) { panic_s("Control Protection Exception has occurred."); }
 
 void set_idt_entry(struct idt_entry* entry, void (*handler)(), uint8_t ist, uint8_t type_attr) {
 	uint64_t handler_addr = (uint64_t) handler;
@@ -89,6 +109,10 @@ void set_idt_entry(struct idt_entry* entry, void (*handler)(), uint8_t ist, uint
 }
 
 extern void idt_load(struct idt_descriptor* idt_desc);
+
+__attribute__((interrupt)) void test_sys_handler(struct interrupt_frame* frame) {
+	logger(WARN, "System Interrupt 80 Called.");
+}
 
 void setup_idt() {
 	// Create IDT entries for the first 32 interrupts
@@ -118,6 +142,8 @@ void setup_idt() {
 	for (int i = 22; i < 32; i++) {
 		set_idt_entry(&idt[i], general_fault, 0, 0x8E);
 	}
+
+	set_idt_entry(&idt[80], test_sys_handler, 0, 0x8E);
 
 	// Set up the IDT descriptor
 	idt_desc.limit = sizeof(idt) - 1;

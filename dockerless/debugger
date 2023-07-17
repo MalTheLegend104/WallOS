@@ -1,0 +1,1 @@
+gdb -x src/gdb.gdbinit --symbols=../dist/x86_64/WallOS.sym

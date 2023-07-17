@@ -27,7 +27,7 @@
  */
 extern "C" {
 	void kernel_main(unsigned int magic, multiboot_info* mbt_info);
-	void __cxa_pure_virtual() {}; // needed for pure virtual functions
+	void __cxa_pure_virtual() { }; // needed for pure virtual functions
 }
 
 /* This enables floating point operations.
@@ -37,8 +37,8 @@ extern "C" {
  * It works. We dont need those fancy new features from SSE3+.
  */
 extern "C" void enable_sse();
-extern "C" void test_int80();
-// static void putpixel(unsigned char* screen, int x, int y, int color, int pixelwidth, int pitch) {
+
+// static void putpixel(uintptr_t* screen, int x, int y, int color, int pixelwidth, int pitch) {
 // 	unsigned where = x * pixelwidth + y * pitch;
 // 	screen[where] = color & 255;              // BLUE
 // 	screen[where + 1] = (color >> 8) & 255;   // GREEN
@@ -79,13 +79,12 @@ void kernel_main(unsigned int magic, multiboot_info* mbt_info) {
 		enable_sse();
 	}
 
-	//multiboot_tag_framebuffer* e = MultibootManager::getFramebufferTag();
-	//putpixel(e->common.framebuffer_addr, 50, 50, 50, e->common.framebuffer_bpp, e->common.framebuffer_pitch);
+
 	// Enable interrupts
-	//gdt_init();
 	setup_idt();
-	// test divide by zero
-	//test_int80();
+
+	// multiboot_tag_framebuffer* e = MultibootManager::getFramebufferTag();
+	// putpixel((uintptr_t*) e->common.framebuffer_addr, 50, 50, 255, e->common.framebuffer_bpp, e->common.framebuffer_pitch);
 
 	// Things that need interrupts here (like keyboard, mouse, etc.)
 	// After we're done checking features, we need to set up our terminal.
