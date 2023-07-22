@@ -8,6 +8,11 @@ multiboot_info* MultibootManager::mbt_info;
 multiboot_tag_mmap* MultibootManager::mmap;
 multiboot_tag_framebuffer* MultibootManager::framebuffer_tag;
 
+void logExists(const char* string) {
+	puts_vga("    ");
+	Logger::Checklist::blankEntry("%s tag exists.", string);
+}
+
 // See https://www.gnu.org/software/grub/manual/multiboot2/multiboot.html#Boot-information
 void MultibootManager::loadTags() {
 	//  Get the pointer to the first tag
@@ -20,24 +25,19 @@ void MultibootManager::loadTags() {
 			case MULTIBOOT_TAG_TYPE_END:
 				return;
 			case MULTIBOOT_TAG_TYPE_CMDLINE:
-				puts_vga("    ");
-				Logger::Checklist::blankEntry("CMDLINE tag exists.");
+				logExists("CMDLINE");
 				break;
 			case MULTIBOOT_TAG_TYPE_BOOT_LOADER_NAME:
-				puts_vga("    ");
-				Logger::Checklist::blankEntry("BOOT_LOADER_NAME tag exists.");
+				logExists("BOOT_LOADER_NAME");
 				break;
 			case MULTIBOOT_TAG_TYPE_MODULE:
-				puts_vga("    ");
-				Logger::Checklist::blankEntry("MODULE tag exists.");
+				logExists("MODULE");
 				break;
 			case MULTIBOOT_TAG_TYPE_BASIC_MEMINFO:
-				puts_vga("    ");
-				Logger::Checklist::blankEntry("BASIC_MEMINFO tag exists.");
+				logExists("BASIC_MEMINFO");
 				break;
 			case MULTIBOOT_TAG_TYPE_BOOTDEV:
-				puts_vga("    ");
-				Logger::Checklist::blankEntry("BOOTDEV tag exists.");
+				logExists("BOOTDEV");
 				break;
 			case MULTIBOOT_TAG_TYPE_MMAP:
 				puts_vga("    ");
@@ -45,65 +45,50 @@ void MultibootManager::loadTags() {
 				mmap = (multiboot_tag_mmap*) tag;
 				break;
 			case MULTIBOOT_TAG_TYPE_VBE:
-				puts_vga("    ");
-				Logger::Checklist::blankEntry("VBE tag exists.");
+				logExists("VBE");
 				break;
 			case MULTIBOOT_TAG_TYPE_FRAMEBUFFER:
-				puts_vga("    ");
-				Logger::Checklist::blankEntry("FRAMEBUFFER tag exists.");
+				logExists("FRAMEBUFFER");
 				framebuffer_tag = (multiboot_tag_framebuffer*) tag;
 				break;
 			case MULTIBOOT_TAG_TYPE_ELF_SECTIONS:
-				puts_vga("    ");
-				Logger::Checklist::blankEntry("ELF_SECTIONS tag exists.");
+				logExists("ELF_SECTIONS");
 				break;
 			case MULTIBOOT_TAG_TYPE_APM:
-				puts_vga("    ");
-				Logger::Checklist::blankEntry("APM tag exists.");
+				logExists("APM");
 				break;
 			case MULTIBOOT_TAG_TYPE_EFI32:
-				puts_vga("    ");
-				Logger::Checklist::blankEntry("EFI32 tag exists.");
+				logExists("EFI32");
 				break;
 			case MULTIBOOT_TAG_TYPE_EFI64:
-				puts_vga("    ");
-				Logger::Checklist::blankEntry("EFI64 tag exists.");
+				logExists("EFI64");
 				break;
 			case MULTIBOOT_TAG_TYPE_SMBIOS:
-				puts_vga("    ");
-				Logger::Checklist::blankEntry("SMBIOS tag exists.");
+				logExists("SMBIOS");
 				break;
 			case MULTIBOOT_TAG_TYPE_ACPI_OLD:
-				puts_vga("    ");
-				Logger::Checklist::blankEntry("ACPI_OLD tag exists.");
+				logExists("ACPI_OLD");
 				break;
 			case MULTIBOOT_TAG_TYPE_ACPI_NEW:
-				puts_vga("    ");
-				Logger::Checklist::blankEntry("ACPI_NEW tag exists.");
+				logExists("ACPI_NEW");
 				break;
 			case MULTIBOOT_TAG_TYPE_NETWORK:
-				puts_vga("    ");
-				Logger::Checklist::blankEntry("NETWORK tag exists.");
+				logExists("NETWORK");
 				break;
 			case MULTIBOOT_TAG_TYPE_EFI_MMAP:
-				puts_vga("    ");
-				Logger::Checklist::blankEntry("EFI_MMAP tag exists.");
+				logExists("EFI_MMAP");
 				break;
 			case MULTIBOOT_TAG_TYPE_EFI_BS:
-				puts_vga("    ");
-				Logger::Checklist::blankEntry("EFI_BS tag exists.");
+				logExists("EFI_BS");
 				break;
 			case MULTIBOOT_TAG_TYPE_EFI32_IH:
-				puts_vga("    ");
-				Logger::Checklist::blankEntry("EFI32_IH tag exists.");
+				logExists("EFI32_IH");
 				break;
 			case MULTIBOOT_TAG_TYPE_EFI64_IH:
-				puts_vga("    ");
-				Logger::Checklist::blankEntry("EFI64_IH tag exists.");
+				logExists("EFI64_IH");
 				break;
 			case MULTIBOOT_TAG_TYPE_LOAD_BASE_ADDR:
-				puts_vga("    ");
-				Logger::Checklist::blankEntry("LOAD_BASE_ADDR tag exists.");
+				logExists("LOAD_BASE_ADDR");
 				break;
 			default:
 				// Ignore unrecognized tag types
@@ -139,9 +124,11 @@ bool MultibootManager::validateHeader() {
 	//verify the multiboot
 	uint32_t checkheader = header->architecture + header->header_length + header->magic + header->checksum;
 	if (checkheader == 0) {
+		puts_vga("    ");
 		Logger::Checklist::checkEntry("Header is valid: %d", checkheader);
 		return true;
 	} else {
+		puts_vga("    ");
 		Logger::Checklist::noCheckEntry("Header is NOT valid: %d", checkheader);
 		return false;
 	}
@@ -155,9 +142,11 @@ bool MultibootManager::validateHeader() {
  */
 bool MultibootManager::validateMagic() {
 	if (magic == 0x36d76289) {
+		puts_vga("    ");
 		Logger::Checklist::checkEntry("Magic number is valid: %d", magic);
 		return true;
 	} else {
+		puts_vga("    ");
 		Logger::Checklist::noCheckEntry("Magic number is NOT valid: %d", magic);
 		return false;
 	}
@@ -172,9 +161,11 @@ bool MultibootManager::validateMagic() {
  */
 bool MultibootManager::validateInfo() {
 	if (mbt_info != NULL) {
+		puts_vga("    ");
 		Logger::Checklist::checkEntry("Multiboot info exists: %d", mbt_info);
 		return true;
 	} else {
+		puts_vga("    ");
 		Logger::Checklist::noCheckEntry("Multiboot info is NULL");
 		return false;
 	}
@@ -191,7 +182,7 @@ bool MultibootManager::validateAll() {
 	if (!validateMagic()) return false;
 	if (!validateInfo()) return false;
 	puts_vga("\n");
-	puts_vga("Checking multiboot_info:\n");
+	puts_vga_color("Checking multiboot_info:\n", VGA_COLOR_PURPLE, VGA_COLOR_BLACK);
 	loadTags();
 	return true;
 }

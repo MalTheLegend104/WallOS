@@ -1,12 +1,16 @@
 bits 64
 
 section .text
+global enablePS2
+global irq_enable
 global idt_load
+global disablePIC
+global enableAPIC
 
-idt_load:
-	; We disable the 8359 PIC, otherwise it will send unwanted IRQs
-	; We also need to do this so we can set up the APIC, so we kill two birds with one stone
-	.setupPIC:
+; We disable the 8359 PIC, otherwise it will send unwanted IRQs
+; We also need to do this so we can set up the APIC, so we kill two birds with one stone
+
+disablePIC:
 		; (ICW = initialization command word)
 		; Initialize the master PIC.
 		mov     al,     0x11        ; ICW1: 0x11 = init with 4 ICW's
@@ -34,9 +38,108 @@ idt_load:
 		out     0x21,   al
 		out     0xa1,   al
 
-	; Now we actually get to load the idt
-	.load_idt:
-		cli ; clears the interrupts, kinda unecessary but whatever
-		lidt [rdi]
-		sti
 		ret
+
+; Currently the APIC hates me and I want keyboard support
+; we are going to re-enable some things in the PIC
+irq_enable:
+    ; Move IRQ into cl.
+    mov     rcx,    rdi
+    ; Determine which PIC to update (<8 = master, else slave).
+    cmp     cl,     8
+    jae     .slave
+    .master:
+        ; Compute the mask ~(1 << IRQ).
+        mov     edx,    1
+        shl     edx,    cl
+        not     edx
+        ; Read the current mask.
+        in      al,     0x21
+        ; Clear the IRQ bit and update the mask.
+        and     al,     dl
+        out     0x21,   al
+        ret
+    .slave:
+        ; Recursively enable master IRQ2, or else slave IRQs will not work.
+        mov     rdi,    2
+        call    irq_enable
+        ; Subtract 8 from the IRQ.
+        sub     cl,     8
+        ; Compute the mask ~(1 << IRQ).
+        mov     edx,    1
+        shl     edx,    cl
+        not     edx
+        ; Read the current mask.
+        in      al,     0xa1
+        ; Clear the IRQ bit and update the mask.
+        and     al,     dl
+        out     0xa1,   al
+        ret
+
+; Disable IRQs if I ever get to the APIC
+irq_disable:
+    ; Move IRQ into cl.
+    mov     rcx,    rdi
+    ; Determine which PIC to update (<8 = master, else slave).
+    cmp     cl,     8
+    jae     .slave
+    .master:
+        ; Compute the mask (1 << IRQ).
+        mov     edx,    1
+        shl     edx,    cl
+        ; Read the current mask.
+        in      al,     0x21
+        ; Set the IRQ bit and update the mask.
+        or      al,     dl
+        out     0x21,   al
+        ret
+
+    .slave:
+        ; Subtract 8 from the IRQ.
+        sub     cl,     8
+        ; Compute the mask (1 << IRQ).
+        mov     edx,    1
+        shl     edx,    cl
+        ; Read the current mask.
+        in      al,     0xa1
+        ; Set the IRQ bit and update the mask.
+        or      al,     dl
+        out     0xa1,   al
+        ret
+
+; This is broken
+enableAPIC:
+	; Set the APIC enable bit (bit 11) in the IA32_APIC_BASE MSR
+	rdmsr                      ; Read the IA32_APIC_BASE MSR into EDX:EAX.
+	or     eax, (1 << 11)      ; Set bit 11 to enable the APIC.
+	wrmsr                      ; Write the modified value back to IA32_APIC_BASE MSR.
+
+	; Enable the x2APIC by setting the x2APIC_ENABLE bit (bit 10) in IA32_APIC_BASE MSR.
+	rdmsr                      ; Read the IA32_APIC_BASE MSR into EDX:EAX.
+	or     eax, (1 << 10)      ; Set bit 10 to enable x2APIC.
+	wrmsr                      ; Write the modified value back to IA32_APIC_BASE MSR.
+
+	mov     ecx, 0x21         ; The interrupt vector (ISR 0x21) we want to map the keyboard to.
+	mov     eax, 1 << 16      ; Set the Delivery Mode to "Fixed" (bits 8-10 = 0b000) and
+	or      eax, 1 << 11      ; Set the Destination Mode to "Physical" (bit 11 = 1).
+	mov     edx, 1 << 24      ; Set bit 24 to enable the interrupt (IA32_APIC_LVT_MASK).
+	wrmsr
+
+enablePS2:
+	ret
+
+global reEnableIRQ1
+reEnableIRQ1:
+    ; Call irq_enable with argument 1 to enable IRQ1
+    mov     rdi,    1
+    call    irq_enable
+    ; Map IRQ1 to interrupt vector 0x21 (interrupt offset 33).
+    mov     al,     0x21        ; ICW2: 0x21 = interrupt offset 33
+    out     0xA1,   al 			; IRQ 1 is handled by the slave pic
+    ret
+
+idt_load:
+	cli ; clears the interrupts, kinda unecessary but whatever
+	lidt [rdi]
+	sti
+	ret

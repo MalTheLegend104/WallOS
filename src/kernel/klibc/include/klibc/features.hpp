@@ -18,6 +18,9 @@ public:
 	static void checkFeatures(struct cpu_features* f);
 	static const char* highestFloat();
 	static bool getAPIC();
+
+	static void enableSSE();
+	static bool setupAPIC();
 };
 
 #endif // FEATURES_HPP

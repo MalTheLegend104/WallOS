@@ -54,6 +54,14 @@ void set_colors(char text, char back) {
 	background = back;
 }
 
+
+void set_colors_default() {
+	last_text = text_colors;
+	last_bg = background;
+	text_colors = VGA_DEFAULT_FG;
+	background = VGA_DEFAULT_BG;
+}
+
 void set_to_last() {
 	text_colors = last_text;
 	background = last_bg;
@@ -90,9 +98,63 @@ void scroll_screen() {
 	memsetw(screen_buffer + (vga_width * vga_height), c, vga_width);
 }
 
-// prints a single char to the screen, and keeps track of when
-// there needs to be a carrage return
+/**
+ * @brief Unfiltered putc. This is so we have access to certain characters,
+ * like the circle from 0x09 and the smily from 0x01. These would be
+ * filtered out of the normal putc. (They're control characters.)
+ * https://theasciicode.com.ar/ascii-control-characters/start-of-header-ascii-code-1.html
+ * @param c Character to print.
+ */
+void putc_vga_unfiltered(const unsigned char c) {
+	if ((cursor_col > vga_width - 1) || (c == '\n')) {
+		if (cursor_row >= vga_height - 1) {
+			scroll_screen();
+		} else {
+			cursor_row++;
+		}
+
+		cursor_col = 0;
+		place_char_at_location(c, cursor_row, cursor_col);
+	} else if (cursor_row > vga_height - 1) {
+		scroll_screen();
+		place_char_at_location(c, cursor_row, cursor_col);
+	} else {
+		place_char_at_location(c, cursor_row, cursor_col);
+	}
+
+	cursor_col++;
+	update_cursor(cursor_row, cursor_col);
+}
+
+/**
+ * @brief Normal plain ole putc. Handles backspace & other control
+ * characters. Keeps track of carrige returns and scrolling the screen.
+ *
+ * @param c Character to printed.
+ */
 void putc_vga(const unsigned char c) {
+	// If char is null terminator, we just return.
+	if (c == '\0') return;
+
+	// Backspace
+	// We will return from here so the rest of the function is left alone.
+	if (c == '\b') {
+		if (cursor_col == 0) {
+			// Beginning of next row, we have to back to the last row.
+			cursor_col = vga_width - 1;
+			cursor_row -= 1;
+			place_char_at_location(' ', cursor_row, cursor_col);
+		} else {
+			// Same row
+			cursor_col--;
+			place_char_at_location(' ', cursor_row, cursor_col);
+		}
+
+		update_cursor(cursor_row, cursor_col);
+		return;
+	}
+
+	// Everything else
 	if ((cursor_col > vga_width - 1) || (c == '\n')) {
 		if (cursor_row >= vga_height - 1) {
 			scroll_screen();
@@ -105,18 +167,19 @@ void putc_vga(const unsigned char c) {
 			// Text wrap
 			cursor_col = 1;
 			place_char_at_location(c, cursor_row, cursor_col);
-		} else if (c == '\t') {
-			place_char_at_location(' ', cursor_row, cursor_col);
-			place_char_at_location(' ', cursor_row, cursor_col);
-			place_char_at_location(' ', cursor_row, cursor_col);
-			place_char_at_location(' ', cursor_row, cursor_col);
 		}
 	} else if (cursor_row > vga_height - 1) {
 		scroll_screen();
 		place_char_at_location(c, cursor_row, cursor_col);
+	} else if (c == '\t') {
+		// This is cursed. This gives tab 4 spaces. IDK, dont ask.
+		putc_vga(' ');
+		putc_vga(' ');
+		putc_vga(' ');
 	} else {
 		place_char_at_location(c, cursor_row, cursor_col);
 	}
+
 	cursor_col++;
 	update_cursor(cursor_row, cursor_col);
 }
@@ -222,6 +285,12 @@ void pink_screen(const char* error) {
 		cursor_row++;
 		cursor_col = 0;
 	}
+}
+
+void puts_vga_color(const char* string, uint8_t fg, uint8_t bg) {
+	set_colors(fg, bg);
+	puts_vga(string);
+	set_to_last();
 }
 
 /**

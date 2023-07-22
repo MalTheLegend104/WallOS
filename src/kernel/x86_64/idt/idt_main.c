@@ -2,15 +2,11 @@
 #include <stdio.h>
 #include <panic.h>
 #include <klibc/logger.h>
-// I aint touching the interrupt frame on 90% of these
+#include <idt.h>
+#include <stdbool.h>
+#include <drivers/keyboard.h>
+// I aint touching the interrupt frame on 99% of these but it's required by gcc.
 #pragma GCC diagnostic ignored "-Wunused-parameter" 
-
-#ifdef __x86_64__
-typedef unsigned long long int uword_t;
-#else
-typedef unsigned int uword_t;
-#endif
-
 
 // Define the structure of an IDT entry
 struct idt_entry {
@@ -33,14 +29,6 @@ struct idt_descriptor {
 struct idt_entry idt[256];
 struct idt_descriptor idt_desc;
 
-// I stole this from gcc
-struct interrupt_frame {
-	uword_t ip;
-	uword_t cs;
-	uword_t flags;
-	uword_t sp;
-	uword_t ss;
-};
 // __attribute__((interrupt)) forces gcc to mess with regiesters and use iret 
 // it's required for interrupt handlers
 __attribute__((interrupt)) void general_fault(struct interrupt_frame* frame) { panic_s("EA Sports, In the game."); }
@@ -53,38 +41,9 @@ __attribute__((interrupt)) void nmi_handler(struct interrupt_frame* frame) { pan
 __attribute__((interrupt)) void breakpoint_handler(struct interrupt_frame* frame) { panic_s("Breakpoint Exception has occurred."); }
 __attribute__((interrupt)) void overflow_handler(struct interrupt_frame* frame) { panic_s("Overflow Exception has occurred."); }
 __attribute__((interrupt)) void bound_range_exceeded_handler(struct interrupt_frame* frame) { panic_s("Bound Range Exceeded Exception has occurred."); }
-__attribute__((interrupt)) void invalid_opcode_handler(struct interrupt_frame* frame) {
-	// // Obtain the opcode information
-	// uint8_t* opcode_address = (uint8_t*) __builtin_return_address(0);
-	// uint8_t invalid_opcode = *opcode_address;
-
-	// // Perform any necessary actions or error handling specific to the invalid opcode exception
-
-	// printf("Invalid Opcode Exception has occurred. Opcode: %d\n", invalid_opcode);
-	// unsigned char opcode;
-	// unsigned long long savedInstructionPointer;
-
-	// // Retrieve the saved instruction pointer and opcode
-	// __asm volatile(
-	// "call 1f\n\t"  // Call forward to get the return address
-	// 	"1: pop %0\n\t"  // Pop the return address into savedInstructionPointer
-	// 	"movb (%%rip), %1"
-	// 	: "=r" (savedInstructionPointer), "=q" (opcode)
-	// 	:
-	// 	: "memory"
-	// 	);
-
-	// printf("Caught #UD exception. Instruction Pointer: 0x%x, Opcode: 0x%x\n",
-	// 	savedInstructionPointer, opcode);
-	__asm volatile("hlt");
-}
+__attribute__((interrupt)) void invalid_opcode_handler(struct interrupt_frame* frame) { panic_s("Invalid Opcode Exception has occurred."); }
 __attribute__((interrupt)) void device_not_available_handler(struct interrupt_frame* frame) { panic_s("Device Not Available Exception has occurred."); }
-
-__attribute__((interrupt)) void double_fault_handler(struct interrupt_frame* frame) {
-	panic_s("Double Fault Exception has occurred.");
-	//return;
-}
-
+__attribute__((interrupt)) void double_fault_handler(struct interrupt_frame* frame) { panic_s("Double Fault Exception has occurred."); }
 __attribute__((interrupt)) void invalid_tss_handler(struct interrupt_frame* frame) { panic_s("Invalid TSS Exception has occurred."); }
 __attribute__((interrupt)) void segment_not_present_handler(struct interrupt_frame* frame) { panic_s("Segment Not Present Exception has occurred."); }
 __attribute__((interrupt)) void stack_segment_fault_handler(struct interrupt_frame* frame) { panic_s("Stack-Segment Fault Exception has occurred."); }
@@ -97,7 +56,18 @@ __attribute__((interrupt)) void simd_floating_point_exception_handler(struct int
 __attribute__((interrupt)) void virtualization_exception_handler(struct interrupt_frame* frame) { panic_s("Virtualization Exception has occurred."); }
 __attribute__((interrupt)) void control_protection_exception_handler(struct interrupt_frame* frame) { panic_s("Control Protection Exception has occurred."); }
 
-void set_idt_entry(struct idt_entry* entry, void (*handler)(), uint8_t ist, uint8_t type_attr) {
+// System interrupt 80
+__attribute__((interrupt)) void test_sys_handler(struct interrupt_frame* frame) {
+	logger(WARN, "System Interrupt 80 Called.\n");
+}
+
+// Keyboard Handler.
+__attribute__((interrupt)) void keyboard_handler(struct interrupt_frame* frame) {
+	handle_scancode(inb(0x60));
+	outb(0x20, 0x20);
+}
+
+void set_idt_entry(struct idt_entry* entry, void (*handler)(struct interrupt_frame*), uint8_t ist, uint8_t type_attr) {
 	uint64_t handler_addr = (uint64_t) handler;
 	entry->offset_low = (uint16_t) (handler_addr & 0xFFFF);
 	entry->selector = 0x08; // Code segment selector
@@ -109,9 +79,29 @@ void set_idt_entry(struct idt_entry* entry, void (*handler)(), uint8_t ist, uint
 }
 
 extern void idt_load(struct idt_descriptor* idt_desc);
+extern void disablePIC();
+extern void enableAPIC();
+extern void enablePS2();
+extern void reEnableIRQ1();
 
-__attribute__((interrupt)) void test_sys_handler(struct interrupt_frame* frame) {
-	logger(WARN, "System Interrupt 80 Called.");
+/**
+ * @brief Add an interrupt handler to the IDT. You *must* compile the handler with "-mgeneral-regs-only".
+ * Use __attribute__((interrupt)) and __attribute__ ((__target__ ("general-regs-only"))) on the function to ensure proper compilation.
+ *
+ * For proper format for interrupt & exception handlers, see:
+ * https://gcc.gnu.org/onlinedocs/gcc/x86-Function-Attributes.html#index-interrupt-function-attribute_002c-x86
+ *
+ * @param entry Entry number for the IDT. Corresponds to interrupt number (`int 80` calls idt entry 80)
+ * @param handler Pointer to the interrupt handler.
+ * @param ist Interrupt Stack Table (see chapter 8.9.4 in AMD Manual 2).
+ * @param type_attr Type attributes. This includes P, DPL, and Gate type. (see https://wiki.osdev.org/IDT#Gate_Descriptor_2).
+ * @return true If successfuly added.
+ * @return false If trying to override hardware interrupts.
+ */
+bool add_interrupt_handler(uint8_t entry, void (*handler)(struct interrupt_frame*), uint8_t ist, uint8_t type_attr) {
+	if (entry <= 32) return false;
+	set_idt_entry(&idt[entry], handler, ist, type_attr);
+	return true;
 }
 
 void setup_idt() {
@@ -139,15 +129,20 @@ void setup_idt() {
 	set_idt_entry(&idt[21], control_protection_exception_handler, 0, 0x8E);
 
 	// ... Set IDT entries for other interrupts ...
-	for (int i = 22; i < 32; i++) {
+	for (int i = 22; i < 256; i++) {
 		set_idt_entry(&idt[i], general_fault, 0, 0x8E);
 	}
-
 	set_idt_entry(&idt[80], test_sys_handler, 0, 0x8E);
 
 	// Set up the IDT descriptor
 	idt_desc.limit = sizeof(idt) - 1;
 	idt_desc.base = (uint64_t) &idt[0];
+
+	// We need to disable the PIC
+	disablePIC();
+	//enableAPIC();
+	//enablePS2();
+	//reEnableIRQ1();
 
 	// Call the external assembly function to load the IDT
 	idt_load(&idt_desc);

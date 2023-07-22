@@ -15,6 +15,8 @@ extern "C" {
 	void* memset(void*, int, size_t);
 	void* memset32(void*, uint32_t, size_t);
 	void memsetw(void* dest, unsigned short val, int count);
+	char* strcat_c(char* string, char c, size_t size);
+	int strcmp(const char* str1, const char* str2);
 #ifdef __cplusplus
 }
 #endif

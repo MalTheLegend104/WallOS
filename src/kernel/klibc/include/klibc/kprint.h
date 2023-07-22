@@ -30,15 +30,20 @@ extern "C" {
 		VGA_COLOR_PINK = 13,
 		VGA_COLOR_YELLOW = 14,
 		VGA_COLOR_WHITE = 15,
+		VGA_DEFAULT_FG = 7,
+		VGA_DEFAULT_BG = 0
 	};
 
 	void clearVGABuf();
 	void set_colors(char text, char back);
+	void set_colors_default();
 	void set_to_last();
 	void putc_vga(const unsigned char c);
+	void putc_vga_unfiltered(const unsigned char c);
 	void puts_vga(const char* buf);
 	void putuc_vga(const uint8_t* buf, size_t size);
 	void print_logo();
+	void puts_vga_color(const char* string, uint8_t fg, uint8_t bg);
 
 	// this is temporarily here
 	static inline void outb(uint16_t port, uint8_t val) {

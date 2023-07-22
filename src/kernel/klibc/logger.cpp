@@ -150,7 +150,7 @@ void Logger::Checklist::v_noCheckEntry(const char* format, va_list args) {
 }
 
 // ------------------------------------------------------------------------------------------------
-// C Wrapper Functions
+// C Wrapper 
 // ------------------------------------------------------------------------------------------------
 
 void logger(LogType type, const char* format, ...) {
