@@ -8,10 +8,10 @@ This is an ***complete*** list of supported commands in the command handler. The
 
 * Clear
 * Test (dont expect much from this)
-* 
+* Help (fully featured too!)
 
 ## To be added
 
 There's two categories here, ordered and unordered. Ordered are the most important ones, and unordered come after everything on the ordered list.
 
-1. help
+1. honestly idk what we really need
