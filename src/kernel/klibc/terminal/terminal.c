@@ -242,32 +242,32 @@ void printGeneralHelp(HelpEntryGeneral* entry) {
 	set_to_last();
 
 	// Commands
-	set_colors(VGA_COLOR_YELLOW, VGA_DEFAULT_BG);
-	printf("\nCommands:\n");
-	set_to_last();
-
-	set_colors(VGA_COLOR_GREEN, VGA_DEFAULT_BG);
 	if (entry->commands_count > 0) {
+		set_colors(VGA_COLOR_YELLOW, VGA_DEFAULT_BG);
+		printf("\nCommands:\n");
+		set_to_last();
+
+		set_colors(VGA_COLOR_GREEN, VGA_DEFAULT_BG);
 		for (int i = 0; i < entry->commands_count; i++) {
 			if (entry->commands[i])
 				printf("  %s\n", entry->commands[i]);
 		}
+		set_to_last();
 	}
-	set_to_last();
 
 	// Aliases
-	set_colors(VGA_COLOR_YELLOW, VGA_DEFAULT_BG);
-	printf("\nAliases:\n");
-	set_to_last();
-
-	set_colors(VGA_COLOR_GREEN, VGA_DEFAULT_BG);
 	if (entry->aliases_count > 0) {
+		set_colors(VGA_COLOR_YELLOW, VGA_DEFAULT_BG);
+		printf("\nAliases:\n");
+		set_to_last();
+
+		set_colors(VGA_COLOR_GREEN, VGA_DEFAULT_BG);
 		for (int i = 0; i < entry->aliases_count; i++) {
 			if (entry->aliases[i])
 				printf("  %s\n", entry->aliases[i]);
 		}
+		set_to_last();
 	}
-	set_to_last();
 	printf("\n");
 }
 
@@ -290,31 +290,31 @@ void printSpecificHelp(HelpEntry* entry) {
 	set_to_last();
 
 	// Commands
-	set_colors(VGA_COLOR_YELLOW, VGA_DEFAULT_BG);
-	printf("Commands:\n");
-	set_to_last();
-
-	set_colors(VGA_COLOR_GREEN, VGA_DEFAULT_BG);
 	if (entry->required_count > 0) {
+		set_colors(VGA_COLOR_YELLOW, VGA_DEFAULT_BG);
+		printf("Commands:\n");
+		set_to_last();
+
+		set_colors(VGA_COLOR_GREEN, VGA_DEFAULT_BG);
 		for (int i = 0; i < entry->required_count; i++) {
 			if (entry->required[i])
 				printf("  %s\n", entry->required[i]);
 		}
+		set_to_last();
 	}
-	set_to_last();
 
 	// Aliases
-	set_colors(VGA_COLOR_YELLOW, VGA_DEFAULT_BG);
-	printf("\nAliases:\n");
-	set_to_last();
-
-	set_colors(VGA_COLOR_GREEN, VGA_DEFAULT_BG);
 	if (entry->optional_count > 0) {
+		set_colors(VGA_COLOR_YELLOW, VGA_DEFAULT_BG);
+		printf("\nAliases:\n");
+		set_to_last();
+
+		set_colors(VGA_COLOR_GREEN, VGA_DEFAULT_BG);
 		for (int i = 0; i < entry->optional_count; i++) {
 			if (entry->optional[i])
 				printf("  %s\n", entry->optional[i]);
 		}
+		set_to_last();
 	}
-	set_to_last();
 	printf("\n");
 }

@@ -38,8 +38,6 @@ extern "C" {
 // 	screen[where + 2] = (color >> 16) & 255;  // RED
 // }
 
-
-
 void kernel_main(unsigned int magic, multiboot_info* mbt_info) {
 	clearVGABuf();
 	set_colors(VGA_DEFAULT_FG, VGA_DEFAULT_BG);
@@ -53,8 +51,6 @@ void kernel_main(unsigned int magic, multiboot_info* mbt_info) {
 	if (!MultibootManager::validateAll()) {
 		panic_s("Multiboot is invalid.");
 	}
-
-
 
 	puts_vga_color("Checking CPU Features:\n", VGA_COLOR_PURPLE, VGA_COLOR_BLACK);
 	/* Okay imma keep it real C++ hates structs and idk why
@@ -87,5 +83,8 @@ void kernel_main(unsigned int magic, multiboot_info* mbt_info) {
 	// putpixel((uintptr_t*) e->common.framebuffer_addr, 50, 50, 255, e->common.framebuffer_bpp, e->common.framebuffer_pitch);
 
 	// After we're done checking features, we need to set up our terminal.
+	// Eventually we will clear the screen before handing control over, the user doesnt need the debug stuff.
+	// clearVGABuf();
+	// print_logo();
 	terminalMain();
 }

@@ -33,7 +33,7 @@ int test_command(int argc, char** argv) {
 
 	return -1; // Success
 }
-int testHelp(int argc, char** argv) {
+int test_help(int argc, char** argv) {
 	if (argc > 1) {
 		// Specific Help
 		for (int i = 1; i <= argc; i++) {
@@ -123,11 +123,34 @@ int panic_command(int argc, char** argv) {
 }
 
 
+// ------------------------------------------------------------------------------------------------
+// Logo Command
+// ------------------------------------------------------------------------------------------------
+int logo_command(int argc, char** argv) {
+	clearVGABuf();
+	print_logo();
+	printf("\n");
+	return 0;
+}
+
+int logo_help(int argc, char** argv) {
+	HelpEntryGeneral entry = {
+		"Logo",
+		"Prints the logo.",
+		NULL,
+		0,
+		NULL,
+		0
+	};
+	printGeneralHelp(&entry);
+	return 0;
+}
+
 // Since we dont have malloc, aliases have to be defined outside of context.
 // If you try to define it in a function, you'll get a page fault.
 void registerSystemCommands() {
-	regiserCommand((Command) { test_command, testHelp, "test", test_aliases, 2 });
+	regiserCommand((Command) { test_command, test_help, "test", test_aliases, 2 });
 	regiserCommand((Command) { clear_command, NULL, "clear", clear_aliases, 1 });
 	regiserCommand((Command) { panic_command, NULL, "panic", NULL, 0 });
-
+	regiserCommand((Command) { logo_command, logo_help, "logo", NULL, 0 });
 }
