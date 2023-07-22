@@ -48,11 +48,11 @@ int example_help(int argc, char** argv) {
 		for (int i = 1; i <= argc; i++) {
 			// 
 			if (strcmp(argv[i], "a") == 0) {
-				char* required[] = {
+				const char* required[] = {
 					"-a     -> desription of the flag -a",
 					"-asdf  -> desription of the flag -asdf"
 				};
-				char* optional[] = {
+				const char* optional[] = {
 					"-d     -> desription of the flag -d",
 				};
 				HelpEntry entry = {
@@ -69,7 +69,7 @@ int example_help(int argc, char** argv) {
 		}
 	} else {
 		// General Help
-		char* commands[] = {
+		const char* commands[] = {
 			"a      -> <description of command a>",
 			"asdf   -> <description of command a>"
 		};

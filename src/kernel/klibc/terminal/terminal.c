@@ -85,19 +85,23 @@ void helpMain(int argc, char** argv) {
 		set_to_last();
 		return;
 	} else {
+		printf("\n");
 		set_colors(VGA_COLOR_CYAN, VGA_DEFAULT_BG);
-		printf("Listing all commands:\n");
 		printf("To get more info about a command, run `help <command_name>`\n");
+		set_to_last();
+		set_colors(VGA_COLOR_YELLOW, VGA_DEFAULT_BG);
+		printf("All commands:\n");
 		set_to_last();
 
 		set_colors(VGA_COLOR_LIGHT_GREEN, VGA_DEFAULT_BG);
 		// List all available commands
 		for (int i = 0; i < MAX_COMMAND_COUNT; i++) {
 			if (commands[i].commandName) {
-				printf("\t%s\n", commands[i].commandName);
+				printf("  %s\n", commands[i].commandName);
 			}
 		}
 		set_to_last();
+		printf("\n");
 	}
 }
 
@@ -246,7 +250,7 @@ void printGeneralHelp(HelpEntryGeneral* entry) {
 	if (entry->commands_count > 0) {
 		for (int i = 0; i < entry->commands_count; i++) {
 			if (entry->commands[i])
-				printf("%s\n", entry->commands[i]);
+				printf("  %s\n", entry->commands[i]);
 		}
 	}
 	set_to_last();
@@ -260,7 +264,7 @@ void printGeneralHelp(HelpEntryGeneral* entry) {
 	if (entry->aliases_count > 0) {
 		for (int i = 0; i < entry->aliases_count; i++) {
 			if (entry->aliases[i])
-				printf("%s\n", entry->aliases[i]);
+				printf("  %s\n", entry->aliases[i]);
 		}
 	}
 	set_to_last();
@@ -294,7 +298,7 @@ void printSpecificHelp(HelpEntry* entry) {
 	if (entry->required_count > 0) {
 		for (int i = 0; i < entry->required_count; i++) {
 			if (entry->required[i])
-				printf("%s\n", entry->required[i]);
+				printf("  %s\n", entry->required[i]);
 		}
 	}
 	set_to_last();
@@ -308,7 +312,7 @@ void printSpecificHelp(HelpEntry* entry) {
 	if (entry->optional_count > 0) {
 		for (int i = 0; i < entry->optional_count; i++) {
 			if (entry->optional[i])
-				printf("%s\n", entry->optional[i]);
+				printf("  %s\n", entry->optional[i]);
 		}
 	}
 	set_to_last();

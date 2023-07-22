@@ -9,6 +9,7 @@ This is an ***complete*** list of supported commands in the command handler. The
 * Clear
 * Test (dont expect much from this)
 * Help (fully featured too!)
+* Panic
 
 ## To be added
 

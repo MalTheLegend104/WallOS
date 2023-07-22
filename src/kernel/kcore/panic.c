@@ -15,6 +15,7 @@ void panic() {
  */
 void panic_s(const char* buf) {
 	pink_screen(buf);
+	__asm volatile("cli");
 	__asm volatile ("hlt");
 }
 
