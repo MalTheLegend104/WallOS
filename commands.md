@@ -10,6 +10,7 @@ This is an ***complete*** list of supported commands in the command handler. The
 * Test (dont expect much from this)
 * Help (fully featured too!)
 * Panic
+* time
 * logo
 
 ## To be added
