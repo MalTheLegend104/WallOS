@@ -62,14 +62,10 @@ int test(int a);
 
 ### Ordered
 
-1. GDT
-2. IDT
-3. Virtual Memory (paging/malloc/free/new/delete)
-4. Basic I/O (requires IDT)
+1. Virtual Memory (paging/malloc/free/new/delete)
 
 ### Unordered/Long Term
 
-- Command Handling
 - System Calls
 - GUI
 - Multitasking
