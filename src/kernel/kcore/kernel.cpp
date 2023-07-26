@@ -1,3 +1,4 @@
+// We really need to clean up these includes.
 #include <stdlib.h>
 #include <string.h>
 #include <cpuid.h>
@@ -16,6 +17,7 @@
 #include <testing.h>
 #include <drivers/keyboard.h>
 #include <terminal/terminal.h>
+#include <timing.h>
 /* Okay, this is where the fun begins. Literally and figuratively.
  * We mark these extern c because we need to call it from asm,
  * because asm can't see c++ functions. Cool, no big deal.
@@ -28,7 +30,7 @@
  */
 extern "C" {
 	void kernel_main(unsigned int magic, multiboot_info* mbt_info);
-	void __cxa_pure_virtual() { }; // needed for pure virtual functions
+	void __cxa_pure_virtual() {}; // needed for pure virtual functions
 }
 
 // static void putpixel(uintptr_t* screen, int x, int y, int color, int pixelwidth, int pitch) {
@@ -76,8 +78,8 @@ void kernel_main(unsigned int magic, multiboot_info* mbt_info) {
 
 
 	// Things that need interrupts here (like keyboard, mouse, etc.)
+	pit_init(1000);
 	keyboard_init();
-
 	// Framebuffer ignore this
 	// multiboot_tag_framebuffer* e = MultibootManager::getFramebufferTag();
 	// putpixel((uintptr_t*) e->common.framebuffer_addr, 50, 50, 255, e->common.framebuffer_bpp, e->common.framebuffer_pitch);

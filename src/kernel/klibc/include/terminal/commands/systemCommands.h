@@ -6,6 +6,9 @@ extern "C" {
 #endif
 
 	void registerSystemCommands();
+	int time_command(int argc, char** argv);
+	int time_help(int argc, char** argv);
+
 
 #ifdef __cplusplus
 }

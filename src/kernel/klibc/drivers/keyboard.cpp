@@ -1,6 +1,7 @@
 // ------------------------------------------------------------------------------------------------
 // ------------------------------------------------------------------------------------------------
 // This file is a mess. Be prepared for long switch statements and lots of chars. 
+// It's also c++, for some reason. (It's all written in C but gets angry if you change it).
 // ------------------------------------------------------------------------------------------------
 // ------------------------------------------------------------------------------------------------
 
@@ -89,7 +90,7 @@ char scancode_to_char(uint8_t sc) {
 		case SC_BACKSLASH: 			return '\\';
 		case SC_SPACE: 				return ' ';
 
-		// Alphabet
+			// Alphabet
 		case SC_A: 					return convertCharacter('a');
 		case SC_B: 					return convertCharacter('b');
 		case SC_C: 					return convertCharacter('c');
@@ -117,7 +118,7 @@ char scancode_to_char(uint8_t sc) {
 		case SC_Y: 					return convertCharacter('y');
 		case SC_Z: 					return convertCharacter('z');
 
-		// Numbers
+			// Numbers
 		case SC_0:
 		case SC_KEYPAD_0: 			return '0';
 		case SC_1:
@@ -292,7 +293,7 @@ void handle_scancode(uint8_t sc) {
 		case SC_NUM_LOCK + 0x80: 	currentState.numlock = false; 		break; // Key released
 		case SC_SCROLL_LOCK: 		currentState.scroll_lock = true;	break;
 		case SC_SCROLL_LOCK + 0x80: currentState.scroll_lock = false; 	break; // Key released
-		// Right alt ruins everything
+			// Right alt ruins everything
 		case SC_LEFT_ALT: {
 				if (currentState.last_scancode != SC_ESCAPED_0)
 					currentState.l_alt = true;
@@ -307,7 +308,7 @@ void handle_scancode(uint8_t sc) {
 					currentState.r_alt = false;
 				break;
 			}
-		// Right control also ruins everything.
+							   // Right control also ruins everything.
 		case SC_LEFT_CONTROL: {
 				if (currentState.last_scancode != SC_ESCAPED_0)
 					currentState.l_ctrl = true;
@@ -358,5 +359,4 @@ void keyboard_init() {
 
 	// Everything needs to come before this, these start interrupt for the keyboard
 	irq_enable(1);
-	outb(0xA1, 0x21);
 }

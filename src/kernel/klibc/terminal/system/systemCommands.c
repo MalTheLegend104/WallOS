@@ -122,7 +122,6 @@ int panic_command(int argc, char** argv) {
 	return 0;
 }
 
-
 // ------------------------------------------------------------------------------------------------
 // Logo Command
 // ------------------------------------------------------------------------------------------------
@@ -153,4 +152,5 @@ void registerSystemCommands() {
 	regiserCommand((Command) { clear_command, NULL, "clear", clear_aliases, 1 });
 	regiserCommand((Command) { panic_command, NULL, "panic", NULL, 0 });
 	regiserCommand((Command) { logo_command, logo_help, "logo", NULL, 0 });
+	regiserCommand((Command) { time_command, time_help, "time", NULL, 0 });
 }

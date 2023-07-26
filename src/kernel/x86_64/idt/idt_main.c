@@ -31,7 +31,16 @@ struct idt_descriptor idt_desc;
 
 // __attribute__((interrupt)) forces gcc to mess with regiesters and use iret 
 // it's required for interrupt handlers
-__attribute__((interrupt)) void general_fault(struct interrupt_frame* frame) { panic_s("EA Sports, In the game."); }
+__attribute__((interrupt)) void general_fault(struct interrupt_frame* frame) {
+	// /uint16_t cs = frame->cs;
+	//uint8_t interrupt_number = cs & 0xFF; // Extract the lower 8 bits
+	//uint8_t interrupt_number;
+	//asm volatile ("movb $0, %0; int $$0; movb %%al, %0" : "=r" (interrupt_number));
+
+	//printf("Interrupt %d called.", interrupt_number);
+	panic_s("EA Sports, In the game.");
+	//__asm__ volatile("hlt");
+}
 
 // First 32(really it's 22) hardware exceptions.
 // We will properly deal with these later.
@@ -84,6 +93,12 @@ extern void enableAPIC();
 extern void enablePS2();
 extern void reEnableIRQ1();
 
+#include <timing.h>
+__attribute__((interrupt)) void system_pit(struct interrupt_frame* frame) {
+	incriment_sys_time();
+	outb(0x20, 0x20);
+}
+
 /**
  * @brief Add an interrupt handler to the IDT. You *must* compile the handler with "-mgeneral-regs-only".
  * Use __attribute__((interrupt)) and __attribute__ ((__target__ ("general-regs-only"))) on the function to ensure proper compilation.
@@ -132,6 +147,8 @@ void setup_idt() {
 	for (int i = 22; i < 256; i++) {
 		set_idt_entry(&idt[i], general_fault, 0, 0x8E);
 	}
+
+	set_idt_entry(&idt[0x20], system_pit, 0, 0x8E);
 	set_idt_entry(&idt[80], test_sys_handler, 0, 0x8E);
 
 	// Set up the IDT descriptor
@@ -142,8 +159,6 @@ void setup_idt() {
 	disablePIC();
 	//enableAPIC();
 	//enablePS2();
-	//reEnableIRQ1();
-
 	// Call the external assembly function to load the IDT
 	idt_load(&idt_desc);
 }

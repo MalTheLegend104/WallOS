@@ -1,5 +1,18 @@
 bits 64
 
+section .data
+; Constants for PIT frequency configuration
+PIT_FREQUENCY equ 1193182 ; Base frequency of the PIT (in Hz)
+DESIRED_FREQUENCY equ 1000 ; 1 ms desired frequency
+
+; Calculate the PIT counter value
+PIT_COUNTER equ PIT_FREQUENCY / DESIRED_FREQUENCY
+
+; Port addresses for PIT
+PIT_COMMAND_PORT equ 0x43
+PIT_CHANNEL0_PORT equ 0x40
+
+
 section .text
 global enablePS2
 global irq_enable
@@ -130,12 +143,14 @@ enablePS2:
 
 global reEnableIRQ1
 reEnableIRQ1:
+	cli ; Clear interrupts
     ; Call irq_enable with argument 1 to enable IRQ1
     mov     rdi,    1
     call    irq_enable
     ; Map IRQ1 to interrupt vector 0x21 (interrupt offset 33).
-    mov     al,     0x21        ; ICW2: 0x21 = interrupt offset 33
-    out     0xA1,   al 			; IRQ 1 is handled by the slave pic
+    ; mov     al,     0x21        ; ICW2: 0x21 = interrupt offset 33
+    ; out     0x21,   al 			; IRQ 1 is handled by the master pic
+	sti ; re-enable interrupts
     ret
 
 idt_load:

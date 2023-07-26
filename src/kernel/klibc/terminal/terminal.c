@@ -105,7 +105,7 @@ void helpMain(int argc, char** argv) {
 	}
 }
 
-	// Function to execute the registered command based on the input
+// Function to execute the registered command based on the input
 void executeCommand(char* commandBuf) {
 	// Split the commandBuf into arguments based on spaces or other delimiters
 	int argc = 0;
@@ -292,7 +292,7 @@ void printSpecificHelp(HelpEntry* entry) {
 	// Commands
 	if (entry->required_count > 0) {
 		set_colors(VGA_COLOR_YELLOW, VGA_DEFAULT_BG);
-		printf("Commands:\n");
+		printf("Required Flags:\n");
 		set_to_last();
 
 		set_colors(VGA_COLOR_GREEN, VGA_DEFAULT_BG);
@@ -306,7 +306,7 @@ void printSpecificHelp(HelpEntry* entry) {
 	// Aliases
 	if (entry->optional_count > 0) {
 		set_colors(VGA_COLOR_YELLOW, VGA_DEFAULT_BG);
-		printf("\nAliases:\n");
+		printf("\nOptional Flags:\n");
 		set_to_last();
 
 		set_colors(VGA_COLOR_GREEN, VGA_DEFAULT_BG);
