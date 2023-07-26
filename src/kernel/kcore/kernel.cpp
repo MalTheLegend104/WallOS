@@ -78,8 +78,10 @@ void kernel_main(unsigned int magic, multiboot_info* mbt_info) {
 
 
 	// Things that need interrupts here (like keyboard, mouse, etc.)
+	// Everything that needs an IRQ should be done after the PIT as it messes with the mask
 	pit_init(1000);
 	keyboard_init();
+
 	// Framebuffer ignore this
 	// multiboot_tag_framebuffer* e = MultibootManager::getFramebufferTag();
 	// putpixel((uintptr_t*) e->common.framebuffer_addr, 50, 50, 255, e->common.framebuffer_bpp, e->common.framebuffer_pitch);

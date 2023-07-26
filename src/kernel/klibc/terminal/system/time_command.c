@@ -193,13 +193,13 @@ int time_command(int argc, char** argv) {
 }
 
 int time_help(int argc, char** argv) {
-
+	// General help would be a little weird here since we deal with only flags and not subcommands
 	const char* optional[] = {
 		"--system,",
 		"-st         -> Prints the system uptime in milliseconds.\n",
 		"--test-accuracy <time>,",
 		"-ta <time>  -> Test the accuracy of the system timer.\n",
-		"None -> Prints the real world time. (Does not take into account time zone).",
+		"If no flags are provided it will print the real world time (UTC-0).",
 
 	};
 	HelpEntry entry = {
