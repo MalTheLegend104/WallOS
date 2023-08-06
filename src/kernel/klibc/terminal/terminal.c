@@ -16,8 +16,29 @@ void regiserCommand(const Command c) {
 	currentSpot++;
 }
 
-void deregisterCommand(const Command c) {
+/**
+ * @brief Operator overloading isn't available in C. Compare two commands using this.
+ *
+ * @param c1 Command to compare.
+ * @param c2 Command to compare.
+ * @return true If they are the same.
+ * @return false If they are different.
+ */
+bool compareCommands(const Command c1, const Command c2) {
+	if (c1.aliases != c2.aliases) return false;
+	if (c1.aliases_count != c2.aliases_count) return false;
+	if (strcmp(c1.commandName, c2.commandName) != 0) return false;
+	if (c1.helpCommand != c2.helpCommand) return false;
+	if (c1.mainCommand != c2.mainCommand) return false;
+	return true;
+}
 
+void deregisterCommand(const Command c) {
+	for (int i = 0; i < currentSpot; i++) {
+		if (compareCommands(commands[i], c)) {
+
+		}
+	}
 }
 
 void helpMain(int argc, char** argv) {

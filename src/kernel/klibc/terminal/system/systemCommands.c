@@ -14,15 +14,25 @@
 const char* clear_aliases[] = { "clr" };
 int clear_command(int argc, char** argv) {
 	clearVGABuf();
-	// Clearing does wierd things.
-	printf(" ");
+	printf("\n");
+	return 0;
+}
+int clear_help(int argc, char** argv) {
+	HelpEntryGeneral entry = {
+		"Clear",
+		"Clears the screen",
+		NULL,
+		0,
+		clear_aliases,
+		1
+	};
+	printGeneralHelp(&entry);
 	return 0;
 }
 
 // ------------------------------------------------------------------------------------------------
 // Test command
 // ------------------------------------------------------------------------------------------------
-
 const char* test_aliases[] = { "te", "tes" };
 int test_command(int argc, char** argv) {
 	printf("argc: %d\n", argc);
@@ -109,7 +119,6 @@ void concatStrings(char** arr, int start, int end, char* result, int len) {
 
 	result[currentPos] = '\0'; // Null-terminate the concatenated string
 }
-
 int panic_command(int argc, char** argv) {
 	if (argc > 1) {
 		char buf[128];
@@ -119,6 +128,21 @@ int panic_command(int argc, char** argv) {
 		panic();
 	}
 	// This doesn't ever reach here lmfao
+	return 0;
+}
+int panic_help(int argc, char** argv) {
+	const char* optional[] = {
+		"<string> -> Creates a panic with reason <string>."
+	};
+	HelpEntry entry = {
+		"Panic",
+		"Simulates a kernel panic.",
+		NULL,
+		0,
+		optional,
+		1
+	};
+	printSpecificHelp(&entry);
 	return 0;
 }
 
@@ -149,7 +173,7 @@ int logo_help(int argc, char** argv) {
 // If you try to define it in a function, you'll get a page fault.
 void registerSystemCommands() {
 	regiserCommand((Command) { test_command, test_help, "test", test_aliases, 2 });
-	regiserCommand((Command) { clear_command, NULL, "clear", clear_aliases, 1 });
+	regiserCommand((Command) { clear_command, clear_help, "clear", clear_aliases, 1 });
 	regiserCommand((Command) { panic_command, NULL, "panic", NULL, 0 });
 	regiserCommand((Command) { logo_command, logo_help, "logo", NULL, 0 });
 	regiserCommand((Command) { time_command, time_help, "time", NULL, 0 });
