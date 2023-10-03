@@ -1,7 +1,18 @@
 #!/bin/bash
-sudo apt update
-sudo apt upgrade -y
-sudo apt install -y build-essential bison flex libgmp3-dev libmpc-dev libmpfr-dev texinfo xorriso grub-pc-bin grub-common nasm qemu qemu-system-x86 patch 
+
+if [ -f /etc/os-release ]; then
+    . /etc/os-release
+    if [ "$NAME" = "Arch Linux" ]; then
+      echo -e "<---------------Using Arch Linux-------------->\n"
+      sudo pacman -Syu
+      sudo pacman -S base-devel bison flex gmp libmpc mpfr texinfo xorriso grub nasm qemu-full patch
+    else
+      echo -e "<-----------Using Debian Based Linux---------->\n"
+      sudo apt update
+      sudo apt upgrade -y
+      sudo apt install -y build-essential bison flex libgmp3-dev libmpc-dev libmpfr-dev texinfo xorriso grub-pc-bin grub-common nasm qemu qemu-system-x86 patch
+    fi
+fi
 
 sudo chmod +xwr build build64 qemu clean
 

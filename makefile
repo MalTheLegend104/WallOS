@@ -156,7 +156,7 @@ build-all:
 	$(call build)
 
 build: $(LIBC_OBJ) $(KLIBC_OBJ) $(KCORE_OBJ) $(x86_64_OBJ) $(CRTI_OBJ) $(CRTN_OBJ) $(CRTBEGIN_OBJ) $(CRTEND_OBJ) 
-	mkdir -p dist/x86_64 && .
+	mkdir -p dist/x86_64
 	echo "<---------------Linking--------------->"
 	x86_64-elf-ld -n -o dist/x86_64/WallOS.bin -T targets/x86_64/linker.ld $(CRTI_OBJ) $(CRTBEGIN_OBJ) $(LIBC_OBJ) $(KLIBC_OBJ) $(x86_64_OBJ) $(KCORE_OBJ) $(CRTEND_OBJ) $(CRTN_OBJ)	
 	echo "<------------Compiling ISO------------>"
