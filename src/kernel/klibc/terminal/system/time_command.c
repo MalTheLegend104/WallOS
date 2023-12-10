@@ -243,8 +243,8 @@ int time_command(int argc, char** argv) {
 
 	return 0;
 }
-#pragma GCC diagnostic ignored "-Wunused-parameter" 
 
+#pragma GCC diagnostic ignored "-Wunused-parameter" 
 int time_help(int argc, char** argv) {
 	// General help would be a little weird here since we deal with only flags and not subcommands
 	const char* optional[] = {

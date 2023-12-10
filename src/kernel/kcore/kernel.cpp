@@ -30,8 +30,52 @@
  */
 extern "C" {
 	void kernel_main(unsigned int magic, multiboot_info* mbt_info);
-	void __cxa_pure_virtual() {}; // needed for pure virtual functions
+	void __cxa_pure_virtual() { }; // needed for pure virtual functions
 }
+
+
+int memtest(int argc, char** argv) {
+	multiboot_tag_mmap* mmap_tag = MultibootManager::getMMap();
+	logger(INFO, "Entry size: %d\n", mmap_tag->entry_size);
+	logger(INFO, "Entries: %d\n", mmap_tag->size / mmap_tag->entry_size);
+	struct multiboot_mmap_entry* mmap;
+	size_t total = 0, usable = 0, reserved = 0;
+	for (mmap = mmap_tag->entries; (size_t) mmap < (size_t) mmap_tag + mmap_tag->size; mmap = (struct multiboot_mmap_entry*) ((size_t) mmap + (size_t) mmap_tag->entry_size)) {
+
+		printf("New Entry:\tBase: %X", mmap->addr);
+		printf("\tLength: %llu", mmap->len);
+		printf("\tType: %llu\n", mmap->type);
+		total += mmap->len;
+		if (mmap->type == MULTIBOOT_MEMORY_AVAILABLE) {
+			usable += mmap->len;
+		} else {
+			reserved += mmap->len;
+		}
+	}
+	set_colors(VGA_COLOR_PINK, VGA_DEFAULT_BG);
+	printf("Total Memory:\n");
+	set_to_last();
+	set_colors(VGA_COLOR_PURPLE, VGA_DEFAULT_BG);
+	printf("\t%llubytes\n\t%llukb\n\t%llumb\n", total, total / 1000, (total / 1000) / 1000);
+
+	set_to_last();
+	set_colors(VGA_COLOR_LIGHT_GREEN, VGA_DEFAULT_BG);
+	printf("Usable Memory:\n");
+	set_to_last();
+	set_colors(VGA_COLOR_GREEN, VGA_DEFAULT_BG);
+	printf("\t%llubytes\n\t%llukb\n\t%llumb\n", usable, usable / 1000, (usable / 1000) / 1000);
+
+	set_to_last();
+	set_colors(VGA_COLOR_LIGHT_RED, VGA_DEFAULT_BG);
+	printf("Reserved Memory:\n");
+	set_to_last();
+	set_colors(VGA_COLOR_RED, VGA_DEFAULT_BG);
+	printf("\t%llubytes\n\t%llukb\n\t%llumb\n", reserved, reserved / 1000, (reserved / 1000) / 1000);
+	set_to_last();
+	return 0;
+}
+
+
 
 // static void putpixel(uintptr_t* screen, int x, int y, int color, int pixelwidth, int pitch) {
 // 	unsigned where = x * pixelwidth + y * pitch;
@@ -90,5 +134,6 @@ void kernel_main(unsigned int magic, multiboot_info* mbt_info) {
 	// Eventually we will clear the screen before handing control over, the user doesnt need the debug stuff.
 	// clearVGABuf();
 	// print_logo();
+	regiserCommand((Command) { memtest, 0, "memtest", 0, 0 });
 	terminalMain();
 }
