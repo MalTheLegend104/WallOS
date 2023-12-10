@@ -5,6 +5,7 @@
 #include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <stdint.h>
 
 bool is_int(const char* str) {
 	if (str == NULL || *str == '\0') {
@@ -159,12 +160,63 @@ int time_command(int argc, char** argv) {
 				int b = 0;
 				while (b < a) {
 					sleep(1000);
-					printf("System Time: %d\n", get_system_up_time());
+					printf("System Time: %dms\n", get_system_up_time());
 					b++;
 				}
 				return 0;
 			} else if (strcmp(argv[i], "-st") == 0 || strcmp(argv[i], "--system") == 0) {
-				printf("System Execution Time: %dms\n", get_system_up_time());
+				size_t time = get_system_up_time();
+				const size_t ms_in_second = 1000;
+				const size_t ms_in_minute = ms_in_second * 60;
+				const size_t ms_in_hour = ms_in_minute * 60;
+				const size_t ms_in_day = ms_in_hour * 24;
+				const size_t ms_in_month = ms_in_day * 30; // Approximate value
+				const size_t ms_in_year = ms_in_day * 365; // Approximate value
+
+				// Calculate years, months, days, hours, minutes, and seconds
+				// Calculate years, months, days, hours, minutes, and seconds
+				size_t years = time / (0x16BEE00); // 0x16BEE00 = 1000 * 60 * 60 * 24 * 365
+				time %= (0x16BEE00);
+
+				size_t months = time / (0x1C9C380); // 0x1C9C380 = 1000 * 60 * 60 * 24 * 30
+				time %= (0x1C9C380);
+
+				size_t days = time / (0x5265C00); // 0x5265C00 = 1000 * 60 * 60 * 24
+				time %= (0x5265C00);
+
+				size_t hours = time / (0x36EE80); // 0x36EE80 = 1000 * 60 * 60
+				time %= (0x36EE80);
+
+				size_t minutes = time / (0xEA60); // 0xEA60 = 1000 * 60
+				time %= (0xEA60);
+
+				size_t seconds = time / 0x3E8; // 0x3E8 = 1000
+				time %= 0x3E8;
+
+				set_colors(VGA_COLOR_CYAN, VGA_DEFAULT_BG);
+				printf("Total Execution Time: %dms\n", time);
+				printf("System has been up for:\n");
+				if (years > 0) {
+					printf("%lld Years.\n", years);
+				}
+				if (months > 0) {
+					printf("%lld Months.\n", months);
+				}
+				if (days > 0) {
+					printf("%lld Days.\n", days);
+				}
+				if (hours > 0) {
+					printf("%lld Hours.\n", hours);
+				}
+				if (minutes > 0) {
+					printf("%lld Minutes.\n", minutes);
+				}
+				if (seconds > 0) {
+					printf("%lld Seconds.\n", seconds);
+				}
+				printf("%lld Milliseconds.\n", time);
+
+				set_to_last();
 				return 0;
 			}
 		}
