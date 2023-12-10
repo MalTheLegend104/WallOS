@@ -42,13 +42,14 @@ int memtest(int argc, char** argv) {
 	size_t total = 0, usable = 0, reserved = 0;
 	for (mmap = mmap_tag->entries; (size_t) mmap < (size_t) mmap_tag + mmap_tag->size; mmap = (struct multiboot_mmap_entry*) ((size_t) mmap + (size_t) mmap_tag->entry_size)) {
 
-		printf("New Entry:\tBase: %X", mmap->addr);
-		printf("\tLength: %llu", mmap->len);
-		printf("\tType: %llu\n", mmap->type);
+		// printf("New Entry:\tBase: %X", mmap->addr);
+		// printf("\tLength: %llu", mmap->len);
+		// printf("\tType: %llu\n", mmap->type);
 		total += mmap->len;
 		if (mmap->type == MULTIBOOT_MEMORY_AVAILABLE) {
 			usable += mmap->len;
 		} else {
+			logger(WARN, "Unusable memory: Addr: %X Reason: %d Bytes: %llu\n", mmap->addr, mmap->type, mmap->len);
 			reserved += mmap->len;
 		}
 	}
@@ -56,25 +57,41 @@ int memtest(int argc, char** argv) {
 	printf("Total Memory:\n");
 	set_to_last();
 	set_colors(VGA_COLOR_PURPLE, VGA_DEFAULT_BG);
-	printf("\t%llubytes\n\t%llukb\n\t%llumb\n", total, total / 1000, (total / 1000) / 1000);
+	printf("\t%llu bytes\n\t%llu KiB\n\t%llu MiB\n", total, total / 1024, (total / 1024) / 1024);
 
 	set_to_last();
 	set_colors(VGA_COLOR_LIGHT_GREEN, VGA_DEFAULT_BG);
 	printf("Usable Memory:\n");
 	set_to_last();
 	set_colors(VGA_COLOR_GREEN, VGA_DEFAULT_BG);
-	printf("\t%llubytes\n\t%llukb\n\t%llumb\n", usable, usable / 1000, (usable / 1000) / 1000);
+	printf("\t%llu bytes\n\t%llu KiB\n\t%llu MiB\n", usable, usable / 1024, (usable / 1024) / 1024);
 
 	set_to_last();
 	set_colors(VGA_COLOR_LIGHT_RED, VGA_DEFAULT_BG);
 	printf("Reserved Memory:\n");
 	set_to_last();
 	set_colors(VGA_COLOR_RED, VGA_DEFAULT_BG);
-	printf("\t%llubytes\n\t%llukb\n\t%llumb\n", reserved, reserved / 1000, (reserved / 1000) / 1000);
+	printf("\t%llu bytes\n\t%llu KiB\n\t%llu MiB\n", reserved, reserved / 1000, (reserved / 1000) / 1000);
 	set_to_last();
 	return 0;
 }
 
+
+int acpi(int argc, char** argv) {
+	multiboot_tag_old_acpi* acpi = MultibootManager::getOldACPI();
+	RSDP_t* r = (RSDP_t*) (acpi->rsdp);
+	puts_vga_color("ACPI INFO:\n", VGA_COLOR_PINK, VGA_DEFAULT_BG);
+	set_colors(VGA_COLOR_PURPLE, VGA_DEFAULT_BG);
+	printf("\tSignature: ");
+	// The signature is not null terminated, but is guaranteed to be 8 characters long
+	for (int i = 0; i < 8; i++) {
+		putc_vga(r->Signature[i]);
+	}
+	printf("\n\tOEM: %s\n", r->OEMID);
+	printf("\tAddress: 0x%x\n", r->RsdtAddress);
+	set_to_last();
+	return 0;
+}
 
 
 // static void putpixel(uintptr_t* screen, int x, int y, int color, int pixelwidth, int pitch) {
@@ -135,5 +152,6 @@ void kernel_main(unsigned int magic, multiboot_info* mbt_info) {
 	// clearVGABuf();
 	// print_logo();
 	regiserCommand((Command) { memtest, 0, "memtest", 0, 0 });
+	regiserCommand((Command) { acpi, 0, "acpi", 0, 0 });
 	terminalMain();
 }

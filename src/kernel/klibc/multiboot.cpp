@@ -6,6 +6,8 @@ multiboot_header* MultibootManager::header;
 multiboot_info* MultibootManager::mbt_info;
 // See https://www.gnu.org/software/grub/manual/multiboot2/multiboot.html#Memory-map
 multiboot_tag_mmap* MultibootManager::mmap;
+multiboot_tag_old_acpi* MultibootManager::acpi_old;
+multiboot_tag_new_acpi* MultibootManager::acpi_new;
 multiboot_tag_framebuffer* MultibootManager::framebuffer_tag;
 
 void logExists(const char* string) {
@@ -67,9 +69,11 @@ void MultibootManager::loadTags() {
 				logExists("SMBIOS");
 				break;
 			case MULTIBOOT_TAG_TYPE_ACPI_OLD:
+				acpi_old = (multiboot_tag_old_acpi*) tag;
 				logExists("ACPI_OLD");
 				break;
 			case MULTIBOOT_TAG_TYPE_ACPI_NEW:
+				acpi_new = (multiboot_tag_new_acpi*) tag;
 				logExists("ACPI_NEW");
 				break;
 			case MULTIBOOT_TAG_TYPE_NETWORK:
