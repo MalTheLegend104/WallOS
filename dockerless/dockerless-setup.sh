@@ -19,7 +19,7 @@ sudo chmod +xwr build build64 qemu clean
 # Build GCC and Binutils
 echo "Do you want to build GCC & Binutils (only recommended for first time setup)? [Y/n]"
 read answer
-if [[ $answer == y* ]]; then
+if [[ $answer == y* || $answer == Y* ]]; then
 	echo "Do you want to build a x86_64 cross-compiler? (default y) [Y/n]"
 	read build64bit
 
@@ -53,7 +53,7 @@ if [[ $answer == y* ]]; then
 		make install
 	fi
 
-	if [[ $build32bit == y* ]]; then
+	if [[ $build32bit == y* || $build32bit == Y* ]]; then
 		echo -e "<-----------Building x86 Binutils------------->\n"
 		cd $HOME/src
 		
@@ -64,7 +64,7 @@ if [[ $answer == y* ]]; then
 		make install
 	fi
 
-	if [[ $buildaarch == y* ]]; then
+	if [[ $buildaarch == y* || $buildaarch == Y* ]]; then
 		echo -e "<---------Building AArch64 Binutils----------->\n"
 		cd $HOME/src
 		
@@ -95,7 +95,7 @@ if [[ $answer == y* ]]; then
 		make install-target-libgcc
 	fi
 	
-	if [[ $build32bit == y* ]]; then
+	if [[ $build32bit == y* || $build32bit == Y* ]]; then
 		echo -e "<--------------Building x86 GCC--------------->\n"
 		cd $HOME/src
 		mkdir build-gcc-x86
@@ -107,7 +107,7 @@ if [[ $answer == y* ]]; then
 		make install-target-libgcc
 	fi
 
-	if [[ $buildaarch == y* ]]; then
+	if [[ $buildaarch == y* || $buildaarch == Y* ]]; then
 		echo -e "<------------Building AArch64 GCC------------->\n"
 		cd $HOME/src
 		mkdir build-gcc-aarch64
