@@ -156,7 +156,7 @@ void Features::enableSSE() {
 	 * FPU SHOULD be automatically enabled on x86 systems.
 	 * IDK about ARM
 	 */
-	if (Features::highestFloat()[0] == 'S') {
+	if ((Features::highestFloat()[0] == 'S') || (Features::highestFloat()[0] == 'F') || (Features::highestFloat()[0] == 'A')) {
 		set_colors(VGA_COLOR_LIGHT_CYAN, VGA_COLOR_BLACK);
 		printf("Enabling floating point operations: %s\n", Features::highestFloat());
 		enable_sse();
