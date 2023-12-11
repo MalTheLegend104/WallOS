@@ -1,3 +1,4 @@
+#!/bin/bash
 gdb -x src/gdb.gdbinit --symbols=../dist/x86_64/WallOS.sym
 # Debugging is really simple. Only run after running qemu.
 # Qemu has to be run with --debug
