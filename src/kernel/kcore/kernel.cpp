@@ -78,17 +78,17 @@ int memtest(int argc, char** argv) {
 
 
 int acpi(int argc, char** argv) {
-	multiboot_tag_old_acpi* acpi = MultibootManager::getOldACPI();
-	RSDP_t* r = (RSDP_t*) (acpi->rsdp);
+	acpi_tag* acpi = MultibootManager::getACPI();
+	RSDP_t* r = acpi->rsdp;
 	puts_vga_color("ACPI INFO:\n", VGA_COLOR_PINK, VGA_DEFAULT_BG);
 	set_colors(VGA_COLOR_PURPLE, VGA_DEFAULT_BG);
 	printf("\tSignature: ");
 	// The signature is not null terminated, but is guaranteed to be 8 characters long
 	for (int i = 0; i < 8; i++) {
-		putc_vga(r->Signature[i]);
+		putc_vga(r->signature[i]);
 	}
 	printf("\n\tOEM: %s\n", r->OEMID);
-	printf("\tAddress: 0x%x\n", r->RsdtAddress);
+	printf("\tAddress: 0x%x\n", r->rsdtAddress);
 	set_to_last();
 	return 0;
 }

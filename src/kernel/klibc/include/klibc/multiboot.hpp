@@ -13,25 +13,30 @@ extern "C" {
 		struct multiboot_tag tags[0];
 	};
 	struct RSDP_t {
-		char Signature[8];
-		uint8_t Checksum;
+		char signature[8];
+		uint8_t checksum;
 		char OEMID[6];
-		uint8_t Revision;
-		uint32_t RsdtAddress;
+		uint8_t revision;
+		uint32_t rsdtAddress;
 	} __attribute__((packed));
 
 	struct XSDP_t {
-		char Signature[8];
-		uint8_t Checksum;
+		char signature[8];
+		uint8_t checksum;
 		char OEMID[6];
-		uint8_t Revision;
-		uint32_t RsdtAddress;      // deprecated since version 2.0
+		uint8_t revision;
+		uint32_t rsdtAddress;      // deprecated since version 2.0
 
-		uint32_t Length;
-		uint64_t XsdtAddress;
-		uint8_t ExtendedChecksum;
+		uint32_t length;
+		uint64_t xsdtAddress;
+		uint8_t extendedChecksum;
 		uint8_t reserved[3];
 	} __attribute__((packed));
+
+	typedef union {
+		RSDP_t* rsdp;
+		XSDP_t* xsdp;
+	} acpi_tag;
 }
 
 
@@ -45,8 +50,7 @@ private:
 	static multiboot_info* mbt_info;
 	static multiboot_header* header;
 	static multiboot_tag_mmap* mmap;
-	static multiboot_tag_old_acpi* acpi_old;
-	static multiboot_tag_new_acpi* acpi_new;
+	static acpi_tag* acpi;
 	static multiboot_tag_framebuffer* framebuffer_tag;
 	static void loadTags();
 public:
@@ -54,7 +58,7 @@ public:
 	static multiboot_tag_framebuffer* getFramebufferTag() { return framebuffer_tag; }
 	static multiboot_info* getMultibootInfo() { return mbt_info; }
 	static multiboot_header* getMultibootHeader() { return header; }
-	static multiboot_tag_old_acpi* getOldACPI() { return acpi_old; }
+	static acpi_tag* getACPI() { return acpi; }
 	static void initialize(uint32_t m, multiboot_info* info);
 	static bool validateHeader();
 	static bool validateMagic();
