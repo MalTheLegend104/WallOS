@@ -152,6 +152,7 @@ int panic_help(int argc, char** argv) {
 int logo_command(int argc, char** argv) {
 	clearVGABuf();
 	print_logo();
+	time_command(0, NULL); // Print the time and date beneath the logo
 	printf("\n");
 	return 0;
 }

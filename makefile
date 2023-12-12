@@ -174,6 +174,9 @@ build: $(LIBC_OBJ) $(KLIBC_OBJ) $(KCORE_OBJ) $(x86_64_OBJ) $(CRTI_OBJ) $(CRTN_OB
 	grub-mkrescue /usr/lib/grub/i386-pc -o dist/x86_64/WallOS.iso targets/x86_64/iso
 	echo "<---------Finished  Compiling--------->"
 	
+qemu: build
+	qemu-system-x86_64 -cdrom dist/x86_64/WallOS.iso -cpu max $(ARGS)
+
 clean:
 	rm -rf ./build/ && echo "Cleaned build folder"
 	rm -rf ./dist/*

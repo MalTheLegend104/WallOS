@@ -33,11 +33,18 @@ bool compareCommands(const Command c1, const Command c2) {
 	return true;
 }
 
+// TODO make this actually do something
 void deregisterCommand(const Command c) {
 	for (int i = 0; i < currentSpot; i++) {
 		if (compareCommands(commands[i], c)) {
 
 		}
+	}
+}
+
+void helpSearch(char* str) {
+	for (int i = 0; i < MAX_COMMAND_COUNT; i++) {
+
 	}
 }
 
@@ -53,6 +60,12 @@ void helpMain(int argc, char** argv) {
 
 		// Update the size of the array
 		argc--;
+		// Check for more args
+		if (argc > 1) {
+			if ((strcmp(argv[0], "-s") == 0) || (strcmp(argv[0], "-search") == 0)) {
+
+			}
+		}
 
 		// Find the command
 		for (int i = 0; i < MAX_COMMAND_COUNT; i++) {
@@ -208,6 +221,11 @@ void executeCommand(char* commandBuf) {
 
 void terminalMain() {
 	registerSystemCommands();
+	printf("Initalizing Terminal...");
+	set_to_last();
+	sleep(2000);
+	executeCommand("logo");  // This is where the cursor first gets enabled
+
 	commandBuf[0] = '\0';
 	newCommand = false;
 	printf("\n> ");

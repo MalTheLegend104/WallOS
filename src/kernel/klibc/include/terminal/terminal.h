@@ -41,6 +41,7 @@ extern "C" {
 
 	void regiserCommand(const Command c);
 	void deregisterCommand(const Command c);
+	void executeCommand(char* commandBuf);
 	void terminalMain();
 
 	void printGeneralHelp(HelpEntryGeneral* entry);

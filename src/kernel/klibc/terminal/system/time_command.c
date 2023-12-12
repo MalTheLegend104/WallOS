@@ -166,6 +166,7 @@ int time_command(int argc, char** argv) {
 				return 0;
 			} else if (strcmp(argv[i], "-st") == 0 || strcmp(argv[i], "--system") == 0) {
 				size_t time = get_system_up_time();
+				size_t totalms = time;
 				const size_t ms_in_second = 1000;
 				const size_t ms_in_minute = ms_in_second * 60;
 				const size_t ms_in_hour = ms_in_minute * 60;
@@ -194,7 +195,7 @@ int time_command(int argc, char** argv) {
 				time %= 0x3E8;
 
 				set_colors(VGA_COLOR_CYAN, VGA_DEFAULT_BG);
-				printf("Total Execution Time: %dms\n", time);
+				printf("Total Execution Time: %dms\n", totalms);
 				printf("System has been up for:\n");
 				if (years > 0) {
 					printf("%lld Years.\n", years);

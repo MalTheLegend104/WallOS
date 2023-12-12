@@ -103,6 +103,7 @@ int acpi(int argc, char** argv) {
 
 void kernel_main(unsigned int magic, multiboot_info* mbt_info) {
 	clearVGABuf();
+	disable_cursor();
 	set_colors(VGA_DEFAULT_FG, VGA_DEFAULT_BG);
 	print_logo();
 
@@ -149,9 +150,9 @@ void kernel_main(unsigned int magic, multiboot_info* mbt_info) {
 
 	// After we're done checking features, we need to set up our terminal.
 	// Eventually we will clear the screen before handing control over, the user doesnt need the debug stuff.
-	// clearVGABuf();
-	// print_logo();
 	regiserCommand((Command) { memtest, 0, "memtest", 0, 0 });
 	regiserCommand((Command) { acpi, 0, "acpi", 0, 0 });
+	set_colors(VGA_COLOR_PINK, VGA_DEFAULT_BG);
+
 	terminalMain();
 }

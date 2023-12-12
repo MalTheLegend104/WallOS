@@ -45,6 +45,11 @@ extern "C" {
 	void print_logo();
 	void puts_vga_color(const char* string, uint8_t fg, uint8_t bg);
 
+	// As long as we are in VGA Text mode, this should be called with enable_cursor(0, 25);
+	void enable_cursor(uint8_t cursor_start, uint8_t cursor_end);
+	void update_cursor(int x, int y);
+	void disable_cursor();
+
 	// this is temporarily here
 	static inline void outb(uint16_t port, uint8_t val) {
 		__asm volatile ("outb %0, %1" : : "a"(val), "Nd"(port));
@@ -60,6 +65,6 @@ extern "C" {
 	void pink_screen(const char* error);
 #endif // __is_kernel_
 #ifdef __cplusplus
-}
+	}
 #endif
 #endif // KPRINT_H
