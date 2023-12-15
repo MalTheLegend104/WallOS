@@ -134,10 +134,14 @@ void kernel_main(unsigned int magic, multiboot_info* mbt_info) {
 
 	// }
 
+
 	// Enable interrupts
 	puts_vga_color("Enabling Interrupts.\n", VGA_COLOR_LIGHT_CYAN, VGA_COLOR_BLACK);
 	setup_idt();
 
+	//puts_vga_color("Setting up Paging.\n", VGA_COLOR_LIGHT_CYAN, VGA_COLOR_BLACK);
+	//paging_init();
+	//puts_vga_color("Testing Paging.\n", VGA_COLOR_PURPLE, VGA_COLOR_BLACK);
 
 	// Things that need interrupts here (like keyboard, mouse, etc.)
 	// Everything that needs an IRQ should be done after the PIT as it messes with the mask
@@ -152,7 +156,5 @@ void kernel_main(unsigned int magic, multiboot_info* mbt_info) {
 	// Eventually we will clear the screen before handing control over, the user doesnt need the debug stuff.
 	regiserCommand((Command) { memtest, 0, "memtest", 0, 0 });
 	regiserCommand((Command) { acpi, 0, "acpi", 0, 0 });
-	set_colors(VGA_COLOR_PINK, VGA_DEFAULT_BG);
-
 	terminalMain();
 }

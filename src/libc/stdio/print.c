@@ -1,3 +1,4 @@
+#include <stddef.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <stdarg.h>
@@ -158,7 +159,9 @@ int vprintf(const char* format, va_list arg) {
 									break;
 								}
 							case 'f': {
-									ret += print_until_null(dtoa(va_arg(arg, long double), 1, 1, 0, 0, 0));
+									char buf[FLOAT_BUF_SIZE];
+									ftoa(va_arg(arg, long double), buf, 10);
+									ret += print_until_null(buf);
 									break;
 								}
 							case 'u': {
@@ -214,6 +217,34 @@ int printf(const char* format, ...) {
 	//ret = temp(format, arg);
 	va_end(arg);
 	return ret;
+}
+
+// Function to format the integer as a string with leading zeros
+char* format_int(char* str, int size, int i) {
+	// Calculate the number of digits in the integer
+	int digits = num_digits(i);
+
+	// Check if the buffer is large enough to hold the formatted string
+	if (size - 1 < digits) {
+		// Not enough space in the buffer, return NULL to indicate failure
+		return NULL;
+	}
+
+	// Add leading zeros to the string
+	for (int a = 0; a < size - 1 - digits; a++) {
+		str[a] = '0';
+	}
+
+	// Convert the integer to a string representation
+	for (int a = size - 2; a >= size - 1 - digits; a--) {
+		str[a] = '0' + (i % 10);
+		i /= 10;
+	}
+
+	str[size - 1] = '\0'; // Null-terminate the string
+
+	// Return the pointer to the formatted string
+	return str;
 }
 
 #undef UINT_BUF_SIZE

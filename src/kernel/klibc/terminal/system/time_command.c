@@ -73,34 +73,6 @@ int num_digits(int i) {
 	return count;
 }
 
-// Function to format the integer as a string with leading zeros
-char* format_int(char* str, int size, int i) {
-	// Calculate the number of digits in the integer
-	int digits = num_digits(i);
-
-	// Check if the buffer is large enough to hold the formatted string
-	if (size - 1 < digits) {
-		// Not enough space in the buffer, return NULL to indicate failure
-		return NULL;
-	}
-
-	// Add leading zeros to the string
-	for (int a = 0; a < size - 1 - digits; a++) {
-		str[a] = '0';
-	}
-
-	// Convert the integer to a string representation
-	for (int a = size - 2; a >= size - 1 - digits; a--) {
-		str[a] = '0' + (i % 10);
-		i /= 10;
-	}
-
-	str[size - 1] = '\0'; // Null-terminate the string
-
-	// Return the pointer to the formatted string
-	return str;
-}
-
 // Function to read the current date from CMOS
 // Output: The current date in the format DD/MM/YYYY
 void read_cmos_date(uint8_t* day, uint8_t* month, uint16_t* year) {

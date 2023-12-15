@@ -2,6 +2,7 @@
 #include <terminal/commands/systemCommands.h>
 #include <stdio.h>
 #include <string.h>
+#include <timing.h>
 #include <drivers/keyboard.h>
 #include <klibc/kprint.h>
 #include <klibc/logger.h>
@@ -33,11 +34,16 @@ bool compareCommands(const Command c1, const Command c2) {
 	return true;
 }
 
-// TODO make this actually do something
+/**
+ * @brief Deregister a command from the terminal. Does nothing if the command cannot be found.
+ *
+ * @param c Command to be deregistered.
+ */
 void deregisterCommand(const Command c) {
 	for (int i = 0; i < currentSpot; i++) {
 		if (compareCommands(commands[i], c)) {
-
+			// actually deregister them here
+			// im too lazy to care
 		}
 	}
 }
@@ -73,7 +79,23 @@ void helpSearch(char* str) {
 	}
 }
 
-void helpMain(int argc, char** argv) {
+int helpHelp(int argc, char** argv) {
+	const char* optional[] = {
+				"-s <string> -> Lists all commands and aliases that start with <string>."
+	};
+	HelpEntry entry = {
+		"Help",
+		"The help menu.",
+		NULL,
+		0,
+		optional,
+		1
+	};
+	printSpecificHelp(&entry);
+	return 0;
+}
+
+int helpMain(int argc, char** argv) {
 	// Make sure there's more than one argument.
 	if (argc > 1) {
 		// remove help from argv
@@ -94,26 +116,9 @@ void helpMain(int argc, char** argv) {
 					set_to_last();
 				} else {
 					helpSearch(argv[1]);
-					return;
+					return 0;
 				}
 			}
-		}
-
-		// Help command
-		if (strcmp("help", argv[0]) == 0) {
-			const char* optional[] = {
-				"-s <string> -> Lists all commands and aliases that start with <string>."
-			};
-			HelpEntry entry = {
-				"Help",
-				"The help menu.",
-				NULL,
-				0,
-				optional,
-				1
-			};
-			printSpecificHelp(&entry);
-			return;
 		}
 
 		// Find the command
@@ -125,7 +130,7 @@ void helpMain(int argc, char** argv) {
 					set_colors(VGA_COLOR_LIGHT_RED, VGA_DEFAULT_BG);
 					printf("Command \"%s\" does not have a help function.\n", argv[0]);
 					set_to_last();
-					return;
+					return 0;
 				}
 
 				// Execute the help command associated with the matched command
@@ -136,7 +141,7 @@ void helpMain(int argc, char** argv) {
 					printf("Command exited with code: %d\n", result);
 					set_to_last();
 				}
-				return;
+				return 0;
 			}
 
 			// Check aliases for a match
@@ -147,7 +152,7 @@ void helpMain(int argc, char** argv) {
 						set_colors(VGA_COLOR_LIGHT_RED, VGA_DEFAULT_BG);
 						printf("Command \"%s\" does not have a help function.\n", argv[0]);
 						set_to_last();
-						return;
+						return 0;
 					}
 
 					// Execute the help command associated with the matched alias
@@ -158,7 +163,7 @@ void helpMain(int argc, char** argv) {
 						printf("Command exited with code: %d\n", result);
 						set_to_last();
 					}
-					return;
+					return 0;
 				}
 			}
 		}
@@ -166,7 +171,7 @@ void helpMain(int argc, char** argv) {
 		set_colors(VGA_COLOR_LIGHT_RED, VGA_DEFAULT_BG);
 		printf("Help command not found for: %s\n", argv[0]);
 		set_to_last();
-		return;
+		return 0;
 	} else {
 		printf("\n");
 		set_colors(VGA_COLOR_CYAN, VGA_DEFAULT_BG);
@@ -186,6 +191,7 @@ void helpMain(int argc, char** argv) {
 		set_to_last();
 		printf("\n");
 	}
+	return 0;
 }
 
 // Function to execute the registered command based on the input
@@ -225,12 +231,6 @@ void executeCommand(char* commandBuf) {
 		i++;
 	}
 
-	// Help command
-	if (strcmp("help", argv[0]) == 0) {
-		helpMain(argc, argv);
-		return;
-	}
-
 	// Everything that isn't the help command.
 	// Check if the given command exists in the registered commands or their aliases
 	for (int i = 0; i < MAX_COMMAND_COUNT; i++) {
@@ -264,21 +264,25 @@ void executeCommand(char* commandBuf) {
 
 	// If the command is not found in the registered commands or their aliases
 	set_colors(VGA_COLOR_LIGHT_RED, VGA_DEFAULT_BG);
-	printf("Command not found: %s\n", argv[0]);
+	printf("Command not found: \"%s\"\n", argv[0]);
 	set_to_last();
 }
 
 void terminalMain() {
 	registerSystemCommands();
+	set_colors(VGA_COLOR_PINK, VGA_DEFAULT_BG);
 	printf("Initalizing Terminal...");
 	set_to_last();
-	sleep(2000);
+	regiserCommand((Command) { helpMain, helpHelp, "help", 0, 0 });
+	sleep(1500);
 	executeCommand("logo");  // This is where the cursor first gets enabled
 
 	commandBuf[0] = '\0';
 	newCommand = false;
-	printf("\n> ");
+	bool tab_pressed;
 
+	// Actually do command stuff now.
+	printf("\n> ");
 	while (true) {
 		char current = kb_getc();
 
@@ -287,10 +291,15 @@ void terminalMain() {
 			newCommand = false;
 		}
 
-		// We always want to print the char
-		printf("%c", current);
-
+		// We always want to print the char, unless it's backspace or tab
+		// Backspace makes sure we cant delete past the beginning of the line.
 		if (current == '\n') {
+			printf("%c", current);
+			// If there's an empty command we just start a new line.
+			if (strlen(commandBuf) == 0) {
+				newCommand = true;
+				continue;
+			}
 			// Execute the command when the user presses enter
 			executeCommand(commandBuf);
 
@@ -301,9 +310,74 @@ void terminalMain() {
 		} else if (current == '\b') {
 			if (strlen(commandBuf) > 0) {
 				// Remove the last character by setting it to null terminator
+				printf("%c", current);
 				commandBuf[strlen(commandBuf) - 1] = '\0';
 			}
+		} else if (current == '\t') {
+			// See if we can autocomplete a command
+			const char* list[50]; // List of current possible commands
+			int list_size = 0;
+			for (int i = 0; i < MAX_COMMAND_COUNT; i++) {
+				set_colors(VGA_COLOR_LIGHT_GREEN, VGA_DEFAULT_BG);
+				if (commands[i].commandName && startsWith(commands[i].commandName, commandBuf)) {
+					list[list_size] = commands[i].commandName;
+					list_size++;
+				}
+
+				// Check aliases for a match
+				for (size_t alias_idx = 0; alias_idx < commands[i].aliases_count; alias_idx++) {
+					if (commands[i].aliases[alias_idx] && startsWith(commands[i].aliases[alias_idx], commandBuf)) {
+						// If it's an alias of a command that's already in the list, we dont want it.
+						bool already_in_list = false;
+						for (int j = 0; j < list_size; j++) {
+							if (strcmp(list[j], commands[i].commandName) == 0) {
+								already_in_list = true;
+								break;
+							}
+						}
+						if (!already_in_list) {
+							list[list_size] = commands[i].aliases[alias_idx];
+							list_size++;
+						}
+					}
+				}
+				set_to_last();
+			}
+			if (list_size == 1) {
+				// Print the rest of the command
+				size_t len = strlen(commandBuf);
+				const char* currentCommand = list[0];
+				for (size_t i = len; i < strlen(currentCommand); i++) {
+					printf("%c", currentCommand[i]);
+					strcat_c(commandBuf, currentCommand[i], MAX_COMMAND_BUF);
+				}
+				tab_pressed = false;
+			} else if (tab_pressed) {
+				if (list_size == 0) {
+					set_colors(VGA_COLOR_LIGHT_RED, VGA_DEFAULT_BG);
+					printf("\nNo command starting with: %s\n", commandBuf);
+					set_to_last();
+					// Clear the buffer
+					memset(commandBuf, 0, MAX_COMMAND_BUF * sizeof(char));
+					commandBuf[0] = '\0';
+					newCommand = true;
+				} else if (list_size > 1) {
+					// Print out all commands
+					set_colors(VGA_COLOR_YELLOW, VGA_DEFAULT_BG);
+					printf("\n");
+					for (int i = 0; i < list_size; i++) {
+						printf("%s\n", list[i]);
+					}
+					set_to_last();
+					// Reprint the command line
+					printf("> %s", commandBuf);
+				}
+				tab_pressed = false;
+			} else {
+				tab_pressed = true;
+			}
 		} else {
+			printf("%c", current);
 			strcat_c(commandBuf, current, MAX_COMMAND_BUF);
 		}
 
