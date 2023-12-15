@@ -198,13 +198,13 @@ const char* historyAliases[] = { "hist" };
 int historyHelp(int argc, char** argv) {
 	HelpEntryGeneral entry = {
 		"History",
-		"The help menu.",
+		"Displays the terminal history. Limit of 32 previous commands.",
 		NULL,
 		0,
 		historyAliases,
 		1
 	};
-	printSpecificHelp(&entry);
+	printGeneralHelp(&entry);
 	return 0;
 }
 
