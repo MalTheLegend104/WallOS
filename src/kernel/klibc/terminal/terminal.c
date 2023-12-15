@@ -7,12 +7,14 @@
 #include <klibc/kprint.h>
 #include <klibc/logger.h>
 
+char previousCommands[PREVIOUS_COMMAND_BUF_SIZE][MAX_COMMAND_BUF];
+size_t previous_commands_size = 0;
 Command commands[MAX_COMMAND_COUNT];
 int currentSpot = 0;
 char commandBuf[MAX_COMMAND_BUF];
 bool newCommand;
 
-void regiserCommand(const Command c) {
+void registerCommand(const Command c) {
 	commands[currentSpot] = c;
 	currentSpot++;
 }
@@ -78,7 +80,6 @@ void helpSearch(char* str) {
 		set_to_last();
 	}
 }
-
 int helpHelp(int argc, char** argv) {
 	const char* optional[] = {
 				"-s <string> -> Lists all commands and aliases that start with <string>."
@@ -94,7 +95,6 @@ int helpHelp(int argc, char** argv) {
 	printSpecificHelp(&entry);
 	return 0;
 }
-
 int helpMain(int argc, char** argv) {
 	// Make sure there's more than one argument.
 	if (argc > 1) {
@@ -194,6 +194,29 @@ int helpMain(int argc, char** argv) {
 	return 0;
 }
 
+const char* historyAliases[] = { "hist" };
+int historyHelp(int argc, char** argv) {
+	HelpEntryGeneral entry = {
+		"History",
+		"The help menu.",
+		NULL,
+		0,
+		historyAliases,
+		1
+	};
+	printSpecificHelp(&entry);
+	return 0;
+}
+
+int historyCommand(int argc, char** argv) {
+	set_colors(VGA_COLOR_YELLOW, VGA_DEFAULT_BG);
+	for (size_t i = 0; i < previous_commands_size; i++) {
+		printf("%s\n", previousCommands[i]);
+	}
+	set_to_last();
+	return 0;
+}
+
 // Function to execute the registered command based on the input
 void executeCommand(char* commandBuf) {
 	// Split the commandBuf into arguments based on spaces or other delimiters
@@ -273,13 +296,13 @@ void terminalMain() {
 	set_colors(VGA_COLOR_PINK, VGA_DEFAULT_BG);
 	printf("Initalizing Terminal...");
 	set_to_last();
-	regiserCommand((Command) { helpMain, helpHelp, "help", 0, 0 });
+	// Help and History have to be defined in this file.
+	registerCommand((Command) { helpMain, helpHelp, "help", 0, 0 });
+	registerCommand((Command) { historyCommand, historyHelp, "history", historyAliases, 1 });
 	sleep(1500);
 	executeCommand("logo");  // This is where the cursor first gets enabled
 
 	commandBuf[0] = '\0';
-	char previousCommands[PREVIOUS_COMMAND_BUF_SIZE][MAX_COMMAND_BUF];
-	size_t previous_commands_size = 0;
 	size_t position_in_previous = 0;
 	size_t position_in_current = 0;
 

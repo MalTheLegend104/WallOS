@@ -154,7 +154,7 @@ void kernel_main(unsigned int magic, multiboot_info* mbt_info) {
 
 	// After we're done checking features, we need to set up our terminal.
 	// Eventually we will clear the screen before handing control over, the user doesnt need the debug stuff.
-	regiserCommand((Command) { memtest, 0, "memtest", 0, 0 });
-	regiserCommand((Command) { acpi, 0, "acpi", 0, 0 });
+	registerCommand((Command) { memtest, 0, "memtest", 0, 0 });
+	registerCommand((Command) { acpi, 0, "acpi", 0, 0 });
 	terminalMain();
 }

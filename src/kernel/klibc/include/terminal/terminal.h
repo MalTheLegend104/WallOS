@@ -40,7 +40,7 @@ extern "C" {
 		const int optional_count;
 	} HelpEntry;
 
-	void regiserCommand(const Command c);
+	void registerCommand(const Command c);
 	void deregisterCommand(const Command c);
 	void executeCommand(char* commandBuf);
 	void terminalMain();
