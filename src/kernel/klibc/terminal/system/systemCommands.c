@@ -121,12 +121,17 @@ void concatStrings(char** arr, int start, int end, char* result, int len) {
 }
 int panic_command(int argc, char** argv) {
 	if (argc > 1) {
-		char buf[128];
-		concatStrings(argv, 1, argc - 1, buf, 128);
-		panic_s(buf);
-	} else {
-		panic();
+		if (strcmp(argv[1], "-s") == 0) {
+			char buf[128];
+			concatStrings(argv, 2, argc - 1, buf, 128);
+			panic_s(buf);
+
+		} else if (strcmp(argv[1], "-i") == 0) {
+			panic_i(atoi(argv[1]));
+
+		}
 	}
+	panic();
 	// This doesn't ever reach here lmfao
 	return 0;
 }

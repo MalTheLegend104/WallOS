@@ -42,9 +42,34 @@ void deregisterCommand(const Command c) {
 	}
 }
 
-void helpSearch(char* str) {
-	for (int i = 0; i < MAX_COMMAND_COUNT; i++) {
+bool startsWith(const char* str, const char* prefix) {
+	while (*prefix) {
+		if (*prefix != *str) {
+			return false;
+		}
+		prefix++;
+		str++;
+	}
+	return true;
+}
 
+void helpSearch(char* str) {
+	set_colors(VGA_COLOR_YELLOW, VGA_DEFAULT_BG);
+	printf("List of commands starting with \"%s\":\n", str);
+	set_to_last();
+	for (int i = 0; i < MAX_COMMAND_COUNT; i++) {
+		set_colors(VGA_COLOR_LIGHT_GREEN, VGA_DEFAULT_BG);
+		if (commands[i].commandName && startsWith(commands[i].commandName, str)) {
+			printf("\t%s\n", commands[i].commandName);
+		}
+
+		// Check aliases for a match
+		for (size_t alias_idx = 0; alias_idx < commands[i].aliases_count; alias_idx++) {
+			if (commands[i].aliases[alias_idx] && startsWith(commands[i].aliases[alias_idx], str)) {
+				printf("\t%s (A)\n", commands[i].aliases[alias_idx]);
+			}
+		}
+		set_to_last();
 	}
 }
 
@@ -63,8 +88,32 @@ void helpMain(int argc, char** argv) {
 		// Check for more args
 		if (argc > 1) {
 			if ((strcmp(argv[0], "-s") == 0) || (strcmp(argv[0], "-search") == 0)) {
-
+				if (argc == 1) {
+					set_colors(VGA_COLOR_LIGHT_RED, VGA_DEFAULT_BG);
+					printf("Search flag must be followed by an arguement.\n");
+					set_to_last();
+				} else {
+					helpSearch(argv[1]);
+					return;
+				}
 			}
+		}
+
+		// Help command
+		if (strcmp("help", argv[0]) == 0) {
+			const char* optional[] = {
+				"-s <string> -> Lists all commands and aliases that start with <string>."
+			};
+			HelpEntry entry = {
+				"Help",
+				"The help menu.",
+				NULL,
+				0,
+				optional,
+				1
+			};
+			printSpecificHelp(&entry);
+			return;
 		}
 
 		// Find the command
