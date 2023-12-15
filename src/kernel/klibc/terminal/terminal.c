@@ -278,6 +278,11 @@ void terminalMain() {
 	executeCommand("logo");  // This is where the cursor first gets enabled
 
 	commandBuf[0] = '\0';
+	char previousCommands[PREVIOUS_COMMAND_BUF_SIZE][MAX_COMMAND_BUF];
+	size_t previous_commands_size = 0;
+	size_t position_in_previous = 0;
+	size_t position_in_current = 0;
+
 	newCommand = false;
 	bool tab_pressed;
 
@@ -285,10 +290,46 @@ void terminalMain() {
 	printf("\n> ");
 	while (true) {
 		char current = kb_getc();
+		KeyboardState state = getKeyboardState();
 
 		if (newCommand) {
 			printf("> ");
 			newCommand = false;
+			tab_pressed = false;
+			position_in_previous = 0;
+		}
+
+		if (state.escaped) {
+			switch (state.last_scancode) {
+				case SC_KEYPAD_2: // Down
+					if (position_in_previous > 0) {
+						position_in_previous--;
+						clear_current_row();
+						printf("\r > %s", previousCommands[position_in_previous]);
+						memset(commandBuf, 0, MAX_COMMAND_BUF);
+						memcpy(commandBuf, previousCommands[position_in_previous], strlen(previousCommands[position_in_previous]));
+					}
+					continue;
+				case SC_KEYPAD_4: // Left
+					// Implement moving left across current command
+					continue;
+				case SC_KEYPAD_8: // Up
+					clear_current_row();
+					printf("\r > %s", previousCommands[position_in_previous]);
+
+
+					memset(commandBuf, 0, MAX_COMMAND_BUF);
+					memcpy(commandBuf, previousCommands[position_in_previous], strlen(previousCommands[position_in_previous]));
+					if (previous_commands_size > 0 && position_in_previous < previous_commands_size - 1) {
+						position_in_previous++;
+					}
+					continue;
+				case SC_KEYPAD_6: // Right
+					// Implement moving right across current command
+					continue;
+				default:
+					break;
+			}
 		}
 
 		// We always want to print the char, unless it's backspace or tab
@@ -300,6 +341,25 @@ void terminalMain() {
 				newCommand = true;
 				continue;
 			}
+
+			// Move everything right in the previous buf
+			if (previous_commands_size > 0) {
+				if (strcmp(previousCommands[0], commandBuf) != 0) {
+					for (size_t i = previous_commands_size; i > 0; i--) {
+						memcpy(previousCommands[i], previousCommands[i - 1], strlen(previousCommands[i - 1]));
+						memset(previousCommands[i - 1], 0, MAX_COMMAND_BUF);
+					}
+
+					if (previous_commands_size < PREVIOUS_COMMAND_BUF_SIZE) {
+						previous_commands_size++;
+					}
+				}
+				memcpy(previousCommands[0], commandBuf, strlen(commandBuf));
+			} else {
+				previous_commands_size++;
+				memcpy(previousCommands[0], commandBuf, strlen(commandBuf));
+			}
+
 			// Execute the command when the user presses enter
 			executeCommand(commandBuf);
 

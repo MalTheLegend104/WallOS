@@ -35,6 +35,7 @@ extern "C" {
 	};
 
 	void clearVGABuf();
+	void clear_current_row();
 	void set_colors(char text, char back);
 	void set_colors_default();
 	void set_to_last();
@@ -65,6 +66,6 @@ extern "C" {
 	void pink_screen(const char* error);
 #endif // __is_kernel_
 #ifdef __cplusplus
-	}
+}
 #endif
 #endif // KPRINT_H

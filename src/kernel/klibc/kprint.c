@@ -89,6 +89,14 @@ void clear_row(size_t row) {
 	}
 }
 
+/**
+ * @brief Clears the current row of the console.
+ * Leaves cursor where it is. To reset cursor print a carriage return ('\r')
+ */
+void clear_current_row() {
+	clear_row(cursor_row);
+}
+
 /* Well... it scrolls the screen. What else were you expecting? */
 void scroll_screen() {
 	for (size_t i = 0; i < vga_height; i++) {
@@ -150,6 +158,12 @@ void putc_vga(const unsigned char c) {
 			place_char_at_location(' ', cursor_row, cursor_col);
 		}
 
+		update_cursor(cursor_row, cursor_col);
+		return;
+	}
+
+	if (c == '\r') {
+		cursor_col = 0;
 		update_cursor(cursor_row, cursor_col);
 		return;
 	}

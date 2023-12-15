@@ -78,6 +78,7 @@ extern "C" {
 		bool alt_pressed;
 		bool ctrl_pressed;
 		bool shifted;
+		bool escaped;
 		uint8_t last_scancode;
 	} KeyboardState;
 

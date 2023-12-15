@@ -334,6 +334,12 @@ void handle_scancode(uint8_t sc) {
 	if (currentState.l_ctrl || currentState.r_ctrl) 	currentState.ctrl_pressed = true;
 	if (!currentState.l_ctrl && !currentState.r_ctrl) 	currentState.ctrl_pressed = false;
 
+	if (currentState.last_scancode == SC_ESCAPED_0 || currentState.last_scancode == SC_ESCAPED_0) {
+		currentState.escaped = true;
+	} else {
+		currentState.escaped = false;
+	}
+
 	//printf("\nCurrent SC:  %d (%c)\n", sc, scancode_to_char(sc));
 	//printKeyboardState();
 	//printf("%c", scancode_to_char(sc));

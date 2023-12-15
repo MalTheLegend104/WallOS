@@ -7,6 +7,7 @@
 #define MAX_COMMAND_BUF 	256
 #define MAX_COMMAND_COUNT	32
 #define MAX_ARGS 			32
+#define PREVIOUS_COMMAND_BUF_SIZE 32
 
 #ifdef __cplusplus
 extern "C" {
