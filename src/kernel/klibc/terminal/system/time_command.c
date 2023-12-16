@@ -7,6 +7,20 @@
 #include <stdlib.h>
 #include <stdint.h>
 
+enum date_format {
+	DD_MM_YYYY,
+	MM_DD_YYYY,
+	YYYY_MM_DD
+};
+
+enum time_format {
+	HOURS_12,
+	HOURS_24
+};
+
+short current_date_format = DD_MM_YYYY;
+short current_time_format = HOURS_24;
+
 bool is_int(const char* str) {
 	if (str == NULL || *str == '\0') {
 		// Null or empty string is not a base 10 integer.
@@ -139,12 +153,6 @@ int time_command(int argc, char** argv) {
 			} else if (strcmp(argv[i], "-st") == 0 || strcmp(argv[i], "--system") == 0) {
 				size_t time = get_system_up_time();
 				size_t totalms = time;
-				const size_t ms_in_second = 1000;
-				const size_t ms_in_minute = ms_in_second * 60;
-				const size_t ms_in_hour = ms_in_minute * 60;
-				const size_t ms_in_day = ms_in_hour * 24;
-				const size_t ms_in_month = ms_in_day * 30; // Approximate value
-				const size_t ms_in_year = ms_in_day * 365; // Approximate value
 
 				// Calculate years, months, days, hours, minutes, and seconds
 				// Calculate years, months, days, hours, minutes, and seconds
@@ -191,6 +199,27 @@ int time_command(int argc, char** argv) {
 
 				set_to_last();
 				return 0;
+			} else if (strcmp(argv[i], "-sdf") == 0 || strcmp(argv[i], "--set-date-format") == 0) {
+				if (i == argc - 1) {
+					logger(ERROR, "Additional argument is required. Run `help time -sdf` to see command usage.");
+					return 0;
+				}
+				if (strcmp(argv[i + 1], "DMY") == 0 || strcmp(argv[i + 1], "dmy") == 0) {
+					current_date_format = DD_MM_YYYY;
+				} else if (strcmp(argv[i + 1], "MDY") == 0 || strcmp(argv[i + 1], "mdy") == 0) {
+					current_date_format = MM_DD_YYYY;
+				} else if (strcmp(argv[i + 1], "YMD") == 0 || strcmp(argv[i + 1], "ymd") == 0) {
+					current_date_format = YYYY_MM_DD;
+				} else {
+					logger(ERROR, "Wrong argument provided. Run `help time -sdf` to see command usage.");
+				}
+				return 0;
+			} else if (strcmp(argv[i], "-tf24") == 0 || strcmp(argv[i], "--time-format-24") == 0) {
+				current_time_format = HOURS_24;
+				return 0;
+			} else if (strcmp(argv[i], "-tf12") == 0 || strcmp(argv[i], "--time-format-12") == 0) {
+				current_time_format = HOURS_12;
+				return 0;
 			}
 		}
 	}
@@ -208,10 +237,38 @@ int time_command(int argc, char** argv) {
 	char mo[3];
 	char y[5];
 	set_colors(VGA_COLOR_LIGHT_CYAN, VGA_DEFAULT_BG);
-	printf("%s:%s:%s %s/%s/%s\n",
-		format_int(h, 3, hours), format_int(m, 3, minutes), format_int(s, 3, seconds),
-		format_int(d, 3, day), format_int(mo, 3, month), format_int(y, 5, year)
-	);
+	switch (current_time_format) {
+		case HOURS_12:
+			if (hours > 12) {
+				hours -= 12;
+				printf("%s:%s:%s PM ", format_int(h, 3, hours), format_int(m, 3, minutes), format_int(s, 3, seconds));
+			} else {
+				printf("%s:%s:%s AM ", format_int(h, 3, hours), format_int(m, 3, minutes), format_int(s, 3, seconds));
+			}
+			break;
+		default: // 24 Hour Clock
+			printf("%s:%s:%s ", format_int(h, 3, hours), format_int(m, 3, minutes), format_int(s, 3, seconds));
+			break;
+	}
+
+	switch (current_date_format) {
+		case DD_MM_YYYY:
+			printf("%s/%s/%s\n",
+				format_int(d, 3, day), format_int(mo, 3, month), format_int(y, 5, year)
+			);
+			break;
+		case MM_DD_YYYY:
+			printf("%s/%s/%s\n",
+				format_int(mo, 3, month), format_int(d, 3, day), format_int(y, 5, year)
+			);
+			break;
+		default: // YYYY-MM-DD
+			printf("%s-%s-%s\n",
+				format_int(y, 5, year), format_int(mo, 3, month), format_int(d, 3, day)
+			);
+			break;
+	}
+
 	set_to_last();
 
 	return 0;

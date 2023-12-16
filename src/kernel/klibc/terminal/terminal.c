@@ -291,12 +291,22 @@ void executeCommand(char* commandBuf) {
 	set_to_last();
 }
 
+bool addAtPos(char* buf, size_t size, char c, size_t pos) {
+	if (pos >= size) return false;
+	for (size_t i = size; i > pos; i--) {
+		buf[i] = buf[i - 1];
+	}
+	buf[pos] = c;
+	return true;
+}
+
 void terminalMain() {
 	registerSystemCommands();
 	set_colors(VGA_COLOR_PINK, VGA_DEFAULT_BG);
 	printf("Initalizing Terminal...");
 	set_to_last();
 	// Help and History have to be defined in this file.
+	// They both require access to the command buffers.
 	registerCommand((Command) { helpMain, helpHelp, "help", 0, 0 });
 	registerCommand((Command) { historyCommand, historyHelp, "history", historyAliases, 1 });
 	sleep(1500);
