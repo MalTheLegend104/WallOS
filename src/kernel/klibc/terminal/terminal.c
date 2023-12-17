@@ -300,6 +300,7 @@ bool addAtPos(char* buf, size_t size, char c, size_t pos) {
 	return true;
 }
 
+
 void terminalMain() {
 	registerSystemCommands();
 	set_colors(VGA_COLOR_PINK, VGA_DEFAULT_BG);
@@ -312,6 +313,8 @@ void terminalMain() {
 	sleep(1500);
 	executeCommand("logo");  // This is where the cursor first gets enabled
 
+	char oldCommand[MAX_COMMAND_BUF];
+	oldCommand[0] = '\0';
 	commandBuf[0] = '\0';
 	size_t position_in_previous = 0;
 	size_t position_in_current = 0;
@@ -330,29 +333,35 @@ void terminalMain() {
 			newCommand = false;
 			tab_pressed = false;
 			position_in_previous = 0;
+			memset(oldCommand, 0, MAX_COMMAND_BUF);
 		}
 
 		if (state.escaped) {
 			switch (state.last_scancode) {
 				case SC_KEYPAD_2: // Down
+					clear_current_row();
 					if (position_in_previous > 0) {
 						position_in_previous--;
-						clear_current_row();
-						printf("\r > %s", previousCommands[position_in_previous]);
 						memset(commandBuf, 0, MAX_COMMAND_BUF);
 						memcpy(commandBuf, previousCommands[position_in_previous], strlen(previousCommands[position_in_previous]));
+					} else {
+						memset(commandBuf, 0, MAX_COMMAND_BUF);
+						memcpy(commandBuf, oldCommand, MAX_COMMAND_BUF);
 					}
+					printf("\r > %s", commandBuf);
 					continue;
 				case SC_KEYPAD_4: // Left
 					// Implement moving left across current command
 					continue;
 				case SC_KEYPAD_8: // Up
 					clear_current_row();
-					printf("\r > %s", previousCommands[position_in_previous]);
-
-
+					if (position_in_previous == 0) {
+						memset(oldCommand, 0, MAX_COMMAND_BUF);
+						memcpy(oldCommand, commandBuf, MAX_COMMAND_BUF);
+					}
 					memset(commandBuf, 0, MAX_COMMAND_BUF);
 					memcpy(commandBuf, previousCommands[position_in_previous], strlen(previousCommands[position_in_previous]));
+					printf("\r > %s", commandBuf);
 					if (previous_commands_size > 0 && position_in_previous < previous_commands_size - 1) {
 						position_in_previous++;
 					}
