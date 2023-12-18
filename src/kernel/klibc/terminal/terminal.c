@@ -80,6 +80,7 @@ void helpSearch(char* str) {
 		set_to_last();
 	}
 }
+#pragma GCC diagnostic ignored "-Wunused-parameter" 
 int helpHelp(int argc, char** argv) {
 	const char* optional[] = {
 				"-s <string> -> Lists all commands and aliases that start with <string>."
@@ -195,6 +196,7 @@ int helpMain(int argc, char** argv) {
 }
 
 const char* historyAliases[] = { "hist" };
+#pragma GCC diagnostic ignored "-Wunused-parameter" 
 int historyHelp(int argc, char** argv) {
 	HelpEntryGeneral entry = {
 		"History",
@@ -556,7 +558,7 @@ void printSpecificHelp(HelpEntry* entry) {
 	// Commands
 	if (entry->required_count > 0) {
 		set_colors(VGA_COLOR_YELLOW, VGA_DEFAULT_BG);
-		printf("Required Flags:\n");
+		printf("Required:\n");
 		set_to_last();
 
 		set_colors(VGA_COLOR_GREEN, VGA_DEFAULT_BG);
@@ -570,7 +572,7 @@ void printSpecificHelp(HelpEntry* entry) {
 	// Aliases
 	if (entry->optional_count > 0) {
 		set_colors(VGA_COLOR_YELLOW, VGA_DEFAULT_BG);
-		printf("\nOptional Flags:\n");
+		printf("\nOptional:\n");
 		set_to_last();
 
 		set_colors(VGA_COLOR_GREEN, VGA_DEFAULT_BG);

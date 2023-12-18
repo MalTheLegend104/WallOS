@@ -33,7 +33,7 @@ extern "C" {
 	void __cxa_pure_virtual() { }; // needed for pure virtual functions
 }
 
-
+#pragma GCC diagnostic ignored "-Wunused-parameter" 
 int memtest(int argc, char** argv) {
 	multiboot_tag_mmap* mmap_tag = MultibootManager::getMMap();
 	logger(INFO, "Entry size: %d\n", mmap_tag->entry_size);
@@ -76,7 +76,7 @@ int memtest(int argc, char** argv) {
 	return 0;
 }
 
-
+#pragma GCC diagnostic ignored "-Wunused-parameter" 
 int acpi(int argc, char** argv) {
 	acpi_tag* acpi = MultibootManager::getACPI();
 	RSDP_t* r = acpi->rsdp;

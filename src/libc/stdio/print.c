@@ -191,7 +191,10 @@ int vprintf(const char* format, va_list arg) {
 				case 'L': {
 						traverse++;
 						if (*traverse == 'f') {
-							ret += print_until_null(dtoa(va_arg(arg, long double), 1, 1, 0, 0, 0));
+							char buf[FLOAT_BUF_SIZE];
+							ftoa(va_arg(arg, long double), buf, 10);
+							ret += print_until_null(buf);
+							break;
 						}
 						break;
 					}
@@ -217,6 +220,19 @@ int printf(const char* format, ...) {
 	//ret = temp(format, arg);
 	va_end(arg);
 	return ret;
+}
+
+// Function to calculate the number of digits in an integer
+int num_digits(int i) {
+	int count = 0;
+	if (i == 0)
+		return 1;
+
+	while (i != 0) {
+		i /= 10;
+		count++;
+	}
+	return count;
 }
 
 // Function to format the integer as a string with leading zeros

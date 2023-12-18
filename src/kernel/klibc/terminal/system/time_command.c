@@ -74,19 +74,6 @@ void read_cmos_time(uint8_t* hours, uint8_t* minutes, uint8_t* seconds) {
 	asm volatile("sti");
 }
 
-// Function to calculate the number of digits in an integer
-int num_digits(int i) {
-	int count = 0;
-	if (i == 0)
-		return 1;
-
-	while (i != 0) {
-		i /= 10;
-		count++;
-	}
-	return count;
-}
-
 // Function to read the current date from CMOS
 // Output: The current date in the format DD/MM/YYYY
 void read_cmos_date(uint8_t* day, uint8_t* month, uint16_t* year) {
@@ -277,11 +264,90 @@ int time_command(int argc, char** argv) {
 #pragma GCC diagnostic ignored "-Wunused-parameter" 
 int time_help(int argc, char** argv) {
 	// General help would be a little weird here since we deal with only flags and not subcommands
+	if (argc > 1) {
+		if (strcmp(argv[1], "--system") == 0 || strcmp(argv[1], "-st") == 0) {
+			HelpEntry entry = {
+				"Time (System Time)",
+				"Displays system uptime.",
+				NULL,
+				0,
+				NULL,
+				0
+			};
+			printSpecificHelp(&entry);
+			return 0;
+		} else if (strcmp(argv[1], "--system-date-format") == 0 || strcmp(argv[1], "-sdf") == 0) {
+			const char* required[] = {
+				"<format> -> Date Time Format as specified in the optional section."
+			};
+			const char* optional[] = {
+				"YMD      -> Sets the date format to YYYY-MM-DD",
+				"MDY      -> Sets the date format to MM/DD/YYYY",
+				"DMY      -> Sets the date format to DD/MM/YYYY"
+			};
+			HelpEntry entry = {
+				"Time (Set Date Format)",
+				"Changes the system Date Format.",
+				required,
+				1,
+				optional,
+				3
+			};
+			printSpecificHelp(&entry);
+			return 0;
+		} else if (strcmp(argv[1], "--test-accuracy") == 0 || strcmp(argv[1], "-ta") == 0) {
+			const char* required[] = {
+				"<time> -> Amount of seconds to test the accuracy."
+			};
+			HelpEntry entry = {
+				"Time (Test Accuracy)",
+				"Displays the accuracy of the internal timer, over <time> seconds.",
+				required,
+				1,
+				NULL,
+				0
+			};
+			printSpecificHelp(&entry);
+			return 0;
+		} else if (strcmp(argv[1], "-tf24") == 0 || strcmp(argv[1], "--time-format-24") == 0) {
+			HelpEntry entry = {
+				"Time (Time Format)",
+				"Sets the displayed clock to 24h.",
+				NULL,
+				0,
+				NULL,
+				0
+			};
+			printSpecificHelp(&entry);
+			return 0;
+		} else if (strcmp(argv[1], "-tf12") == 0 || strcmp(argv[1], "--time-format-12") == 0) {
+			HelpEntry entry = {
+				"Time (Time Format)",
+				"Sets the displayed clock to 12h.",
+				NULL,
+				0,
+				NULL,
+				0
+			};
+			printSpecificHelp(&entry);
+			return 0;
+		}
+	}
+
+	// Else is general help
 	const char* optional[] = {
 		"--system,",
-		"-st         -> Prints the system uptime in milliseconds.\n",
+		"-st           -> Prints the system uptime in milliseconds.\n",
+		"--system-date-format",
+		"-sdf <format> -> Changes the date format on the system.\n",
+		"--time-format-24,",
+		"-tf24         -> Changes the clock format to 24h.\n",
+		"--time-format-12,",
+		"-tf12         -> Changes the clock format to 12h.\n",
 		"--test-accuracy <time>,",
-		"-ta <time>  -> Test the accuracy of the system timer.\n",
+		"-ta <time>    -> Test the accuracy of the system timer.\n",
+
+
 		"If no flags are provided it will print the real world time (UTC-0).",
 
 	};
@@ -291,7 +357,7 @@ int time_help(int argc, char** argv) {
 		NULL,
 		0,
 		optional,
-		5
+		11
 	};
 	printSpecificHelp(&entry);
 
