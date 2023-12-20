@@ -1,5 +1,6 @@
 #include <terminal/terminal.h>
 #include <terminal/commands/systemCommands.h>
+#include <memory/physical_mem.h>
 #include <stdio.h>
 #include <klibc/kprint.h>
 #include <stdlib.h>
@@ -198,4 +199,5 @@ void registerSystemCommands() {
 	registerCommand((Command) { panic_command, NULL, "panic", NULL, 0 });
 	registerCommand((Command) { logo_command, logo_help, "logo", NULL, 0 });
 	registerCommand((Command) { time_command, time_help, "time", NULL, 0 });
+	registerCommand((Command) { memtest, NULL, "memtest", NULL, 0 });
 }
