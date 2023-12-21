@@ -25,6 +25,7 @@ _DATA_END_ = .;
 _BSS_START_ = .;
     *(.bss)
 _BSS_END_ = .;
+endkernel = .;
   }
 }
 

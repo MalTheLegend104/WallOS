@@ -16,6 +16,8 @@
 #include <drivers/keyboard.h>
 #include <terminal/terminal.h>
 #include <timing.h>
+#include <memory/physical_mem.h>
+
 /* Okay, this is where the fun begins. Literally and figuratively.
  * We mark these extern c because we need to call it from asm,
  * because asm can't see c++ functions. Cool, no big deal.
@@ -89,11 +91,12 @@ void kernel_main(unsigned int magic, multiboot_info* mbt_info) {
 
 	// }
 
-
 	// Enable interrupts
 	puts_vga_color("Enabling Interrupts.\n", VGA_COLOR_LIGHT_CYAN, VGA_COLOR_BLACK);
 	setup_idt();
 
+	physical_mem_init();
+	while (true);
 	//puts_vga_color("Setting up Paging.\n", VGA_COLOR_LIGHT_CYAN, VGA_COLOR_BLACK);
 	//paging_init();
 	//puts_vga_color("Testing Paging.\n", VGA_COLOR_PURPLE, VGA_COLOR_BLACK);

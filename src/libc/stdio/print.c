@@ -138,7 +138,7 @@ int vprintf(const char* format, va_list arg) {
 					}
 				case 'x':
 				case 'X': {
-						ret += print_until_null(convert_ui(va_arg(arg, unsigned long), 16));
+						ret += print_until_null(convert_ui(va_arg(arg, unsigned long long), 16));
 						break;
 					}
 				case 'n': {
@@ -178,6 +178,11 @@ int vprintf(const char* format, va_list arg) {
 											}
 										case 'u': {
 												ret += print_until_null(convert_ull(va_arg(arg, unsigned long long), 10));
+												break;
+											}
+										case 'x':
+										case 'X': {
+												ret += print_until_null(convert_ull(va_arg(arg, unsigned long long), 16));
 												break;
 											}
 										default: break;

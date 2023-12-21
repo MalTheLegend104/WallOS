@@ -57,7 +57,6 @@ __attribute__((interrupt)) void invalid_tss_handler(struct interrupt_frame* fram
 __attribute__((interrupt)) void segment_not_present_handler(struct interrupt_frame* frame) { panic_s("Segment Not Present Exception has occurred."); }
 __attribute__((interrupt)) void stack_segment_fault_handler(struct interrupt_frame* frame) { panic_s("Stack-Segment Fault Exception has occurred."); }
 __attribute__((interrupt)) void general_protection_fault_handler(struct interrupt_frame* frame) { panic_s("General Protection Fault Exception has occurred."); }
-__attribute__((interrupt)) void page_fault_handler(struct interrupt_frame* frame) { panic_s("Page Fault has occurred."); }
 __attribute__((interrupt)) void x87_fpu_floating_point_error_handler(struct interrupt_frame* frame) { panic_s("x87 FPU Floating-Point Error Exception has occurred."); }
 __attribute__((interrupt)) void alignment_check_handler(struct interrupt_frame* frame) { panic_s("Alignment Check Exception has occurred."); }
 __attribute__((interrupt)) void machine_check_handler(struct interrupt_frame* frame) { panic_s("Machine Check Exception has occurred."); }
@@ -65,6 +64,38 @@ __attribute__((interrupt)) void simd_floating_point_exception_handler(struct int
 __attribute__((interrupt)) void virtualization_exception_handler(struct interrupt_frame* frame) { panic_s("Virtualization Exception has occurred."); }
 __attribute__((interrupt)) void control_protection_exception_handler(struct interrupt_frame* frame) { panic_s("Control Protection Exception has occurred."); }
 
+__attribute__((interrupt)) void page_fault_handler(struct interrupt_frame* frame) {
+	unsigned long cr2;
+	asm volatile ("movq %%cr2, %0" : "=r" (cr2));
+
+	unsigned long error_code;
+	asm volatile ("pop %0" : "=r" (error_code));
+	char err[65];
+	itoa(error_code, err, 2);
+	int present = error_code & 0b1;
+	error_code = error_code >> 1;
+	int write = error_code & 0b1;
+	error_code = error_code >> 1;
+	int user_mode = error_code & 0b1;
+	error_code = error_code >> 1;
+	int reserved = error_code & 0b1;
+	error_code = error_code >> 1;
+	int instruction_fetch = error_code & 0b1;
+	error_code = error_code >> 1;
+	int protection_key = error_code & 0b1;
+	error_code = error_code >> 1;
+	int shadow_stack = error_code & 0b1;
+	error_code = error_code >> 1;
+	int sgx = error_code & 0b1;
+
+
+	// Log the information
+	logger(ERROR, "Page fault Error Code: %s\n", err);
+	logger(ERROR, "Page fault at address (CR2): %llu\n", cr2);
+	logger(ERROR, "Present: %d, Write: %d, User Mode: %d, Reserved: %d, Instruction Fetch: %d, Protection: %d, Shadow Stack: %d, SGX: %d\n",
+		present, write, user_mode, reserved, instruction_fetch, protection_key, shadow_stack, sgx);
+	asm volatile("hlt");
+}
 // System interrupt 80
 __attribute__((interrupt)) void test_sys_handler(struct interrupt_frame* frame) {
 	logger(WARN, "System Interrupt 80 Called.\n");

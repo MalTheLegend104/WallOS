@@ -4,7 +4,7 @@ WallOS has a three layer approach to memory.
 
 ```
 ╔═════════════════╗    ╔════════════════╗     ╔═════════════════════╗
-║ Physical Memory ╠════╣ Virtual Memory ║══╦══╣   Kernel Allocator  ║
+║ Physical Memory ╠════╣ Virtual Memory ╠══╦══╣   Kernel Allocator  ║
 ╚═════════════════╝    ╚════════════════╝  ║  ╚═════════════════════╝
                                            ║  ╔═════════════════════╗
                                            ╚══╣ Userspace Allocator ║
@@ -39,7 +39,6 @@ WallOS has a three layer approach to memory.
   - Much better for flexable (variable-sized) sized objects, meaning things like creating classes, loading files, dyanmic arrays, etc. are better managed.
   - Useful since most userspace programs don't allocate tons of fix-sized memory. Most user programs have differently sized classes, variables, strings, etc, being created and freed.
 - Talks to the virtual memory layer to request more pages or free pages.
-
 
 ## Inter-Allocator communication
 

@@ -9,7 +9,7 @@ extern "C" {
 #endif
 
 	int memtest(int argc, char** argv);
-
+	void physical_mem_init();
 #ifdef __cplusplus
 }
 #endif // __cplusplus

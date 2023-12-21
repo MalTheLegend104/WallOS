@@ -6,6 +6,7 @@
 #include <stdlib.h>
 #include <string.h>
 
+#pragma GCC diagnostic ignored "-Wunused-parameter" 
 int hwinfo(int argc, char** argv) {
 	/* <logo>
 	 * OS: WallOS v0.1
