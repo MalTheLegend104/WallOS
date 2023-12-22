@@ -1,4 +1,5 @@
 #include <stdint.h>
+#include <stdlib.h>
 #include <stdio.h>
 #include <panic.h>
 #include <klibc/logger.h>

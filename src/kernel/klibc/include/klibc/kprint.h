@@ -64,6 +64,7 @@ extern "C" {
 	}
 #ifdef __is_kernel_
 	void pink_screen(const char* error);
+	void pink_screen_sa(const char** error, uint8_t length);
 #endif // __is_kernel_
 #ifdef __cplusplus
 }

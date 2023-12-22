@@ -14,9 +14,15 @@ void panic() {
  * @param buf String to be printed on the crash screen.
  */
 void panic_s(const char* buf) {
+	asm volatile("cli");
 	pink_screen(buf);
-	__asm volatile("cli");
-	__asm volatile ("hlt");
+	asm volatile ("hlt");
+}
+
+void panic_sa(const char** buf, uint8_t length) {
+	asm volatile("cli");
+	pink_screen_sa(buf, length);
+	asm volatile ("hlt");
 }
 
 /**

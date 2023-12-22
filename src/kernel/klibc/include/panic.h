@@ -13,6 +13,7 @@ extern "C" {
 
 	void panic();
 	void panic_s(const char* buf);
+	void panic_sa(const char** buf, uint8_t length);
 	void panic_i(uint8_t panic);
 #ifdef __cplusplus
 }

@@ -245,6 +245,8 @@ void center_text(const char* buf) {
 	size_t size = strlen(buf);
 	size_t index = 0;
 
+	cursor_col = 0;
+
 	// If the size is greater than 80, print a whole row until it's not.
 	while (size > 80) {
 		for (uint8_t i = 0; i < 80; i++) {
@@ -267,6 +269,46 @@ void center_text(const char* buf) {
 	}
 }
 
+void pink_screen_sa(const char** error, uint8_t length) {
+	disable_cursor();
+	set_colors(VGA_COLOR_WHITE, VGA_COLOR_PINK);
+	cursor_row = 0;
+	cursor_col = 0;
+	for (size_t i = cursor_col; i < vga_width; i++) {
+		putc_vga(' ');
+	}
+
+	// Header text
+	cursor_row = 1;
+	cursor_col = 0;
+	center_text("Kernel Panic!");
+	cursor_col = 0;
+	for (size_t i = cursor_col; i < vga_width; i++) {
+		putc_vga(' ');
+	}
+
+	if (length > (vga_height - 3)) length = vga_height - 3;
+
+	// Body text
+	cursor_row++;
+	cursor_col = 0;
+	for (int i = 0; i < length; i++) {
+		center_text(error[i]);
+		for (size_t i = cursor_col; i < vga_width; i++) {
+			putc_vga(' ');
+		}
+	}
+	cursor_col = 0;
+	while (cursor_row < vga_height) {
+		for (size_t i = cursor_col; i < vga_width; i++) {
+			putc_vga(' ');
+		}
+		cursor_row++;
+		cursor_col = 0;
+	}
+	asm volatile("hlt");
+}
+
 /**
  * @brief Associated with kernel panics, it makes the entire screen pink, displays "Kernel Panic!", along with the error.
  *
@@ -284,6 +326,7 @@ void pink_screen(const char* error) {
 	cursor_row = 1;
 	cursor_col = 0;
 	center_text("Kernel Panic!");
+	cursor_col = 0;
 	for (size_t i = cursor_col; i < vga_width; i++) {
 		putc_vga(' ');
 	}
@@ -292,6 +335,7 @@ void pink_screen(const char* error) {
 	cursor_row++;
 	cursor_col = 0;
 	center_text(error);
+	cursor_col = 0;
 	while (cursor_row < vga_height) {
 		for (size_t i = cursor_col; i < vga_width; i++) {
 			putc_vga(' ');
