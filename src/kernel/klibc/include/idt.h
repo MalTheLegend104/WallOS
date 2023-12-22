@@ -65,7 +65,7 @@ extern "C" {
 	 */
 	extern void irq_disable(uint8_t irq);
 #ifdef __cplusplus
-	}
+}
 #endif
 
 #endif // IDT_H
