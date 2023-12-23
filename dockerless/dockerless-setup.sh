@@ -1,13 +1,25 @@
-sudo apt update
-sudo apt upgrade -y
-sudo apt install -y build-essential bison flex libgmp3-dev libmpc-dev libmpfr-dev texinfo xorriso grub-pc-bin grub-common nasm qemu qemu-system-x86 patch 
+#!/bin/bash
+
+if [ -f /etc/os-release ]; then
+    . /etc/os-release
+    if [ "$NAME" = "Arch Linux" ]; then
+      echo -e "<---------------Using Arch Linux-------------->\n"
+      sudo pacman -Syu
+      sudo pacman -S base-devel bison flex gmp libmpc mpfr texinfo xorriso grub nasm qemu-full patch
+    else
+      echo -e "<-----------Using Debian Based Linux---------->\n"
+      sudo apt update
+      sudo apt upgrade -y
+      sudo apt install -y build-essential bison flex libgmp3-dev libmpc-dev libmpfr-dev texinfo xorriso grub-pc-bin grub-common nasm qemu qemu-system-x86 patch
+    fi
+fi
 
 sudo chmod +xwr build build64 qemu clean
 
 # Build GCC and Binutils
 echo "Do you want to build GCC & Binutils (only recommended for first time setup)? [Y/n]"
 read answer
-if [[ $answer == y* ]]; then
+if [[ $answer == y* || $answer == Y* ]]; then
 	echo "Do you want to build a x86_64 cross-compiler? (default y) [Y/n]"
 	read build64bit
 
@@ -41,7 +53,7 @@ if [[ $answer == y* ]]; then
 		make install
 	fi
 
-	if [[ $build32bit == y* ]]; then
+	if [[ $build32bit == y* || $build32bit == Y* ]]; then
 		echo -e "<-----------Building x86 Binutils------------->\n"
 		cd $HOME/src
 		
@@ -52,7 +64,7 @@ if [[ $answer == y* ]]; then
 		make install
 	fi
 
-	if [[ $buildaarch == y* ]]; then
+	if [[ $buildaarch == y* || $buildaarch == Y* ]]; then
 		echo -e "<---------Building AArch64 Binutils----------->\n"
 		cd $HOME/src
 		
@@ -83,7 +95,7 @@ if [[ $answer == y* ]]; then
 		make install-target-libgcc
 	fi
 	
-	if [[ $build32bit == y* ]]; then
+	if [[ $build32bit == y* || $build32bit == Y* ]]; then
 		echo -e "<--------------Building x86 GCC--------------->\n"
 		cd $HOME/src
 		mkdir build-gcc-x86
@@ -95,7 +107,7 @@ if [[ $answer == y* ]]; then
 		make install-target-libgcc
 	fi
 
-	if [[ $buildaarch == y* ]]; then
+	if [[ $buildaarch == y* || $buildaarch == Y* ]]; then
 		echo -e "<------------Building AArch64 GCC------------->\n"
 		cd $HOME/src
 		mkdir build-gcc-aarch64
