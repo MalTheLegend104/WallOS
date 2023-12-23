@@ -8,16 +8,12 @@ multiboot_info* MultibootManager::mbt_info;
 multiboot_tag_mmap* MultibootManager::mmap;
 acpi_tag* MultibootManager::acpi;
 multiboot_tag_framebuffer* MultibootManager::framebuffer_tag;
-<<<<<< < HEAD
 
-	void logExists(const char* string) {
+void logExists(const char* string) {
 	puts_vga("    ");
 	Logger::Checklist::blankEntry("%s tag exists.", string);
 }
 
-====== =
-multiboot_tag_basic_meminfo * MultibootManager::meminfo;
->>>>>> > main
 // See https://www.gnu.org/software/grub/manual/multiboot2/multiboot.html#Boot-information
 void MultibootManager::loadTags() {
 	//  Get the pointer to the first tag
