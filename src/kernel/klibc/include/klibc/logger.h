@@ -37,10 +37,32 @@ namespace Logger {
 		void blankEntry(const char* format, ...);
 		void checkEntry(const char* format, ...);
 		void noCheckEntry(const char* format, ...);
+		void v_blankEntry(const char* format, va_list args);
+		void v_checkEntry(const char* format, va_list args);
+		void v_noCheckEntry(const char* format, va_list args);
 	}
 }
-#else
-// C stuff here
 
-#endif //__cplusplus
+extern "C" {
+#endif // __cplusplus
+	// C stuff here. It's way more ugly than C++
+
+	typedef enum {
+		LOG,
+		INFO,
+		WARN,
+		ERROR,
+		FATAL,
+		CHECKLIST_BLANK,
+		CHECKLIST_CHECK,
+		CHECKLIST_NOCHECK
+	} LogType;
+
+
+	void logger(LogType type, const char* format, ...);
+	void vlogger(LogType type, const char* format, va_list args);
+
+#ifdef __cplusplus
+}
+#endif // cplusplus
 #endif //KLIBC_LOGGER_H

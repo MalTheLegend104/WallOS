@@ -4,8 +4,8 @@
 extern "C" {
 #endif
 
-// Honestly just pretend this file doesnt exist rn.
-// We still need outb and inb, along with interrupts
+	// Honestly just pretend this file doesnt exist rn.
+	// We still need outb and inb, along with interrupts
 
 #ifdef __cplusplus
 }

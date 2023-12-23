@@ -1,0 +1,10 @@
+#!/bin/bash
+gdb -x src/gdb.gdbinit --symbols=../dist/x86_64/WallOS.sym
+# Debugging is really simple. Only run after running qemu.
+# Qemu has to be run with --debug
+# When gdb loads, type "continue" or "c" to get to the breakpoint
+# Breakpoints in C/C++ look like: "__asm volatile ("1: jmp 1b");" 
+# When GDB reaches breakpoint, you have to do ctrl+c to stop execution
+# Then type "set $pc += 2" to jump over the infinite loop.
+# You can then either type "continue" or "c" again to continue execution
+# or you can type "si" to run the next line. GDB will show you what line is being run.

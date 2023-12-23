@@ -2,7 +2,7 @@
 #include "klibc/kprint.h"
 #include <stdio.h>
 #include "klibc/logger.h"
-#include "panic.h"
+#include <panic.h>
 
 bool Features::AVX;
 bool Features::FXSR;
@@ -11,11 +11,15 @@ const char* Features::highest_supported_float;
 struct cpu_features* Features::features;
 
 bool Features::listFeature(const char* name, bool a) {
-	puts_vga("    ");
+	puts_vga("        ");
 	if (a) {
+		set_colors(VGA_COLOR_LIGHT_GREEN, VGA_COLOR_BLACK);
 		Logger::Checklist::checkEntry("%s is supported.", name);
+		set_colors_default();
 	} else {
+		set_colors(VGA_COLOR_LIGHT_RED, VGA_COLOR_BLACK);
 		Logger::Checklist::blankEntry("%s is not supported.", name);
+		set_colors_default();
 	}
 	return a;
 }
@@ -23,9 +27,13 @@ bool Features::listFeature(const char* name, bool a) {
 bool Features::listFeatureCheck(const char* name, bool a) {
 	puts_vga("    ");
 	if (a) {
+		set_colors(VGA_COLOR_LIGHT_GREEN, VGA_COLOR_BLACK);
 		Logger::Checklist::checkEntry("%s is supported.", name);
+		set_colors_default();
 	} else {
+		set_colors(VGA_COLOR_LIGHT_RED, VGA_COLOR_BLACK);
 		Logger::Checklist::noCheckEntry("%s is not supported.", name);
+		set_colors_default();
 	}
 	return a;
 }
@@ -85,7 +93,7 @@ void Features::checkFeatures(struct cpu_features* f) {
 	features = f;
 	// Ideally we are going to be avoiding floats as much as possible
 	// Halts the cpu if not present.
-	Logger::Checklist::blankEntry("Checking Floating Point Support");
+	puts_vga_color("    Checking Floating Point Support:\n", VGA_COLOR_PURPLE, VGA_COLOR_BLACK);
 	checkFloatingPointSupport();
 	if (highest_supported_float == nullptr) {
 		Logger::Checklist::noCheckEntry("No Floating Point support.");
@@ -94,16 +102,16 @@ Any x86_64 CPU is required to support a minimum of SSE2.\
 If this system has a x86_64 CPU, then this is an issue on our side, \
 report it to our GitHub Repo.\n");
 		__asm volatile ("hlt");
-	} else {
-		Logger::Checklist::checkEntry("%s is highest supported Floating Point instruction set.", Features::highest_supported_float);
 	}
 
 	// Check APIC
 	if (features->APIC == FEATURE_SUPPORTED) {
 		APIC = true;
+		puts_vga("    ");
 		Logger::Checklist::checkEntry("APIC exists.");
 	} else {
 		APIC = false;
+		puts_vga("    ");
 		Logger::Checklist::noCheckEntry("APIC does not exists.");
 	}
 
@@ -132,4 +140,42 @@ const char* Features::highestFloat() {
  */
 bool Features::getAPIC() {
 	return APIC;
+}
+
+
+// ASM code to enable sse
+extern "C" void enable_sse();
+
+/* This enables floating point operations.
+ * Currently we only really care about sse and sse2
+ * In theory this should enable all forms of sse, not just those two
+ * It works. We dont need those fancy new features from SSE3+.
+ */
+void Features::enableSSE() {
+	/* SSE2 is requried support on x86_64 systems.
+	 * FPU SHOULD be automatically enabled on x86 systems.
+	 * IDK about ARM
+	 */
+	if ((Features::highestFloat()[0] == 'S') || (Features::highestFloat()[0] == 'F') || (Features::highestFloat()[0] == 'A')) {
+		set_colors(VGA_COLOR_LIGHT_CYAN, VGA_COLOR_BLACK);
+		printf("Enabling floating point operations: %s\n", Features::highestFloat());
+		enable_sse();
+		set_to_last();
+	} else {
+		panic_s("SSE Instructions do not exist.");
+	}
+}
+
+/**
+ * @brief Sets up the APIC how we need it. This assumes that interrupts have been enabled.
+ *
+ * @return true If the APIC exists and is set up.
+ * @return false If the APIC does not exist or cannot be set up.
+ * In the case this returns false, one should set up the 8529 PIC or stop execution.
+ */
+bool Features::setupAPIC() {
+	if (Features::APIC != true) {
+		return false;
+	}
+	return true;
 }

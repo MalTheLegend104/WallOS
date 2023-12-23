@@ -124,3 +124,53 @@ void Logger::Checklist::noCheckEntry(const char* format, ...) {
 	va_end(args);
 	print("\n");
 }
+
+void Logger::Checklist::v_blankEntry(const char* format, va_list args) {
+	print("[ ] ");
+	vprintf(format, args);
+	print("\n");
+}
+void Logger::Checklist::v_checkEntry(const char* format, va_list args) {
+	print("[");
+	set_green();
+	putc_vga(0xfb);
+	set_default();
+	print("] ");
+	vprintf(format, args);
+	print("\n");
+}
+void Logger::Checklist::v_noCheckEntry(const char* format, va_list args) {
+	print("[");
+	set_red();
+	putc_vga('X');
+	set_default();
+	print("] ");
+	vprintf(format, args);
+	print("\n");
+}
+
+// ------------------------------------------------------------------------------------------------
+// C Wrapper 
+// ------------------------------------------------------------------------------------------------
+
+void logger(LogType type, const char* format, ...) {
+	va_list args;
+	va_start(args, format);
+	vlogger(type, format, args);
+	va_end(args);
+}
+
+void vlogger(LogType type, const char* format, va_list args) {
+	switch (type) {
+		case LOG: 	Logger::vlogf(format, args); 	break;
+		case INFO: 	Logger::vinfof(format, args); 	break;
+		case WARN: 	Logger::vwarnf(format, args); 	break;
+		case ERROR: Logger::verrorf(format, args); 	break;
+		case FATAL: Logger::vfatalf(format, args); 	break;
+
+		case CHECKLIST_BLANK: 	Logger::Checklist::v_blankEntry(format, args); 	 break;
+		case CHECKLIST_CHECK: 	Logger::Checklist::v_checkEntry(format, args); 	 break;
+		case CHECKLIST_NOCHECK: Logger::Checklist::v_noCheckEntry(format, args); break;
+		default: vprintf(format, args);	break;
+	}
+}

@@ -5,9 +5,7 @@ extern "C" {
 #endif
 	char* itoa(long long value, char* buffer, int base);
 	char* ftoa(double d, char* buffer, int precision);
-    // if you want dtoa, do it yourself im not touching this shit
-    char *dtoa(double d, int mode, int ndigits, int *decpt, int *sign, char **rve);
-
+	int atoi(const char* str);
 #ifdef __cplusplus
 }
 #endif

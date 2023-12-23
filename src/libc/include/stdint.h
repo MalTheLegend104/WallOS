@@ -23,7 +23,7 @@ see the files COPYING3 and COPYING.RUNTIME respectively.  If not, see
 #ifndef _GCC_STDINT_H
 #define _GCC_STDINT_H
 
-/* 7.8.1.1 Exact-width integer types */
+ /* 7.8.1.1 Exact-width integer types */
 
 #ifdef __INT8_TYPE__
 typedef __INT8_TYPE__ int8_t;
@@ -226,7 +226,7 @@ typedef __UINTMAX_TYPE__ uintmax_t;
 #define WINT_MIN __WINT_MIN__
 
 #endif /* (!defined __cplusplus || __cplusplus >= 201103L
-        || defined __STDC_LIMIT_MACROS)  */
+		|| defined __STDC_LIMIT_MACROS)  */
 
 #if (!defined __cplusplus || __cplusplus >= 201103L \
      || defined __STDC_CONSTANT_MACROS)
@@ -253,11 +253,11 @@ typedef __UINTMAX_TYPE__ uintmax_t;
 #define UINTMAX_C(c) __UINTMAX_C(c)
 
 #endif /* (!defined __cplusplus || __cplusplus >= 201103L
-        || defined __STDC_CONSTANT_MACROS) */
+		|| defined __STDC_CONSTANT_MACROS) */
 
 #if (defined __STDC_WANT_IEC_60559_BFP_EXT__ \
      || (defined (__STDC_VERSION__) && __STDC_VERSION__ > 201710L))
-/* TS 18661-1 / C2X widths of integer types.  */
+		/* TS 18661-1 / C2X widths of integer types.  */
 
 #ifdef __INT8_TYPE__
 # undef INT8_WIDTH

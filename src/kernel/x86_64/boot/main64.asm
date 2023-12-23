@@ -14,7 +14,7 @@ long_mode_start:
     mov es, ax
     mov fs, ax
     mov gs, ax
-	mov  edi, DWORD[multiboot_data_magic]
-    mov  esi, DWORD[multiboot_data_address]
+	mov edi, DWORD[multiboot_data_magic]
+    mov esi, DWORD[multiboot_data_address]
 	call kernel_main
     hlt

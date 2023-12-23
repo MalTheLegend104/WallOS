@@ -5,31 +5,53 @@ args=()
 native_flag_found=false
 debug=false
 
+strip_debug() {
+	cd ../dist/x86_64
+	x86_64-elf-objcopy --only-keep-debug WallOS.bin WallOS.sym
+	x86_64-elf-objcopy --strip-debug WallOS.bin
+	cd ../../dockerless
+}
+
 run_default () {
 	if [[ $(grep -i Microsoft /proc/version) ]]; then
+		./build64
+		echo -e "<------------Running QEMU------------->"
 		echo -e "WSL Detected - Running QEMU for Windows"
 		qemu-system-x86_64.exe -cdrom ../dist/x86_64/WallOS.iso "${default_args[@]}" "${args[@]}"
 	else 
+		./build64
+		echo -e "<------------Running QEMU------------->"
 		qemu-system-x86_64 -cdrom ../dist/x86_64/WallOS.iso "${default_args[@]}" "${args[@]}"
 	fi
 }
 
 run_with_debug () {
+	cd ../
+	make build DEBUG_SYMBOLS="-g"
+	cd dockerless
+	strip_debug
+	echo -e "<------------Running QEMU------------->"
+	echo "Running with debug config. Connect using GDB on port \`localhost:1234\`"
 	qemu-system-x86_64 -cdrom ../dist/x86_64/WallOS.iso -s -S "${default_args[@]}" "${args[@]}"
 }
 
 run_native () {
+	./build64
+	echo -e "<------------Running QEMU------------->"
 	echo -e "Running native QEMU. This should only have an effect if you are using WSL.\nIf you run into an error, or a window does not open, try running again without --native."
 	qemu-system-x86_64 -cdrom ../dist/x86_64/WallOS.iso "${default_args[@]}" "${args[@]}"
 }
 
 run_native_db () {
+	cd ../
+	make build DEBUG_SYMBOLS="-g"
+	cd dockerless
+	strip_debug
+	echo -e "<------------Running QEMU------------->"
+	echo "Running with debug config. Connect using GDB on port \`localhost:1234\`"
 	echo -e "Running native QEMU. This should only have an effect if you are using WSL.\nIf you run into an error, or a window does not open, try running again without --native."
 	qemu-system-x86_64 -cdrom ../dist/x86_64/WallOS.iso -s -S "${default_args[@]}" "${args[@]}"
 }
-
-./build64
-echo -e "<------------Running QEMU------------->"
 
 # Iterate over the command line arguments
 while [[ $# -gt 0 ]]; do
@@ -55,14 +77,12 @@ done
 # Check the value of the native_flag_found variable outside the loop
 if [ "$native_flag_found" = true ]; then
   	if [ "$debug" = true ]; then
-		echo "Running with debug config. Connect using GDB on port \`localhost:1234\`"
 		run_native_db
 	else
 		run_native
 	fi
 else
 	if [ "$debug" = true ]; then
-		echo "Running with debug config. Connect using GDB on port `localhost:1234`"
 		run_with_debug
 	else
 		run_default
