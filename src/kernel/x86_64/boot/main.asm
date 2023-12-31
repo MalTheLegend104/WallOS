@@ -1,43 +1,57 @@
+[BITS 32]
 global start
-extern long_mode_start
 
-section .data
+
+KERNEL_VIRTUAL_BASE equ 0xFFFFFFFF80000000
+
+section .boot.data
 multiboot_data_magic:     dq 0
 multiboot_data_address:   dq 0
-global multiboot_data_magic
-global multiboot_data_address
 
-section .text
-bits 32
-start:
-	mov esp, stack_top
-	
-	call check_multiboot
-	; Move multiboot pointer to ebx (assuming it exists)s
-	mov DWORD [multiboot_data_magic],    eax
-	mov DWORD [multiboot_data_address],  ebx
-	
-	call check_cpuid
-	call check_long_mode
-	
-	;This is just 32 bit paging, it's only used to get to long mode
-	call setup_page_tables
-	call enable_paging
 
-	lgdt [gdt64.pointer]
-	jmp gdt64.code_segment:long_mode_start
 
-	hlt
+align 16
+GDT64:                           ; Global Descriptor Table (64-bit).
+	.Null: equ $ - GDT64         ; The null descriptor.
+	dw 0xFFFF                    ; Limit (low).
+	dw 0                         ; Base (low).
+	db 0                         ; Base (middle)
+	db 0                         ; Access.
+	db 0                         ; Granularity.
+	db 0                         ; Base (high).
+	.Code: equ $ - GDT64         ; The code descriptor.
+	dw 0                         ; Limit (low).
+	dw 0                         ; Base (low).
+	db 0                         ; Base (middle)
+	db 10011010b                 ; Access (exec/read).
+	db 00100000b                 ; Granularity, 64 bits flag, limit19:16.
+	db 0                         ; Base (high).
+	.Data: equ $ - GDT64         ; The data descriptor.
+	dw 0                         ; Limit (low).
+	dw 0                         ; Base (low).
+	db 0                         ; Base (middle)
+	db 10010010b                 ; Access (read/write).
+	db 00000000b                 ; Granularity.
+	db 0                         ; Base (high).
+	.TSS: ;equ $ - GDT64         ; TSS Descriptor
+	.len:
+	dw 108                       ; TSS Length - the x86_64 TSS is 108 bytes loong
+	.low:
+	dw 0                         ; Base (low).
+	.mid:
+	db 0                         ; Base (middle)
+	db 10001001b                 ; Flags
+	db 00000000b                 ; Flags 2
+	.high:
+	db 0                         ; Base (high).
+	.high32:
+	dd 0                         ; High 32 bits
+	dd 0                         ; Reserved
+GDT64Pointer:                    ; The GDT-pointer.
+	dw $ - GDT64 - 1             ; Limit.
+	dq GDT64                     ; Base.
 
-; Check if there is a multiboot compliant bootloader
-check_multiboot:
-	cmp eax, 0x36d76289
-	jne .no_multiboot
-	ret
-.no_multiboot:
-	mov al, "M"
-	jmp error
-
+section .boot.text
 ; Make sure this is an x86_64 CPU
 check_cpuid:
 	pushfd
@@ -73,7 +87,7 @@ check_long_mode:
 	mov al, "L"
 	jmp error
 
-; Sets up 32bit paging
+; Sets up paging
 setup_page_tables:
 	mov eax, page_table_l3
 	or eax, 0b11 ; present, writable
@@ -96,7 +110,8 @@ setup_page_tables:
 	jne .loop ; if not, continue
 
 	ret
-
+; TODO, WE NEED TO FILL THE NEW PAGE TABLE STRUCTURE
+; I DIDNT GET AROUND TO IT BEFORE THE COMMIT
 enable_paging:
 	; pass page table location to cpu
 	mov eax, page_table_l4
@@ -128,23 +143,62 @@ error:
 	mov byte  [0xb800a], al
 	hlt
 
+start:
+	; Move multiboot pointer to ebx (assuming it exists)
+	; We'll check for the header in kernel main
+	mov DWORD [multiboot_data_magic],    eax
+	mov DWORD [multiboot_data_address],  ebx
+	
+	; Make sure we have a x86_64 processor and it has long mode
+	call check_cpuid
+	call check_long_mode
+	
+	; Set up our base page tables.
+	call setup_page_tables
+	call enable_paging
+
+	lgdt [GDT64Pointer]
+  	jmp 0x8:entry64 - KERNEL_VIRTUAL_BASE
+
+	hlt
+
+
+[BITS 64]
+
+extern _bss
+extern _bss_end
+
+section .data
+GDT64Pointer64:                    ; The GDT-pointer.
+    dw GDT64Pointer - GDT64 - 1    ; Limit.
+    dq GDT64 + KERNEL_VIRTUAL_BASE ; Base.
+
+section .text
+long_mode_start:
+	lgdt [GDT64Pointer64]
+
+   	mov ax, 0x10
+	mov ds, ax
+	mov es, ax
+	mov fs, ax
+	mov gs, ax
+	mov ss, ax
+
+	mov rdi, _bss
+	mov rcx, _bss_end
+	sub rcx, _bss
+	xor rax, rax
+	rep stosb
+
+	mov rsp, stack_top
+
+	mov rdi, DWORD[multiboot_data_magic]
+    mov rsi, DWORD[multiboot_data_address]
+	call kernel_main
+    hlt
+
 section .bss
 align 4096
-page_table_l4:
-	resb 4096
-page_table_l3:
-	resb 4096
-page_table_l2:
-	resb 4096
 stack_bottom:
-	resb 4096 * 4
+	resb 32768
 stack_top:
-
-section .rodata
-gdt64:
-	dq 0 ; zero entry
-.code_segment: equ $ - gdt64
-	dq (1 << 43) | (1 << 44) | (1 << 47) | (1 << 53) ; code segment
-.pointer:
-	dw $ - gdt64 - 1 ; length
-	dq gdt64 ; address

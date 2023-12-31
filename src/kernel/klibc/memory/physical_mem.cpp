@@ -7,8 +7,6 @@
 #include <klibc/logger.h>
 #include <idt.h>
 
-extern uint64_t endkernel;
-
 typedef struct Block {
 	size_t pointer;
 	bool free;
@@ -66,6 +64,10 @@ int memtest(int argc, char** argv) {
 	return 0;
 }
 
+
+extern "C" {
+	extern uint32_t endkernel;
+}
 /**
  * @brief Maps a chunk of memory. This is cursed.
  *
@@ -78,7 +80,8 @@ void map_chunk(uintptr_t start_address, size_t length, uint32_t type) {
 	//if (start_address >= 0xffffffff) return;
 	if (start_address < 0x100000) return;
 	if (start_address == 0x100000) {
-		printf("Length of Kernel: %llu -> start addr %llu\n", length, start_address);
+		ptrdiff_t len = endkernel - start_address;
+		printf("Length of Kernel: %llu -> start addr %llu\n", len, start_address);
 		return;
 	}
 	size_t max_pages = length / 0x1000;
