@@ -66,7 +66,7 @@ int memtest(int argc, char** argv) {
 
 
 extern "C" {
-	extern uint32_t endkernel;
+	extern uint32_t kernel_end;
 }
 /**
  * @brief Maps a chunk of memory. This is cursed.
@@ -80,7 +80,7 @@ void map_chunk(uintptr_t start_address, size_t length, uint32_t type) {
 	//if (start_address >= 0xffffffff) return;
 	if (start_address < 0x100000) return;
 	if (start_address == 0x100000) {
-		ptrdiff_t len = endkernel - start_address;
+		ptrdiff_t len = kernel_end - start_address;
 		printf("Length of Kernel: %llu -> start addr %llu\n", len, start_address);
 		return;
 	}

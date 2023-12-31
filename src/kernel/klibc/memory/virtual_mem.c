@@ -15,7 +15,7 @@
  *
  * For a better understanding, see page 142 in Volume 2 of the AMD Manuals.
  */
-#include <virtual_mem.h>
+#include <memory/virtual_mem.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -33,7 +33,7 @@
  *
  * Newer processors (2023), including Threadripper 7900WX, EPYC 9004, and Intel Ice Lake are the first processors supporting level 5 paging.
  * As of right now, I dont see the need to implement 5 level paging, we dont need 128 PB of virtual addressing.
- * 5 Level paging is limited to server processors, and at that, there's plenty of bottlenecks in the way of even reaching 256TB
+ * 5 Level paging is limited to server processors, and at that, there's plenty of bottlenecks in the way of even reaching 128PB
  */
 uint64_t pml4[TABLE_ENTRIES] __attribute__((aligned(4096)));
 uint64_t pdp[TABLE_ENTRIES]  __attribute__((aligned(4096)));

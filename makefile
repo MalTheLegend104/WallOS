@@ -1,8 +1,8 @@
 MAKEFLAGS = -s
 #default things for all platforms. This includes things like LIBC, the WallOS, and compile flags.
 DEBUG_SYMBOLS   := 
-C_FLAGS 		:= -ffreestanding -std=gnu99 -O2 -g -Wall -Wextra -Wno-format -nostdlib -lgcc -mno-red-zone -O0 $(DEBUG_SYMBOLS)
-CPP_FLAGS 		:= -ffreestanding -fno-rtti -O2 -g -Wall -Wextra -Wno-format -nostdlib -lgcc -mno-red-zone -O0 $(DEBUG_SYMBOLS)
+C_FLAGS 		:= -ffreestanding -std=gnu99 -g -Wall -Wextra -Wno-format -nostdlib -lgcc -mno-red-zone -O0 -mcmodel=kernel $(DEBUG_SYMBOLS)
+CPP_FLAGS 		:= -ffreestanding -fno-rtti -g -Wall -Wextra -Wno-format -nostdlib -lgcc -mno-red-zone -O0 -mcmodel=kernel $(DEBUG_SYMBOLS)
 NASM_FLAGS 		:= $(DEBUG_SYMBOLS)
 LINKER_FLAGS 	:=
 
@@ -168,7 +168,7 @@ build-all:
 build: $(LIBC_OBJ) $(KLIBC_OBJ) $(KCORE_OBJ) $(x86_64_OBJ) $(CRTI_OBJ) $(CRTN_OBJ) $(CRTBEGIN_OBJ) $(CRTEND_OBJ) $(IDT_MAIN_OBJ)
 	mkdir -p dist/x86_64
 	echo "<---------------Linking--------------->"
-	x86_64-elf-ld -n -o dist/x86_64/WallOS.bin -T targets/x86_64/linker.ld $(CRTI_OBJ) $(CRTBEGIN_OBJ) $(LIBC_OBJ) $(KLIBC_OBJ) $(x86_64_OBJ) $(IDT_MAIN_OBJ) $(KCORE_OBJ) $(CRTEND_OBJ) $(CRTN_OBJ)
+	x86_64-elf-ld -n -o dist/x86_64/WallOS.bin -T targets/x86_64/linker.ld $(LIBC_OBJ) $(KLIBC_OBJ) $(x86_64_OBJ) $(IDT_MAIN_OBJ) $(KCORE_OBJ)
 	echo "<------------Compiling ISO------------>"
 	cp dist/x86_64/WallOS.bin targets/x86_64/iso/boot/WallOS.bin && \
 	grub-mkrescue /usr/lib/grub/i386-pc -o dist/x86_64/WallOS.iso targets/x86_64/iso
