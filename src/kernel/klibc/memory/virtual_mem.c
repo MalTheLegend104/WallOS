@@ -1,6 +1,10 @@
-/* Read the AMD and Intel programmers manuals to understanding how page tabels work. The wiki does a bad job in my opinion.
+/* Read the AMD and Intel programmers manuals to get an understanding as to how page tabels work. The wiki does a bad job in my opinion.
  * The naming of things and the general structure are heavily inspired by the AMD manuals.
  *
+ * Below is a summary of how the three most important addresses work in terms of paging:
+ *
+ * Virtual Addresses are the addresses given to a program by things like malloc() or new.
+ * They are also given to the program as a whole when it is loaded into memory.
  * Virtual Addresses are laid out in a very particular way on x86_64:
  * |63            48|47     39|38     30|29     21|20     12|11         0|
  *  0000000000000000 000000000 000000000 000000000 000000000 000000000000
@@ -13,7 +17,38 @@
  * 20-11: Offset in the PTE that the PDE pointed to.
  * 11-0:  Offset in the page. 4095 is the max, pointing to the very last byte of the page.
  *
- * For a better understanding, see page 142 in Volume 2 of the AMD Manuals.
+ *
+ * Page tables are explained further down in another comment, but it's impoortant to note now that they contain special addressing.
+ * Page tables contain a different format of address than anything else in x86-64:
+ * |63|62       52|51                                    12|11         0|
+ *   0 00000000000 0000000000000000000000000000000000000000 000000000000
+ * Meaning of Bits:
+ * 63: (NX) - No execute. Controls the ability to execute code from all physical pages mapped by the table entry.
+ * 62-52: Free for the OS to use as it wishes, ignored by the processor.
+ * 51-12: Page Table Base Address. It's the pointer to the base of the next page (or beginning of physical page).
+ *        The lower 11 bits of this address are assumed to be 0, since the pointer should be to an aligned boundary.
+ * !-- It is important to note that the following, bits 11-0, are all flags. --!
+ * 11-9: Free for the OS to use as it wishes, ignored by the processor.
+ * 8: Global Page Bit. WallOS likely wont use these, see page 158 in Volume 2 of the AMD Manuals for reference.
+ * 7: Page Size. This is only relavent if we dont want 4KB pages.
+ *    If we want say, 2MB pages, this bit would be set in the PDE, and the address would point to a physical page.
+ * 6: Dirty Bit. Only set on the lowest level of heirarchy (pte for 4KB pages, pde for 2MB, etc.).
+ *    Set to 1 by the processor upon first write to the page. OS has to manually change the bit back to zero.
+ * 5: Accessed. Much like the dirty bit, set to 1 by the processor whenever the table or page has been accessed for
+ *    a read or write for the first time. Must be manually cleared by the OS.
+ * 4: Page-Level Cache Disable. See “Memory Caches” on page 203 in AMD Manual Volume 2.
+ * 3: Page-Level Writethrough. See “Memory Caches” on page 203 in AMD Manual Volume 2.
+ * 2: User/Supervisor. If set to 1, the user is allowed to access values at that page.
+ *    If zero, only the OS has access. If a user attempts to access supervisor memory a #PF occurs.
+ * 1: Read/Write. If set to 0, the page, or all physical entries further down the hierarchy are read only.
+ *    If set to 1, the page is able to be written to.
+ *    Important Note: The entire hierarchy MUST have the write bit set to 1 for the page to be writeable.
+ *    Any zero for the r/w bit through the hierarchy makes the page read only.
+ *
+ * For a better understanding, see page 142 (section 5 - long mode paging) in Volume 2 of the AMD Manuals.
+ *
+ * Physical Addresses are dervied from both virtual addresses and the hierarchy of page tables.
+ * After parsing through each page table, the final table entry contains.
  */
 #include <memory/virtual_mem.h>
 #include <stdint.h>
@@ -67,7 +102,6 @@ uint64_t pdp[TABLE_ENTRIES]  __attribute__((aligned(4096)));
 // First entry in normal pdp [1GB]
 uint64_t pde[TABLE_ENTRIES]  __attribute__((aligned(4096)));
 // First entry in normal pde [2MB]
-// The lower 1MB of this is going to be identity mapped
 // The rest will be the start of malloc & userspace as we know it.
 uint64_t pte[TABLE_ENTRIES] __attribute__((aligned(4096)));
 
@@ -81,6 +115,20 @@ void set_page_frame(uint64_t* page, uint64_t addr) {
 #define PDPT_GET_INDEX(addr) (((addr) >> 30) & 0x1FF)
 #define PAGE_DIR_GET_INDEX(addr) (((addr) >> 21) & 0x1FF)
 #define PAGE_TABLE_GET_INDEX(addr) (((addr) >> 12) & 0x1FF)
+
+/**
+ * @brief The structure for entries the in final page table, pte
+ * The upper 52 bits correspond to a physical address, in canonical form.
+ * This really means that they are 48 bit address fields.
+ * This entire union makes up only one 64bit chunk of memory.
+ */
+typedef union {
+	struct {
+		uint64_t phys : 52;
+		uint64_t flags : 12;
+	};
+	uint64_t raw_entry;
+} pte_entry_t;
 
 /* Just some notes for my future self.
  * We're mapping both lower memory (bottom 1MB) and upper memory to the kpdp
@@ -96,11 +144,23 @@ void initVirtualMemory() {
 	memset(pde, 0, sizeof(uint64_t) * TABLE_ENTRIES);
 	memset(pte, 0, sizeof(uint64_t) * TABLE_ENTRIES);
 	/* We have to set up the tables to point to each other. */
-	// pml4
+	/* Kernel Memory Space */
+	// pml4, mapping the upper 2GB and the lower 2MB
 	set_page_frame(&(pml4[511]), ((uint64_t) kpdp - KERNEL_VIRTUAL_BASE));
 	pml4[511] |= 0b11;
 	pml4[0] = pml4[511];
 
+	// kpdp, mapping the upper 2GB
+	set_page_frame(&(kpdp[510]), ((uint64_t) kpde - KERNEL_VIRTUAL_BASE));
+	kpdp[510] |= 0b11;
+
+	// Map the lower 1MB
+	set_page_frame(&(kpde[0]), ((uint64_t) pte - KERNEL_VIRTUAL_BASE));
+	for (int i = 0; i < TABLE_ENTRIES / 2; i++) {
+
+	}
+
+	/* User memory space */
 	set_page_frame(&(pml4[1]), ((uint64_t) pdp - KERNEL_VIRTUAL_BASE));
 	pml4[1] |= 0b111;
 
