@@ -62,11 +62,15 @@ int test(int a);
 
 ### Ordered
 
-1. Virtual Memory (paging/malloc/free/new/delete)
+1. Virtual/Physical Memory (paging/malloc/free/new/delete)
+2. Filesystem
+   - At the very least, want to be able to load from disk and load programs. 
+3. System Calls
+4. Move terminal to userspace.
+   - Scheduling and multitasking are necessary for me to do userspace apps
 
 ### Unordered/Long Term
 
-- System Calls
 - GUI
 - Multitasking
 - Userspace Applications
