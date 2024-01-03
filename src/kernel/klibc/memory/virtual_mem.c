@@ -42,13 +42,28 @@
  *    If zero, only the OS has access. If a user attempts to access supervisor memory a #PF occurs.
  * 1: Read/Write. If set to 0, the page, or all physical entries further down the hierarchy are read only.
  *    If set to 1, the page is able to be written to.
- *    Important Note: The entire hierarchy MUST have the write bit set to 1 for the page to be writeable.
+ * Important Note: The entire hierarchy MUST have the write bit set to 1 for the page to be writeable.
  *    Any zero for the r/w bit through the hierarchy makes the page read only.
  *
- * For a better understanding, see page 142 (section 5 - long mode paging) in Volume 2 of the AMD Manuals.
+ * For a better understanding of all the above, see page 142 (section 5 - long mode paging) in Volume 2 of the AMD Manuals.
  *
  * Physical Addresses are dervied from both virtual addresses and the hierarchy of page tables.
- * After parsing through each page table, the final table entry contains.
+ * After parsing through each page table, the final table entry contains an address as seen above.
+ * The final table contains the same structure as those before it, with one exception.
+ * Bits 51-12 correspond to a physical address like before. x86_64 supports 52 bit addressing, meaning we're missing the lower 12 bytes (11-0).
+ * When translating page tables before, the processor could easily assume that the next page table would start on a page boundary, meaning those bits are zero.
+ * It can't do this when trying to find a certain spot in memory. Therefore, these lower 12 bytes come from the orginial virtual address.
+ * This gives physical addresses this final structure:
+ * |63        52|51                                    12|11         0|
+ *  000000000000 0000000000000000000000000000000000000000 000000000000
+ * Meaning of Bits:
+ * 63-48: Reserved, must ALL be the same type of bit (either 0 or 1). The processor takes care of this for us.
+ * 51-12: Come from the final page table entry, regardless of page size. 1GB would come from the pdp, 2MB from the pde, 4KB from the pte.
+ * 11-0: Come from the original virtual address, where the lower 11 bits of the original address are the same as the physical address.
+ *
+ * This physical address layout isn't really touched on or described well in either the Intel or AMD manuals.
+ * Quite frankly it doesn't have to be. The CPU takes care of the translation for you as long as you properly set up your tables.
+ * Regardless, this entire summary is meant to make x86_64 paging less daunting, and hopefully make it easier to follow the code below.
  */
 #include <memory/virtual_mem.h>
 #include <stdint.h>
@@ -69,8 +84,43 @@
  * If both end up full, we start filling kpdp in reverse order from 510, starting at 509, then 508, etc.
  */
 #define KERNEL_VIRTUAL_BASE 0xFFFFFFFF80000000ULL
-
+// The first 52 bytes of memory: 0b1111111111111111111111111111111111111111000000000000
+#define PAGE_FRAME 0xFFFFFFFFFF000ULL
 #define TABLE_ENTRIES 512 
+
+/* Macros to make page modification not magic. */
+#define GET_PML4_INDEX(page) 		(((page) >> 39) & 0x1FF)
+#define GET_PDPT_INDEX(page) 		(((page) >> 30) & 0x1FF)
+#define GET_PAGE_DIR_INDEX(page) 	(((page) >> 21) & 0x1FF)
+#define GET_PAGE_TABLE_INDEX(page) 	(((page) >> 12) & 0x1FF)
+
+#define BIT_NX 					0x8000000000000000ULL // Highest bit, bit 63
+#define BIT_11 					0x800ULL
+#define BIT_10 					0x400ULL
+#define BIT_9  					0x200ULL
+#define BIT_GLOBAL  			0x100ULL
+#define BIT_SIZE  				0x80ULL
+#define BIT_DIRTY  				0x40ULL
+#define BIT_ACCESS  			0x20ULL
+#define BIT_PCD  				0x10ULL
+#define BIT_PWT  				0x08ULL
+#define BIT_USR					0x04ULL
+#define BIT_WRITE				0x02ULL
+#define BIT_PRESENT				0x01ULL
+
+#define SET_BIT_NX(page) 		(page = (page | BIT_NX))
+#define SET_BIT_11(page) 		(page = (page | BIT_11))
+#define SET_BIT_10(page) 		(page = (page | BIT_10))
+#define SET_BIT_9(page)  		(page = (page | BIT_9))
+#define SET_BIT_GLOBAL(page)  	(page = (page | BIT_GLOBAL))
+#define SET_BIT_SIZE(page)  	(page = (page | BIT_SIZE))
+#define CLEAR_BIT_DIRTY(page)  	(page = (page & ~BIT_DIRTY))
+#define CLEAR_BIT_ACCESS(page) 	(page = (page & ~BIT_ACCESS))
+#define SET_BIT_PCD(page)  		(page = (page | BIT_PCD))
+#define SET_BIT_PWT(page)  		(page = (page | BIT_PWT))
+#define SET_BIT_USR(page)		(page = (page | BIT_USR))
+#define SET_BIT_WRITE(page)		(page = (page | BIT_WRITE))
+#define SET_BIT_PRESENT(page)	(page = (page | BIT_PRESENT))
 
 /* To start out, we're defining:
  * The top level page (pml4)
@@ -105,30 +155,22 @@ uint64_t pde[TABLE_ENTRIES]  __attribute__((aligned(4096)));
 // The rest will be the start of malloc & userspace as we know it.
 uint64_t pte[TABLE_ENTRIES] __attribute__((aligned(4096)));
 
-// The first 48 bytes of memory: 0b1111111111111111111111111111111111111111000000000000
-#define PAGE_FRAME 0xFFFFFFFFFF000ULL
+
 void set_page_frame(uint64_t* page, uint64_t addr) {
+	/* This voodoo magic does two things
+	 * (*page & ~PAGE_FRAME) - clears the upper 52 bits of the page entry.
+	 * (addr & PAGE_FRAME) - Sets the proper bits in the entry to the entry.
+	 * Since it uses and bitwise AND, and the addr should be canonical form, this copies only the important bits.
+	 * It means that bits 52-12 are filled, and nothing else gets touched.
+	 * It also means that addr doesn't even have to the be the base pointer,
+	 * although this isn't ever a problem, we always use the base.
+	 */
 	*page = (*page & ~PAGE_FRAME) | (addr & PAGE_FRAME);
 }
 
-#define PML4_GET_INDEX(addr) (((addr) >> 39) & 0x1FF)
-#define PDPT_GET_INDEX(addr) (((addr) >> 30) & 0x1FF)
-#define PAGE_DIR_GET_INDEX(addr) (((addr) >> 21) & 0x1FF)
-#define PAGE_TABLE_GET_INDEX(addr) (((addr) >> 12) & 0x1FF)
-
-/**
- * @brief The structure for entries the in final page table, pte
- * The upper 52 bits correspond to a physical address, in canonical form.
- * This really means that they are 48 bit address fields.
- * This entire union makes up only one 64bit chunk of memory.
- */
-typedef union {
-	struct {
-		uint64_t phys : 52;
-		uint64_t flags : 12;
-	};
-	uint64_t raw_entry;
-} pte_entry_t;
+#define PAGE_4KB_SIZE 0x1000 
+#define PAGE_2MB_SIZE 0x200000 // 512 * 4096
+#define PAGE_1GB_SIZE 0x40000000 // 512 * 512 * 4096
 
 /* Just some notes for my future self.
  * We're mapping both lower memory (bottom 1MB) and upper memory to the kpdp
@@ -152,17 +194,19 @@ void initVirtualMemory() {
 
 	// kpdp, mapping the upper 2GB
 	set_page_frame(&(kpdp[510]), ((uint64_t) kpde - KERNEL_VIRTUAL_BASE));
-	kpdp[510] |= 0b11;
+	// Since the kernel is 2MB pages, we need to mark bit 7
+	kpdp[510] |= 0b10000011;
 
 	// Map the lower 1MB
 	set_page_frame(&(kpde[0]), ((uint64_t) pte - KERNEL_VIRTUAL_BASE));
 	for (int i = 0; i < TABLE_ENTRIES / 2; i++) {
-
+		set_page_frame(&(kpde[i]), PAGE_4KB_SIZE * i);
+		kpde[i] |= BIT_WRITE | BIT_PRESENT;
 	}
 
 	/* User memory space */
 	set_page_frame(&(pml4[1]), ((uint64_t) pdp - KERNEL_VIRTUAL_BASE));
-	pml4[1] |= 0b111;
+	pml4[1] |= BIT_USR | BIT_WRITE | BIT_PRESENT;
 
 
 	/* The two most important things for us to do are:

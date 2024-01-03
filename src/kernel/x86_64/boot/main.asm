@@ -116,8 +116,6 @@ setup_page_tables:
 	mov cr3, eax
 	ret
 
-; TODO, WE NEED TO FILL THE NEW PAGE TABLE STRUCTURE
-; I DIDNT GET AROUND TO IT BEFORE THE COMMIT
 enable_paging:
 	; enable PAE
 	mov eax, cr4
