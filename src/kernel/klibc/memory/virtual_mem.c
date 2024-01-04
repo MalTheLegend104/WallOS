@@ -8,7 +8,6 @@
  * Virtual Addresses are laid out in a very particular way on x86_64:
  * |63            48|47     39|38     30|29     21|20     12|11         0|
  *  0000000000000000 000000000 000000000 000000000 000000000 000000000000
- *
  * Meaning of Bits:
  * 63-48: Reserved, must ALL be the same type of bit (either 0 or 1)
  * 47-39: Offset in the top level page (pml4).
@@ -18,7 +17,7 @@
  * 11-0:  Offset in the page. 4095 is the max, pointing to the very last byte of the page.
  *
  *
- * Page tables are explained further down in another comment, but it's impoortant to note now that they contain special addressing.
+ * Page tables are explained further down in another comment, but it's important to note that they contain special addressing.
  * Page tables contain a different format of address than anything else in x86-64:
  * |63|62       52|51                                    12|11         0|
  *   0 00000000000 0000000000000000000000000000000000000000 000000000000
@@ -43,7 +42,9 @@
  * 1: Read/Write. If set to 0, the page, or all physical entries further down the hierarchy are read only.
  *    If set to 1, the page is able to be written to.
  * Important Note: The entire hierarchy MUST have the write bit set to 1 for the page to be writeable.
- *    Any zero for the r/w bit through the hierarchy makes the page read only.
+ *                 Any zero for the r/w bit through the hierarchy makes the page read only.
+ *                 This also applies to the User/Supervisor bit, where the entire hierarchy must have the
+ *                 User bit set for the memory to be accessable in ring 3.
  *
  * For a better understanding of all the above, see page 142 (section 5 - long mode paging) in Volume 2 of the AMD Manuals.
  *
@@ -65,68 +66,21 @@
  * Quite frankly it doesn't have to be. The CPU takes care of the translation for you as long as you properly set up your tables.
  * Regardless, this entire summary is meant to make x86_64 paging less daunting, and hopefully make it easier to follow the code below.
  */
-#include <memory/virtual_mem.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-
-/* The kernel is loaded at 0xFFFFFFFF80000000, which is 2GB below the upper limit of the virtual address space.
- * This is the structure of the base address in binary
- * |63            48|47     39|38     30|29     21|20                  0|
- *  1111111111111111 111111111 111111110 000000000 000000000000000000000
- * 63-48: Ignored
- * 47-39: (0b111111111) = 511. This means pml4[511]
- * 38-30: (0b111111110) = 510. This means kpdp[510]
- * 29-21: (0b000000000) = 0. This means kpde[0]
- * 20-0:  (0b000000000000000000000) = 0. Offset in the page. The kernel uses 2MB pages.
- * As the kernel needs more virtual memory, we fill kpde first, then expand to kpdp[511] as needed.
- * If both end up full, we start filling kpdp in reverse order from 510, starting at 509, then 508, etc.
- */
-#define KERNEL_VIRTUAL_BASE 0xFFFFFFFF80000000ULL
-// The first 52 bytes of memory: 0b1111111111111111111111111111111111111111000000000000
-#define PAGE_FRAME 0xFFFFFFFFFF000ULL
-#define TABLE_ENTRIES 512 
-
-/* Macros to make page modification not magic. */
-#define GET_PML4_INDEX(page) 		(((page) >> 39) & 0x1FF)
-#define GET_PDPT_INDEX(page) 		(((page) >> 30) & 0x1FF)
-#define GET_PAGE_DIR_INDEX(page) 	(((page) >> 21) & 0x1FF)
-#define GET_PAGE_TABLE_INDEX(page) 	(((page) >> 12) & 0x1FF)
-
-#define BIT_NX 					0x8000000000000000ULL // Highest bit, bit 63
-#define BIT_11 					0x800ULL
-#define BIT_10 					0x400ULL
-#define BIT_9  					0x200ULL
-#define BIT_GLOBAL  			0x100ULL
-#define BIT_SIZE  				0x80ULL
-#define BIT_DIRTY  				0x40ULL
-#define BIT_ACCESS  			0x20ULL
-#define BIT_PCD  				0x10ULL
-#define BIT_PWT  				0x08ULL
-#define BIT_USR					0x04ULL
-#define BIT_WRITE				0x02ULL
-#define BIT_PRESENT				0x01ULL
-
-#define SET_BIT_NX(page) 		(page = (page | BIT_NX))
-#define SET_BIT_11(page) 		(page = (page | BIT_11))
-#define SET_BIT_10(page) 		(page = (page | BIT_10))
-#define SET_BIT_9(page)  		(page = (page | BIT_9))
-#define SET_BIT_GLOBAL(page)  	(page = (page | BIT_GLOBAL))
-#define SET_BIT_SIZE(page)  	(page = (page | BIT_SIZE))
-#define CLEAR_BIT_DIRTY(page)  	(page = (page & ~BIT_DIRTY))
-#define CLEAR_BIT_ACCESS(page) 	(page = (page & ~BIT_ACCESS))
-#define SET_BIT_PCD(page)  		(page = (page | BIT_PCD))
-#define SET_BIT_PWT(page)  		(page = (page | BIT_PWT))
-#define SET_BIT_USR(page)		(page = (page | BIT_USR))
-#define SET_BIT_WRITE(page)		(page = (page | BIT_WRITE))
-#define SET_BIT_PRESENT(page)	(page = (page | BIT_PRESENT))
+#include <klibc/logger.h>
+#include <memory/virtual_mem.h>
 
 /* To start out, we're defining:
  * The top level page (pml4)
- * The first Page Directory Pointer table (pdp)
- * The first Page Director (pde)
- * The first Page Table (pte)
+ * The first kernel Page Directory Pointer table (kpdp)
+ * The first kernel Page Director (kpde)
+ * The first kernel Page Table (kpte)
+ *
+ * We're also creating a userspace table,
+ *
  * There is 2MB of memory relating to each full pte, 1GB relating to each full pde, and 512GB relating to each full pdp
  * This means that a full pml4 table is (512)^4 * 4096, or 256TB of virtual addressing.
  *
@@ -136,8 +90,7 @@
  * This would likely mean that there were several thousands or even millions of processes running at the same time.
  */
 
-/* When setting up the basic page tables, the kernel address space is going to be 2MB pages. The kernel allocator will deal with these 2MB pages. */
-/* The general purpose address space will be a mixture of 2MB and 4Kb addresses. */
+/* The address space in general will be a mixture of 2MB and 4Kb pages. */
 // Top level table [256TB]
 uint64_t pml4[TABLE_ENTRIES] __attribute__((aligned(4096)));
 
@@ -146,13 +99,15 @@ uint64_t pml4[TABLE_ENTRIES] __attribute__((aligned(4096)));
 uint64_t kpdp[TABLE_ENTRIES] __attribute__((aligned(4096)));
 // First entry for kpdp [1GB]
 uint64_t kpde[TABLE_ENTRIES] __attribute__((aligned(4096)));
+// First entry in kpde [2MB]
+// The lower 1MB of this is for identity mapping, the rest is mapped to KERNEL_VIRTUAL_BASE
+uint64_t kpte[TABLE_ENTRIES] __attribute__((aligned(4096)));
 
 // pml4[1] - First table for general purpose memory. [512GB] 
 uint64_t pdp[TABLE_ENTRIES]  __attribute__((aligned(4096)));
 // First entry in normal pdp [1GB]
 uint64_t pde[TABLE_ENTRIES]  __attribute__((aligned(4096)));
 // First entry in normal pde [2MB]
-// The rest will be the start of malloc & userspace as we know it.
 uint64_t pte[TABLE_ENTRIES] __attribute__((aligned(4096)));
 
 
@@ -168,14 +123,13 @@ void set_page_frame(uint64_t* page, uint64_t addr) {
 	*page = (*page & ~PAGE_FRAME) | (addr & PAGE_FRAME);
 }
 
-#define PAGE_4KB_SIZE 0x1000 
-#define PAGE_2MB_SIZE 0x200000 // 512 * 4096
-#define PAGE_1GB_SIZE 0x40000000 // 512 * 512 * 4096
 
 /* Just some notes for my future self.
  * We're mapping both lower memory (bottom 1MB) and upper memory to the kpdp
  * This means that both pml4[0] and pml4[511] point to the same pdp.
  * pml4[1] will be the start of user memory.
+ * Because of how it works out, the lower 2MB is idenity mapped, although the kernel is linked so everything after the boot structures
+ * uses the virtual addresses starting at KERNEL_VIRTUAL_BASE.
  */
 void initVirtualMemory() {
 	/* Clear the tables */
@@ -184,38 +138,49 @@ void initVirtualMemory() {
 	memset(kpde, 0, sizeof(uint64_t) * TABLE_ENTRIES);
 	memset(pdp, 0, sizeof(uint64_t) * TABLE_ENTRIES);
 	memset(pde, 0, sizeof(uint64_t) * TABLE_ENTRIES);
-	memset(pte, 0, sizeof(uint64_t) * TABLE_ENTRIES);
-	/* We have to set up the tables to point to each other. */
+	memset(kpte, 0, sizeof(uint64_t) * TABLE_ENTRIES);
+	/* The three most important things for us to do are:
+	 * 1.) Set up the tables to point to each other
+	 * 2.) Identity map the lower 1MB
+	 * 3.) Map the kernels address space
+	 */
 	/* Kernel Memory Space */
 	// pml4, mapping the upper 2GB and the lower 2MB
 	set_page_frame(&(pml4[511]), ((uint64_t) kpdp - KERNEL_VIRTUAL_BASE));
-	pml4[511] |= 0b11;
+	pml4[511] |= BIT_WRITE | BIT_PRESENT;
 	pml4[0] = pml4[511];
 
 	// kpdp, mapping the upper 2GB
 	set_page_frame(&(kpdp[510]), ((uint64_t) kpde - KERNEL_VIRTUAL_BASE));
-	// Since the kernel is 2MB pages, we need to mark bit 7
-	kpdp[510] |= 0b10000011;
+	kpdp[510] |= BIT_WRITE | BIT_PRESENT;
+	kpdp[0] = kpdp[510];
 
-	// Map the lower 1MB
-	set_page_frame(&(kpde[0]), ((uint64_t) pte - KERNEL_VIRTUAL_BASE));
-	for (int i = 0; i < TABLE_ENTRIES / 2; i++) {
-		set_page_frame(&(kpde[i]), PAGE_4KB_SIZE * i);
-		kpde[i] |= BIT_WRITE | BIT_PRESENT;
+	// Map the lower 2MB, using 4kb pages
+	set_page_frame(&(kpde[0]), ((uint64_t) kpte - KERNEL_VIRTUAL_BASE));
+	kpde[0] |= BIT_WRITE | BIT_PRESENT;
+	for (int i = 0; i < TABLE_ENTRIES; i++) {
+		set_page_frame(&(kpte[i]), PAGE_4KB_SIZE * i);
+		kpte[i] |= BIT_WRITE | BIT_PRESENT;
+	}
+	// The upper 1MB needs to be mapped to the upper kernel address space
+
+	/* Map the kernel address space. */
+	// The kernel starts at 1MB physical, and ends at kernel_end.
+	extern const uint64_t kernel_end;
+	uint64_t total_size = (uint64_t) (&kernel_end) - KERNEL_VIRTUAL_BASE;
+	// To determine where we need to mark addresses for the page table, we need to figure out how many 2MB pages this takes up.
+	uint64_t total_pages = (total_size + PAGE_2MB_SIZE) / PAGE_2MB_SIZE; // We add the page size to total_size so we can round up a page
+
+	// If the kernel takes up more than 2MB of memory, we need to mark those pages.
+	// If it only takes up 1 page, we've already dealt with it above when we mapped kpte.
+	for (uint64_t i = 1; i < total_pages; i++) {
+		set_page_frame(&(kpde[i]), PAGE_2MB_SIZE * i);
+		kpte[i] |= BIT_WRITE | BIT_PRESENT;
 	}
 
 	/* User memory space */
-	set_page_frame(&(pml4[1]), ((uint64_t) pdp - KERNEL_VIRTUAL_BASE));
-	pml4[1] |= BIT_USR | BIT_WRITE | BIT_PRESENT;
-
-
-	/* The two most important things for us to do are:
-	 * 1.) Identity map the lower 1MB
-	 * 2.) Map the kernels address space
-	 */
-
-
-	// Identity map the lower 1MB (0x100000 is first byte above 1MB)
-	// Map the kernel address space
+	// set_page_frame(&(pml4[1]), ((uint64_t) pdp - KERNEL_VIRTUAL_BASE));
+	// pml4[1] |= BIT_USR | BIT_WRITE | BIT_PRESENT;
+	uint64_t ptr = (uint64_t) pml4 - KERNEL_VIRTUAL_BASE;
+	asm volatile("mov %%rax, %%cr3" ::"a"(ptr));
 }
-
