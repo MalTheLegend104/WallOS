@@ -34,6 +34,8 @@ extern "C" {
 		VGA_DEFAULT_BG = 0
 	};
 
+
+
 	void clearVGABuf();
 	void clear_current_row();
 	void set_colors(char text, char back);
@@ -50,6 +52,8 @@ extern "C" {
 	void enable_cursor(uint8_t cursor_start, uint8_t cursor_end);
 	void update_cursor(int x, int y);
 	void disable_cursor();
+
+	void initScreen();
 
 	// this is temporarily here
 	static inline void outb(uint16_t port, uint8_t val) {

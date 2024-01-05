@@ -351,6 +351,14 @@ void puts_vga_color(const char* string, uint8_t fg, uint8_t bg) {
 	set_to_last();
 }
 
+void initScreen() {
+	clearVGABuf();
+	disable_cursor();
+	set_colors(VGA_DEFAULT_FG, VGA_DEFAULT_BG);
+	print_logo();
+	puts_vga_color("\n\nIntializing OS.\n", VGA_COLOR_PINK, VGA_COLOR_BLACK);
+}
+
 /**
  * @brief Prints the logo to the screen.
  */

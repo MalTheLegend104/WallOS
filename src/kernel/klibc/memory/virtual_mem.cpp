@@ -70,6 +70,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <assert.h>
 #include <klibc/logger.h>
 #include <memory/virtual_mem.h>
 
@@ -107,8 +108,6 @@ uint64_t kpte[TABLE_ENTRIES] __attribute__((aligned(4096)));
 uint64_t pdp[TABLE_ENTRIES]  __attribute__((aligned(4096)));
 // First entry in normal pdp [1GB]
 uint64_t pde[TABLE_ENTRIES]  __attribute__((aligned(4096)));
-// First entry in normal pde [2MB]
-uint64_t pte[TABLE_ENTRIES] __attribute__((aligned(4096)));
 
 
 void set_page_frame(uint64_t* page, uint64_t addr) {
@@ -123,6 +122,9 @@ void set_page_frame(uint64_t* page, uint64_t addr) {
 	*page = (*page & ~PAGE_FRAME) | (addr & PAGE_FRAME);
 }
 
+extern "C" {
+	extern const uint64_t kernel_end;
+}
 
 /* Just some notes for my future self.
  * We're mapping both lower memory (bottom 1MB) and upper memory to the kpdp
@@ -130,15 +132,18 @@ void set_page_frame(uint64_t* page, uint64_t addr) {
  * pml4[1] will be the start of user memory.
  * Because of how it works out, the lower 2MB is idenity mapped, although the kernel is linked so everything after the boot structures
  * uses the virtual addresses starting at KERNEL_VIRTUAL_BASE.
+ *
+ * To start out, we're also not going to map any physical memory to userspace. This will be dealt with later on.
+ * We're just going to give the userspace a pde, allowing 2MB pages, and mark it as not present.
  */
-void initVirtualMemory() {
+void Memory::initVirtualMemory() {
 	/* Clear the tables */
 	memset(pml4, 0, sizeof(uint64_t) * TABLE_ENTRIES);
 	memset(kpdp, 0, sizeof(uint64_t) * TABLE_ENTRIES);
 	memset(kpde, 0, sizeof(uint64_t) * TABLE_ENTRIES);
+	memset(kpte, 0, sizeof(uint64_t) * TABLE_ENTRIES);
 	memset(pdp, 0, sizeof(uint64_t) * TABLE_ENTRIES);
 	memset(pde, 0, sizeof(uint64_t) * TABLE_ENTRIES);
-	memset(kpte, 0, sizeof(uint64_t) * TABLE_ENTRIES);
 	/* The three most important things for us to do are:
 	 * 1.) Set up the tables to point to each other
 	 * 2.) Identity map the lower 1MB
@@ -166,21 +171,36 @@ void initVirtualMemory() {
 
 	/* Map the kernel address space. */
 	// The kernel starts at 1MB physical, and ends at kernel_end.
-	extern const uint64_t kernel_end;
+
 	uint64_t total_size = (uint64_t) (&kernel_end) - KERNEL_VIRTUAL_BASE;
 	// To determine where we need to mark addresses for the page table, we need to figure out how many 2MB pages this takes up.
 	uint64_t total_pages = (total_size + PAGE_2MB_SIZE) / PAGE_2MB_SIZE; // We add the page size to total_size so we can round up a page
 
 	// If the kernel takes up more than 2MB of memory, we need to mark those pages.
 	// If it only takes up 1 page, we've already dealt with it above when we mapped kpte.
-	for (uint64_t i = 1; i < total_pages; i++) {
-		set_page_frame(&(kpde[i]), PAGE_2MB_SIZE * i);
-		kpte[i] |= BIT_WRITE | BIT_PRESENT;
+	if (total_pages < 512) {
+		for (uint64_t i = 1; i < total_pages; i++) {
+			set_page_frame(&(kpde[i]), PAGE_2MB_SIZE * i);
+			kpde[i] |= BIT_SIZE | BIT_WRITE | BIT_PRESENT;
+		}
+	} else {
+		// We have to determine how many other pte's we need.
+		// For right now, I can't see the kernel needing more than 1GB of memory, at least not at launch.
+		assert("Kernel is too big.");
 	}
 
 	/* User memory space */
-	// set_page_frame(&(pml4[1]), ((uint64_t) pdp - KERNEL_VIRTUAL_BASE));
-	// pml4[1] |= BIT_USR | BIT_WRITE | BIT_PRESENT;
+	set_page_frame(&(pml4[1]), ((uint64_t) pdp - KERNEL_VIRTUAL_BASE));
+	pml4[1] |= BIT_USR | BIT_WRITE | BIT_PRESENT;
+
+	set_page_frame(&(pdp[0]), ((uint64_t) pde - KERNEL_VIRTUAL_BASE));
+	pdp[0] |= BIT_USR | BIT_WRITE | BIT_PRESENT;
+
+	for (int i = 0; i < TABLE_ENTRIES; i++) {
+		set_page_frame(&(pde[i]), PAGE_4KB_SIZE * i);
+		pde[i] |= BIT_USR | BIT_WRITE;
+	}
+
 	uint64_t ptr = (uint64_t) pml4 - KERNEL_VIRTUAL_BASE;
 	asm volatile("mov %%rax, %%cr3" ::"a"(ptr));
 }

@@ -1,8 +1,8 @@
-#include "klibc/features.hpp"
-#include "klibc/kprint.h"
 #include <stdio.h>
-#include "klibc/logger.h"
 #include <panic.h>
+#include <klibc/kprint.h>
+#include <klibc/logger.h>
+#include <klibc/features.hpp>
 
 bool Features::AVX;
 bool Features::FXSR;
@@ -90,6 +90,13 @@ void Features::checkFloatingPointSupport() {
  * @param f struct of features that will be checked.
  */
 void Features::checkFeatures(struct cpu_features* f) {
+	puts_vga_color("Checking CPU Features:\n", VGA_COLOR_PURPLE, VGA_COLOR_BLACK);
+	/* Okay imma keep it real C++ hates structs and idk why
+	 * It will NOT let me call cpuFeatures() from the class itself. At all.
+	 * It's marked as extern C. It know's that it's C code.
+	 * If I had to guess it has something to do with how C++ treats structs.
+	 * Regardless, this is how this code has to be, and it is how it will stay.
+	 */
 	features = f;
 	// Ideally we are going to be avoiding floats as much as possible
 	// Halts the cpu if not present.
@@ -143,6 +150,8 @@ bool Features::getAPIC() {
 }
 
 
+
+
 // ASM code to enable sse
 extern "C" void enable_sse();
 
@@ -178,4 +187,14 @@ bool Features::setupAPIC() {
 		return false;
 	}
 	return true;
+}
+
+
+void Features::enableFeatures() {
+	Features::enableSSE();
+	// We'll hopefully get to the APIC eventually.
+	// puts_vga_color("Enabling APIC.\n", VGA_COLOR_LIGHT_CYAN, VGA_COLOR_BLACK);
+	// if (!Features::setupAPIC()) {
+
+	// }
 }

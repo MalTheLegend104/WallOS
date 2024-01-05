@@ -1,23 +1,25 @@
-// We really need to clean up these includes.
 #include <stdlib.h>
+#include <stdio.h>
 #include <string.h>
+
 #include <cpuid.h>
 #include <panic.h>
-#include <stdio.h>
+#include <timing.h>
+#include <multiboot.h>
+#include <idt.h>
+
 #include <klibc/kprint.h>
 #include <klibc/cpuid_calls.h>
 #include <klibc/logger.h>
 #include <klibc/features.hpp>
-#include <multiboot.h>
 #include <klibc/multiboot.hpp>
-#include <idt.h>
-#include <gdt.h>
-#include <testing.h>
+
 #include <drivers/keyboard.h>
-#include <terminal/terminal.h>
-#include <timing.h>
+
 #include <memory/physical_mem.h>
 #include <memory/virtual_mem.h>
+
+#include <terminal/terminal.h>
 
 /* Okay, this is where the fun begins. Literally and figuratively.
  * We mark these extern c because we need to call it from asm,
@@ -35,7 +37,7 @@ extern "C" {
 }
 
 #pragma GCC diagnostic ignored "-Wunused-parameter" 
-int acpi(int argc, char** argv) {
+int acpi_command(int argc, char** argv) {
 	acpi_tag* acpi = MultibootManager::getACPI();
 	RSDP_t* r = acpi->rsdp;
 	puts_vga_color("ACPI INFO:\n", VGA_COLOR_PINK, VGA_DEFAULT_BG);
@@ -51,7 +53,6 @@ int acpi(int argc, char** argv) {
 	return 0;
 }
 
-
 // static void putpixel(uintptr_t* screen, int x, int y, int color, int pixelwidth, int pitch) {
 // 	unsigned where = x * pixelwidth + y * pitch;
 // 	screen[where] = color & 255;              // BLUE
@@ -60,49 +61,19 @@ int acpi(int argc, char** argv) {
 // }
 
 void kernel_main(unsigned int magic, multiboot_info* mbt_info) {
-	clearVGABuf();
-	disable_cursor();
-	set_colors(VGA_DEFAULT_FG, VGA_DEFAULT_BG);
-	print_logo();
+	initScreen();
 
-	initVirtualMemory();
+	Memory::initVirtualMemory();
 
-
-	// Do stuff that needs to be enabled before interrupts here.
-	puts_vga_color("\n\nIntializing OS.\n", VGA_COLOR_PINK, VGA_COLOR_BLACK);
-
-	puts_vga_color("\nChecking Multiboot Configuration:\n", VGA_COLOR_PURPLE, VGA_COLOR_BLACK);
 	MultibootManager::initialize(magic, mbt_info);
-	if (!MultibootManager::validateAll()) {
-		panic_s("Multiboot is invalid.");
-	}
 
-	puts_vga_color("Checking CPU Features:\n", VGA_COLOR_PURPLE, VGA_COLOR_BLACK);
-	/* Okay imma keep it real C++ hates structs and idk why
-	 * It will NOT let me call cpuFeatures() from the class itself. At all.
-	 * It's marked as extern C. It know's that it's C code.
-	 * If I had to guess it has something to do with how C++ treats structs.
-	 * Regardless, this is how this code has to be, and it is how it will stay.
-	 */
 	cpu_features f = cpuFeatures();
 	Features::checkFeatures(&f);
+	Features::enableFeatures();
 
-	// Enable CPU features
-	Features::enableSSE();
-	// We'll hopefully get to the APIC eventually.
-	// puts_vga_color("Enabling APIC.\n", VGA_COLOR_LIGHT_CYAN, VGA_COLOR_BLACK);
-	// if (!Features::setupAPIC()) {
-
-	// }
-
-	// Enable interrupts
-	puts_vga_color("Enabling Interrupts.\n", VGA_COLOR_LIGHT_CYAN, VGA_COLOR_BLACK);
 	setup_idt();
 
-	//physical_mem_init();
-	//puts_vga_color("Setting up Paging.\n", VGA_COLOR_LIGHT_CYAN, VGA_COLOR_BLACK);
-	//paging_init();
-	//puts_vga_color("Testing Paging.\n", VGA_COLOR_PURPLE, VGA_COLOR_BLACK);
+	// physical_mem_init();
 
 	// Things that need interrupts here (like keyboard, mouse, etc.)
 	// Everything that needs an IRQ should be done after the PIT as it messes with the mask
@@ -114,8 +85,7 @@ void kernel_main(unsigned int magic, multiboot_info* mbt_info) {
 	// putpixel((uintptr_t*) e->common.framebuffer_addr, 50, 50, 255, e->common.framebuffer_bpp, e->common.framebuffer_pitch);
 
 	// After we're done checking features, we need to set up our terminal.
-	// Eventually we will clear the screen before handing control over, the user doesnt need the debug stuff.
-	//registerCommand((Command) { memtest, 0, "memtest", 0, 0 });
-	registerCommand((Command) { acpi, 0, "acpi", 0, 0 });
+	// Eventually this will be a userspace program. 
+	registerCommand((Command) { acpi_command, 0, "acpi", 0, 0 });
 	terminalMain();
 }

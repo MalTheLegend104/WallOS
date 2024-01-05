@@ -1,6 +1,6 @@
 #ifndef KLIBC_LOGGER_H
 #define KLIBC_LOGGER_H
-#include "kprint.h"
+#include <klibc/kprint.h>
 #include <stdarg.h>
 #ifdef __cplusplus
 // CPP specific logger

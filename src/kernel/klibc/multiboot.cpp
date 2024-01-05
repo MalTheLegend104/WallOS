@@ -1,6 +1,8 @@
-#include <klibc/multiboot.hpp>
-#include <klibc/logger.h>
 #include <stdio.h>
+#include <panic.h>
+#include <klibc/logger.h>
+#include <klibc/multiboot.hpp>
+
 uint32_t MultibootManager::magic;
 multiboot_header* MultibootManager::header;
 multiboot_info* MultibootManager::mbt_info;
@@ -111,9 +113,13 @@ void MultibootManager::loadTags() {
  * @param info The pointer provided in ebx on boot.
  */
 void MultibootManager::initialize(uint32_t m, multiboot_info* info) {
+	puts_vga_color("\nChecking Multiboot Configuration:\n", VGA_COLOR_PURPLE, VGA_COLOR_BLACK);
 	magic = m;
 	mbt_info = info;
 	header = &header_start;
+	if (!MultibootManager::validateAll()) {
+		panic_s("Multiboot is invalid.");
+	}
 }
 
 /**

@@ -1,22 +1,6 @@
 #ifndef VIRTUAL_MEM_H
 #define VIRTUAL_MEM_H
 
-#ifdef __cplusplus
-extern "C" {
-#endif
-
-/* The kernel is loaded at 0xFFFFFFFF80000000, which is 2GB below the upper limit of the virtual address space.
- * This is the structure of the base address in binary
- * |63            48|47     39|38     30|29     21|20                  0|
- *  1111111111111111 111111111 111111110 000000000 000000000000000000000
- * 63-48: Ignored
- * 47-39: (0b111111111) = 511. This means pml4[511]
- * 38-30: (0b111111110) = 510. This means kpdp[510]
- * 29-21: (0b000000000) = 0. This means kpde[0]
- * 20-0:  (0b000000000000000000000) = 0. Offset in the page. The kernel uses 2MB pages.
- * As the kernel needs more virtual memory, we fill kpde first, then expand to kpdp[511] as needed.
- * If both end up full, we start filling kpdp in reverse order from 510, starting at 509, then 508, etc.
- */
 #define KERNEL_VIRTUAL_BASE 0xFFFFFFFF80000000ULL
 // The first 52 bytes of memory: 0b1111111111111111111111111111111111111111000000000000
 #define PAGE_FRAME 0xFFFFFFFFFF000ULL
@@ -60,10 +44,8 @@ extern "C" {
 #define PAGE_2MB_SIZE 0x200000 // 512 * 4096
 #define PAGE_1GB_SIZE 0x40000000 // 512 * 512 * 4096
 
+namespace Memory {
 	void initVirtualMemory();
-
-#ifdef __cplusplus
 }
-#endif // __cplusplus
 
 #endif //VIRTUAL_MEM_H
