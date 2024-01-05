@@ -42,11 +42,6 @@ char* convert_ui(unsigned int num, int base) {
 	ptr = &buffer[INT_BUF_SIZE - 1];
 	*ptr = '\0';
 
-	if (num < 0) {
-		num = -num;
-		*--ptr = '-';
-	}
-
 	do {
 		*--ptr = Representation[num % base];
 		num /= base;
