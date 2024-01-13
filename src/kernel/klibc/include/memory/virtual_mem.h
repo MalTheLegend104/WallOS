@@ -46,6 +46,7 @@
 
 namespace Memory {
 	void initVirtualMemory();
+	void postInitPhysical(uintptr_t final_mmap);
 }
 
 #endif //VIRTUAL_MEM_H

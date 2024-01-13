@@ -92,7 +92,7 @@ __attribute__((interrupt)) void page_fault_handler(struct interrupt_frame* frame
 
 	// Log the information
 	logger(ERROR, "Page fault Error Code: %s\n", err);
-	logger(ERROR, "Page fault at address (CR2): %llu\n", cr2);
+	logger(ERROR, "Page fault at address (CR2): 0x%llx\n", cr2);
 	logger(ERROR, "Present: %d, Write: %d, User Mode: %d, Reserved: %d, Instruction Fetch: %d, Protection: %d, Shadow Stack: %d, SGX: %d\n",
 		present, write, user_mode, reserved, instruction_fetch, protection_key, shadow_stack, sgx);
 	asm volatile("hlt");

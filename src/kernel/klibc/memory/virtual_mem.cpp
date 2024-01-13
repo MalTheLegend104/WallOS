@@ -178,8 +178,9 @@ void Memory::initVirtualMemory() {
 
 	// If the kernel takes up more than 2MB of memory, we need to mark those pages.
 	// If it only takes up 1 page, we've already dealt with it above when we mapped kpte.
-	if (total_pages < 512) {
-		for (uint64_t i = 1; i < total_pages; i++) {
+	// We want to map the first 2MB page after the kernel for the physical map
+	if (total_pages <= 511) {
+		for (uint64_t i = 1; i <= total_pages; i++) {
 			set_page_frame(&(kpde[i]), PAGE_2MB_SIZE * i);
 			kpde[i] |= BIT_SIZE | BIT_WRITE | BIT_PRESENT;
 		}
@@ -197,10 +198,17 @@ void Memory::initVirtualMemory() {
 	pdp[0] |= BIT_USR | BIT_WRITE | BIT_PRESENT;
 
 	for (int i = 0; i < TABLE_ENTRIES; i++) {
-		set_page_frame(&(pde[i]), PAGE_4KB_SIZE * i);
+		set_page_frame(&(pde[i]), PAGE_2MB_SIZE * i);
 		pde[i] |= BIT_USR | BIT_WRITE;
 	}
 
 	uint64_t ptr = (uint64_t) pml4 - KERNEL_VIRTUAL_BASE;
 	asm volatile("mov %%rax, %%cr3" ::"a"(ptr));
+}
+
+void Memory::postInitPhysical(uintptr_t final_mmap) {
+	// We have to mark everything up to final_mmap as used memory, and mark it present
+	// The final mmap entry is after the kernel
+	uintptr_t k_end = final_mmap - KERNEL_VIRTUAL_BASE;
+
 }
