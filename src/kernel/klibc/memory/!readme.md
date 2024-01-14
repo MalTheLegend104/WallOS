@@ -19,7 +19,7 @@ WallOS has a three layer approach to memory.
 
 ### Virtual Memory
 
-- `virtual_mem.c/virtual_mem.h`
+- `virtual_mem.c/virtual_mem.hpp`
 - Maps virtual address space to physical address space.
 - Deals with page faults
 - Interacts with the buddy allocator to get/free pages when needed

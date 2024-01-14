@@ -1,16 +1,22 @@
 #ifndef PHYSICAL_MEM_H
 #define PHYSICAL_MEM_H
 
-#include <multiboot.h>
 
+#include <multiboot.h>
 #ifdef __cplusplus
 extern "C" {
-#include <klibc/multiboot.hpp>
 #endif
 
 	int memtest(int argc, char** argv);
-	void physical_mem_init();
+
 #ifdef __cplusplus
 }
-#endif // __cplusplus
+
+#include <klibc/multiboot.hpp>
+
+namespace Memory {
+	void physical_mem_init();
+}
+
+#endif
 #endif // PHYSICAL_MEM_H

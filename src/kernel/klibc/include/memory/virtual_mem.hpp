@@ -1,5 +1,7 @@
-#ifndef VIRTUAL_MEM_H
-#define VIRTUAL_MEM_H
+#ifndef VIRTUAL_MEM_HPP
+#include <stdint.h>
+
+#define VIRTUAL_MEM_HPP
 
 #define KERNEL_VIRTUAL_BASE 0xFFFFFFFF80000000ULL
 // The first 52 bytes of memory: 0b1111111111111111111111111111111111111111000000000000
@@ -45,8 +47,11 @@
 #define PAGE_1GB_SIZE 0x40000000 // 512 * 512 * 4096
 
 namespace Memory {
+	uintptr_t kernel_mapping_end;
 	void initVirtualMemory();
 	void postInitPhysical(uintptr_t final_mmap);
+	void MarkPage(uintptr_t addr, uint64_t attributes);
+	void MapNextKernelPage();
 }
 
-#endif //VIRTUAL_MEM_H
+#endif //VIRTUAL_MEM_HPP

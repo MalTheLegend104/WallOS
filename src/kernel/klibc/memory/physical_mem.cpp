@@ -1,5 +1,5 @@
 #include <memory/physical_mem.h>
-#include <memory/virtual_mem.h>
+#include <memory/virtual_mem.hpp>
 #include <stdlib.h>
 #include <string.h>
 #include <panic.h>
@@ -13,7 +13,8 @@ typedef struct Block {
 	bool free;
 	short size; // 0 if 2mb, 1 if 4kb
 	Block* next_block;
-} Block;
+} __attribute__((packed)) Block;
+
 Block* block_list = NULL;
 Block* last_block = NULL;
 Block* last_block_start = NULL;
@@ -137,9 +138,8 @@ uint64_t phys_kernel_end = 0;
 
 #define PAGE_FRAME_2MB 0xFFFFFFFFFFE00000ULL
 
-
 /**
- * @brief This is some voodoo magic. Basically we're writing
+ * @brief This is some voodoo magic. It's also poorly commented. GLHF :)
  *
  * @param start_address
  * @param length
@@ -181,6 +181,8 @@ void map_chunk(uintptr_t start_address, size_t length, uint32_t type) {
 	if (block_list == NULL)
 		block_list = first_block;
 
+	if ((uintptr_t) last_block >= Memory::kernel_mapping_end) Memory::MapNextKernelPage();
+
 	Block* last = first_block;
 	// We've already allocated block 0
 	for (size_t i = 1; i <= max_pages - 1; i++) {
@@ -193,12 +195,13 @@ void map_chunk(uintptr_t start_address, size_t length, uint32_t type) {
 		last_block_start = current_block;
 		last_block = current_block + sizeof(Block);
 		last = current_block;
+		if ((uintptr_t) last_block >= Memory::kernel_mapping_end) Memory::MapNextKernelPage();
 	}
 
 	printf("\t\tTotal Blocks: %llu -> Start Addr: 0x%llx -> Last Addr: 0x%llx\n", max_pages, block_list, last_block);
 }
 
-void physical_mem_init() {
+void Memory::physical_mem_init() {
 	struct multiboot_tag_mmap* mmap_tag = MultibootManager::getMMap();
 	struct multiboot_mmap_entry* mmap;
 	phys_kernel_end = (uint64_t) (&kernel_end) - KERNEL_VIRTUAL_BASE;
@@ -215,13 +218,13 @@ void physical_mem_init() {
 
 }
 
-void physical_alloc_4KB() {
+// void physical_alloc_4KB() {
 
-}
+// }
 
-void physical_dealloc_4KB() {
+// void physical_dealloc_4KB() {
 
-}
+// }
 
 void physical_alloc_2MB() {
 

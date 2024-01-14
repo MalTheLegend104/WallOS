@@ -72,7 +72,7 @@
 #include <string.h>
 #include <assert.h>
 #include <klibc/logger.h>
-#include <memory/virtual_mem.h>
+#include <memory/virtual_mem.hpp>
 
 /* To start out, we're defining:
  * The top level page (pml4)
@@ -130,7 +130,7 @@ extern "C" {
  * We're mapping both lower memory (bottom 1MB) and upper memory to the kpdp
  * This means that both pml4[0] and pml4[511] point to the same pdp.
  * pml4[1] will be the start of user memory.
- * Because of how it works out, the lower 2MB is idenity mapped, although the kernel is linked so everything after the boot structures
+ * Because of how it works out, the lower 2MB is identity mapped, although the kernel is linked so everything after the boot structures
  * uses the virtual addresses starting at KERNEL_VIRTUAL_BASE.
  *
  * To start out, we're also not going to map any physical memory to userspace. This will be dealt with later on.
@@ -182,6 +182,7 @@ void Memory::initVirtualMemory() {
 	if (total_pages <= 511) {
 		for (uint64_t i = 1; i <= total_pages; i++) {
 			set_page_frame(&(kpde[i]), PAGE_2MB_SIZE * i);
+			kernel_mapping_end = PAGE_2MB_SIZE * i;
 			kpde[i] |= BIT_SIZE | BIT_WRITE | BIT_PRESENT;
 		}
 	} else {
@@ -204,6 +205,29 @@ void Memory::initVirtualMemory() {
 
 	uint64_t ptr = (uint64_t) pml4 - KERNEL_VIRTUAL_BASE;
 	asm volatile("mov %%rax, %%cr3" ::"a"(ptr));
+}
+
+void Memory::MarkPage(uintptr_t addr, uint64_t attributes) {
+
+}
+
+uintptr_t getVirtual(uintptr_t ptr) {
+
+	return ptr;
+}
+
+void Memory::MapNextKernelPage() {
+	// First we check kpde 510, then kpdp[511].
+	// If neither of those have mappings we start at kpdp[1]. kpdp[0] is identity mapped to kpdp[510]
+	for (int i = 510; i < TABLE_ENTRIES; i++) {
+		// The entire entry of kdpe[511][0] is guaranteed to be mapped
+		uint64_t* entry = &(kpde[i]);
+		for (int j = 1; j < TABLE_ENTRIES; j++) {
+			if (entry[j] & (1 << BIT_PRESENT)) {
+
+			}
+		}
+	}
 }
 
 void Memory::postInitPhysical(uintptr_t final_mmap) {

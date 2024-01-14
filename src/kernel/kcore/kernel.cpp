@@ -17,7 +17,7 @@
 #include <drivers/keyboard.h>
 
 #include <memory/physical_mem.h>
-#include <memory/virtual_mem.h>
+#include <memory/virtual_mem.hpp>
 
 #include <terminal/terminal.h>
 
@@ -73,7 +73,7 @@ void kernel_main(unsigned int magic, multiboot_info* mbt_info) {
 
 	setup_idt();
 
-	physical_mem_init();
+	Memory::physical_mem_init();
 
 	// Things that need interrupts here (like keyboard, mouse, etc.)
 	// Everything that needs an IRQ should be done after the PIT as it messes with the mask
