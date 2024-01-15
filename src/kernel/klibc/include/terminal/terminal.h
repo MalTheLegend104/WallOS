@@ -4,7 +4,7 @@
 // For lack of a better spot to put this, the OS version is going to be defined here
 // TODO, put this somewhere else in the kernel. It has to be in klibc because it gets linked before kcore
 #define WALLOS_VERSION "WallOS v0.1"
-#define WALLOS_SHELL_VERSION "WallOS Shell v1.0"
+#define WALLOS_SHELL_VERSION "WallShell v1.0"
 
 #include <stdint.h>
 #include <stddef.h>

@@ -70,7 +70,7 @@ void map_chunk(uintptr_t start_address, size_t length, uint32_t type) {
 
 	// We want the start address to be on a 2MB boundary.
 	uintptr_t old_start_addr = start_address;
-	start_address = (start_address + 0x1FFFFF) & ~0x1FFFFF;
+	start_address = (start_address + 0x1FFFFF) & ~0x1FFFFF; // Round up & clear the lower 21 bits 
 	length = length - (start_address - old_start_addr); // Adjust length to start at the new boundary
 
 	printf("\tMemory Chunk: 0x%llx -> 0x%llx bytes\n", start_address, length);

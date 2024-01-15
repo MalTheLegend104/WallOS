@@ -219,7 +219,7 @@ int meminfo_help(int argc, char** argv) {
 		NULL,
 		0,
 		optional,
-		11
+		12
 	};
 	printSpecificHelp(&entry);
 

@@ -3,6 +3,7 @@
 /.vscode/
 /html/
 /latex/
+/.idea/
 /Doxyfile
 /.vscode/c_cpp_properties.json
 dockerless/bochsrc.bxrc
