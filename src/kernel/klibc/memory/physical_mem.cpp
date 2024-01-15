@@ -9,7 +9,7 @@
 #include <idt.h>
 
 typedef struct Block {
-	size_t pointer;
+	uintptr_t pointer;
 	bool free;
 	short size; // 0 if 2mb, 1 if 4kb
 	Block* next_block;
@@ -18,13 +18,12 @@ typedef struct Block {
 Block* block_list = NULL;
 Block* last_block = NULL;
 Block* last_block_start = NULL;
-// typedef struct Chunk {
-// 	size_t size;
-// 	Chunk* next_Chunk;
-// 	Block* block_list;
-// 	size_t list_length;
-// } Chunk;
-//Chunk* chunk_list;
+
+extern "C" {
+	extern uint64_t kernel_end;
+}
+
+uintptr_t phys_kernel_end = 0;
 
 #pragma GCC diagnostic ignored "-Wunused-parameter" 
 int memtest(int argc, char** argv) {
@@ -35,7 +34,7 @@ int memtest(int argc, char** argv) {
 	size_t total = 0, usable = 0, reserved = 0;
 	for (mmap = mmap_tag->entries; (size_t) mmap < (size_t) mmap_tag + mmap_tag->size; mmap = (struct multiboot_mmap_entry*) ((size_t) mmap + (size_t) mmap_tag->entry_size)) {
 
-		printf("New Entry:\tBase: %llx", mmap->addr);
+		printf("New Entry:\tBase: 0x%llx", mmap->addr);
 		printf("\tLength: %llu", mmap->len);
 		printf("\tType: %llu\n", mmap->type);
 		total += mmap->len;
@@ -74,76 +73,20 @@ int memtest(int argc, char** argv) {
 		current = current->next_block;
 	}
 	logger(INFO, "Total free physical pages: %llu\n", free_phys_pages);
+	logger(INFO, "Total memory map size: 0x%llx\n", phys_kernel_end - ((uintptr_t) (&kernel_end) - KERNEL_VIRTUAL_BASE));
+	logger(INFO, "Total kernel size: 0x%llx\n", phys_kernel_end);
 
 	return 0;
 }
 
-extern "C" {
-	extern const uint64_t kernel_end;
-}
 
-uint64_t phys_kernel_end = 0;
-
-/**
- * @brief Maps a chunk of memory. This is cursed.
- *
- * @param start_address Start address of the chunk of memory
- * @param length Length of the chunk of memory
- * @param type Type of memory chunk, as defined by the Multiboot2 Memory Map Tag
- */
-// void map_chunk(uintptr_t start_address, size_t length, uint32_t type) {
-// 	if (type != MULTIBOOT_MEMORY_AVAILABLE) return;
-// 	if (start_address < 0x100000) return;
-// 	if (start_address <= phys_kernel_end) {
-// 		// We have to make sure that we can map the physical memory behind the kernel.
-// 		if (start_address + length < phys_kernel_end) return;
-// 	}
-// 	size_t max_pages = length / 0x1000;
-// 	// At the very beginning of each chunk of memory, we're going to put the chunk header, followed by the list of blocks
-// 	Chunk* chunk = (Chunk*) start_address;
-// 	chunk->size = length;
-// 	chunk->block_list = (Block*) (start_address += sizeof(Chunk));
-// 	chunk->list_length = max_pages;
-// 	if (chunk_list != NULL) {
-// 		chunk_list->next_Chunk = chunk;
-// 	}
-// 	chunk_list = chunk;
-
-// 	// Calculate the size of the linked list, then see how many pages it takes up
-// 	size_t size = sizeof(Chunk) + (sizeof(Block) * max_pages);
-// 	size_t pages_taken = (size / 0x1000) + 1;
-
-// 	// Write all the blocks in the chunk
-// 	Block* first_block = (Block*) (start_address + sizeof(Chunk));
-// 	first_block->next_block = (first_block + sizeof(Block));
-// 	first_block->pointer = start_address + (0x1000 * pages_taken);
-// 	first_block->free = false; // The first block is always going to be taken by the linked list
-
-// 	// We've already allocated block 0
-// 	for (size_t i = 1; i < max_pages - 1; i++) {
-// 		chunk->block_list[i].free = true;
-// 		chunk->block_list[i].pointer = chunk->block_list[i - 1].pointer + 0x1000;
-// 		chunk->block_list[i].next_block = &(chunk->block_list[i + 1]);
-// 	}
-
-// 	chunk->block_list[max_pages - 1].free = true;
-// 	chunk->block_list[max_pages - 1].pointer = chunk->block_list[max_pages - 2].pointer + 0x1000;
-// 	chunk->block_list[max_pages - 1].next_block = NULL;
-
-// 	// Mark the pages occupied the chunk and blocklist as taken
-// 	for (size_t i = 0; i < pages_taken; i++) {
-// 		chunk->block_list[i].free = false;
-// 	}
-// }
-
-#define PAGE_FRAME_2MB 0xFFFFFFFFFFE00000ULL
 
 /**
  * @brief This is some voodoo magic. It's also poorly commented. GLHF :)
  *
- * @param start_address
- * @param length
- * @param type
+ * @param start_address Start address of the chunk of memory
+ * @param length Length of the chunk of memory
+ * @param type Type of memory chunk, as defined by the Multiboot2 Memory Map Tag
  */
 void map_chunk(uintptr_t start_address, size_t length, uint32_t type) {
 	if (type != MULTIBOOT_MEMORY_AVAILABLE) return;
@@ -154,6 +97,12 @@ void map_chunk(uintptr_t start_address, size_t length, uint32_t type) {
 		length = length - (phys_kernel_end - start_address);
 		start_address = phys_kernel_end;
 	}
+
+	// We want the start address to be on a 2MB boundary.
+	uintptr_t old_start_addr = start_address;
+	start_address = (start_address + 0x1FFFFF) & ~0x1FFFFF;
+	length = length - (start_address - old_start_addr); // Adjust length to start at the new boundary
+
 	printf("\tMemory Chunk: 0x%llx -> 0x%llx bytes\n", start_address, length);
 	size_t max_pages = length / PAGE_2MB_SIZE;
 
@@ -181,7 +130,10 @@ void map_chunk(uintptr_t start_address, size_t length, uint32_t type) {
 	if (block_list == NULL)
 		block_list = first_block;
 
-	if ((uintptr_t) last_block >= Memory::kernel_mapping_end) Memory::MapNextKernelPage();
+	// This will map the entire next 2mb block of memory. This avoids a page fault.
+	// The page fault handler will handle page faults correctly *after* we initialize the physical allocator.
+	// Unfortunately until then we have to be a little bit messy. 
+	if ((uintptr_t) last_block >= Memory::getMappingEnd()) Memory::MapPreAllocMem((uintptr_t) last_block);
 
 	Block* last = first_block;
 	// We've already allocated block 0
@@ -195,13 +147,13 @@ void map_chunk(uintptr_t start_address, size_t length, uint32_t type) {
 		last_block_start = current_block;
 		last_block = current_block + sizeof(Block);
 		last = current_block;
-		if ((uintptr_t) last_block >= Memory::kernel_mapping_end) Memory::MapNextKernelPage();
+		if ((uintptr_t) last_block >= Memory::getMappingEnd()) Memory::MapPreAllocMem((uintptr_t) last_block);
 	}
 
-	printf("\t\tTotal Blocks: %llu -> Start Addr: 0x%llx -> Last Addr: 0x%llx\n", max_pages, block_list, last_block);
+	printf("\t\tTotal Blocks: %llu -> Last Addr: 0x%llx\n", max_pages, start_address + (max_pages * PAGE_2MB_SIZE));
 }
 
-void Memory::physical_mem_init() {
+void Memory::PhysicalMemInit() {
 	struct multiboot_tag_mmap* mmap_tag = MultibootManager::getMMap();
 	struct multiboot_mmap_entry* mmap;
 	phys_kernel_end = (uint64_t) (&kernel_end) - KERNEL_VIRTUAL_BASE;
@@ -213,23 +165,69 @@ void Memory::physical_mem_init() {
 		map_chunk(mmap->addr, mmap->len, mmap->type);
 	}
 	set_to_last();
-	// We have to mark everything up to last_block in virtual mem as taken
-	// The first block in block_list starts at kernel_end
 
+	// We need to get the offset that the memory map has taken up, then mark it as not free.
+	// The first "n" number of blocks represent the memory directly behind the kernel
+	uintptr_t end_of_map = (uintptr_t) last_block - (uintptr_t) (&kernel_end);
+	size_t amount_of_blocks = (end_of_map / PAGE_2MB_SIZE) + 1; // We need to round up a page.
+
+
+	// Finally, we need to set phys_kernel_end to the new address including the memory map
+	// Setting kernel_end becomes a mess, so I wont even bother. 
+	// Everything after both memory init functions will use this value and add the virtual base as needed.
+	phys_kernel_end = (uintptr_t) last_block - KERNEL_VIRTUAL_BASE;
+
+	size_t index = 0;
+	Block* current = block_list;
+	while (index < amount_of_blocks) {
+		if (current->pointer > phys_kernel_end) break;
+		current->free = false;
+		current = current->next_block;
+		index++;
+	}
 }
 
-// void physical_alloc_4KB() {
-
-// }
-
-// void physical_dealloc_4KB() {
-
-// }
-
-void physical_alloc_2MB() {
-
+uintptr_t Memory::getPhysKernelEnd() {
+	return phys_kernel_end;
 }
 
-void physical_dealloc_2MB() {
+// ------------------------------------------------------------------------------------------------
+// We're going to force the kernel allocator and user allocator to get 2mb pages. 
+// The allocator will deal with these 2mb by further dividing it up into 4kb pages if needed,
+// along with dealing with actually mapping it to the virtual address space. 
+// ------------------------------------------------------------------------------------------------
+/**
+ * @brief Get a 2MB page in physical memory.
+ *
+ * @return uintptr_t Pointer to the base of the chunk of memory.
+ * Check for a 0 return value, this means it couldn't find a chunk of memory.
+ */
+uintptr_t Memory::PhysicalAlloc2MB() {
+	Block* current = block_list;
+	while (current != NULL) {
+		if (current->free) {
+			current->free = false;
+			return (current->pointer);
+		}
+		current = current->next_block;
+	}
+	return 0; // GCC complains about returning null, bc we're technically returning an int, not a pointer
+}
 
+/**
+ * @brief Mark the page starting at phys_addr as free.
+ * Call memset and clear the memory before passing to this function.
+ * Please ensure that phys_addr is the base address of the page.
+ *
+ * @param phys_addr Base address of the page to be freed.
+ */
+void Memory::PhysicalDeAlloc2MB(uintptr_t phys_addr) {
+	Block* current = block_list;
+	while (current != NULL) {
+		if (current->pointer == phys_addr) {
+			current->free = true;
+			return;
+		}
+		current = current->next_block;
+	}
 }

@@ -126,6 +126,8 @@ extern "C" {
 	extern const uint64_t kernel_end;
 }
 
+uintptr_t kernel_mapping_end;
+
 /* Just some notes for my future self.
  * We're mapping both lower memory (bottom 1MB) and upper memory to the kpdp
  * This means that both pml4[0] and pml4[511] point to the same pdp.
@@ -207,6 +209,7 @@ void Memory::initVirtualMemory() {
 	asm volatile("mov %%rax, %%cr3" ::"a"(ptr));
 }
 
+#pragma GCC diagnostic ignored "-Wunused-parameter" 
 void Memory::MarkPage(uintptr_t addr, uint64_t attributes) {
 
 }
@@ -216,23 +219,33 @@ uintptr_t getVirtual(uintptr_t ptr) {
 	return ptr;
 }
 
-void Memory::MapNextKernelPage() {
-	// First we check kpde 510, then kpdp[511].
-	// If neither of those have mappings we start at kpdp[1]. kpdp[0] is identity mapped to kpdp[510]
-	for (int i = 510; i < TABLE_ENTRIES; i++) {
-		// The entire entry of kdpe[511][0] is guaranteed to be mapped
-		uint64_t* entry = &(kpde[i]);
-		for (int j = 1; j < TABLE_ENTRIES; j++) {
-			if (entry[j] & (1 << BIT_PRESENT)) {
+#define CLEAR_LOWER_12(addr) ((addr << 12) >> 12)
+#define CLEAR_LOWER_21(addr) ((addr << 20) >> 20)
 
-			}
-		}
-	}
+uintptr_t Memory::getMappingEnd() {
+	return kernel_mapping_end;
 }
 
-void Memory::postInitPhysical(uintptr_t final_mmap) {
-	// We have to mark everything up to final_mmap as used memory, and mark it present
-	// The final mmap entry is after the kernel
-	uintptr_t k_end = final_mmap - KERNEL_VIRTUAL_BASE;
+/**
+ * @brief Map the next 2mb page at addr. This is only meant to be used before/during initialization of the physical allocator.
+ * The page fault handler can't deal with non-present accesses before the physical allocator is set up.
+ *
+ * @param addr Address of the page to be mapped. Does NOT matter if it's the base address or not.
+ */
+void Memory::MapPreAllocMem(uintptr_t addr) {
+	// This address will be the virtual address, including the offset from KERNEL_VIRTUAL_BASE
+	// Before we set up any allocators, we use 2mb pages. We need to clear the lower 21 bits of addr
+	addr = CLEAR_LOWER_21(addr);
+	int pml4_index = GET_PML4_INDEX(addr);
+	int pdp_index = GET_PDPT_INDEX(addr);
+	int pde_index = GET_PAGE_DIR_INDEX(addr);
 
+	uint64_t* pdp_t = (uint64_t*) pml4[pml4_index];
+	uint64_t* pde_t = (uint64_t*) pdp_t[pdp_index];
+	// We need to map the entry. We're going to "identity" map it in a sense
+	// We're still going to use the kernel offset, but it's going to be mapped immediately after the kernel binary.
+	addr -= KERNEL_VIRTUAL_BASE;
+	set_page_frame(&(pde_t[pde_index]), addr);
+	pde_t[pde_index] |= BIT_SIZE | BIT_WRITE | BIT_PRESENT;
+	kernel_mapping_end = addr + PAGE_2MB_SIZE;
 }
