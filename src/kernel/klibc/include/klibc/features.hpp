@@ -15,12 +15,15 @@ private:
 	static bool listFeature(const char* name, bool a);
 	static bool listFeatureCheck(const char* name, bool a);
 	static void checkFloatingPointSupport();
+	static void loadCPUName();
 	static void enableSSE();
 	static bool setupAPIC();
 public:
 	static void checkFeatures(struct cpu_features* f);
 	static const char* highestFloat();
+	static const char* getCPUName();
 	static bool getAPIC();
+
 
 	static void enableFeatures();
 };

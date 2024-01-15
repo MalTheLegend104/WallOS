@@ -8,6 +8,8 @@
 #include <klibc/logger.h>
 #include <idt.h>
 
+mmap_info mem_info;
+
 typedef struct Block {
 	uintptr_t pointer;
 	bool free;
@@ -37,6 +39,16 @@ size_t Memory::Info::getFreePageCount() {
 		current = current->next_block;
 	}
 	return free_phys_pages;
+}
+
+size_t Memory::Info::getUsedPageCount() {
+	size_t used_phys_pages = 0;
+	Block* current = block_list;
+	while (current != NULL) {
+		if (!(current->free)) used_phys_pages++;
+		current = current->next_block;
+	}
+	return used_phys_pages;
 }
 
 /**
@@ -113,9 +125,31 @@ void map_chunk(uintptr_t start_address, size_t length, uint32_t type) {
 	printf("\t\tTotal Blocks: %llu -> Last Addr: 0x%llx\n", max_pages, start_address + (max_pages * PAGE_2MB_SIZE));
 }
 
+void fillMMapInfo(struct multiboot_tag_mmap* mmap_tag) {
+	struct multiboot_mmap_entry* mmap;
+	mem_info.total = 0;
+	mem_info.usable = 0;
+	mem_info.reserved = 0;
+	for (mmap = mmap_tag->entries; (size_t) mmap < (size_t) mmap_tag + mmap_tag->size; mmap = (struct multiboot_mmap_entry*) ((size_t) mmap + (size_t) mmap_tag->entry_size)) {
+		// For some reason, on large memory systems, if you add to the total before the if statement it breaks things.
+		// My best guess is that GCC is doing some magic that makes no sense, especially since this gets compiled with -O0.
+		if (mmap->type == MULTIBOOT_MEMORY_AVAILABLE) {
+			mem_info.usable += mmap->len;
+		} else {
+			mem_info.reserved += mmap->len;
+		}
+		mem_info.total += mmap->len;
+	}
+}
+
+const mmap_info* Memory::Info::getMMapInfo() {
+	return &mem_info;
+}
+
 void Memory::PhysicalMemInit() {
 	struct multiboot_tag_mmap* mmap_tag = MultibootManager::getMMap();
 	struct multiboot_mmap_entry* mmap;
+	fillMMapInfo(mmap_tag);
 	phys_kernel_end = (uint64_t) (&kernel_end) - KERNEL_VIRTUAL_BASE;
 	set_colors(VGA_COLOR_YELLOW, VGA_DEFAULT_BG);
 	printf("Initalizing Physical Memory Allocator:\n");

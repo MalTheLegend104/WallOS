@@ -5,6 +5,7 @@
 #include <stdint.h>
 
 #include <klibc/kprint.h>
+#include <klibc/logger.h>
 #include <memory/physical_mem.hpp>
 #include <memory/virtual_mem.hpp>
 
@@ -17,14 +18,14 @@ extern "C" {
 	int meminfo_help(int argc, char** argv);
 }
 
-size_t total = 0, usable = 0, reserved = 0;
+const mmap_info* memory_info;
 
 void printTotal() {
 	set_colors(VGA_COLOR_PINK, VGA_DEFAULT_BG);
 	printf("Total Memory:\n");
 	set_to_last();
 	set_colors(VGA_COLOR_PURPLE, VGA_DEFAULT_BG);
-	printf("\t%llu bytes\n\t%llu KiB\n\t%llu MiB\n", total, total / 1024, (total / 1024) / 1024);
+	printf("\t%llu bytes\n\t%llu KiB\n\t%llu MiB\n", memory_info->total, memory_info->total / 1024, (memory_info->total / 1024) / 1024);
 	set_to_last();
 }
 
@@ -33,7 +34,7 @@ void printUsable() {
 	printf("Usable Memory:\n");
 	set_to_last();
 	set_colors(VGA_COLOR_GREEN, VGA_DEFAULT_BG);
-	printf("\t%llu bytes\n\t%llu KiB\n\t%llu MiB\n", usable, usable / 1024, (usable / 1024) / 1024);
+	printf("\t%llu bytes\n\t%llu KiB\n\t%llu MiB\n", memory_info->usable, memory_info->usable / 1024, (memory_info->usable / 1024) / 1024);
 	set_to_last();
 }
 
@@ -42,7 +43,7 @@ void printReserved() {
 	printf("Reserved Memory:\n");
 	set_to_last();
 	set_colors(VGA_COLOR_RED, VGA_DEFAULT_BG);
-	printf("\t%llu bytes\n\t%llu KiB\n\t%llu MiB\n", reserved, reserved / 1000, (reserved / 1000) / 1000);
+	printf("\t%llu bytes\n\t%llu KiB\n\t%llu MiB\n", memory_info->reserved, memory_info->reserved / 1024, (memory_info->reserved / 1024) / 1024);
 	set_to_last();
 }
 
@@ -52,7 +53,7 @@ void printMapSize() {
 	printf("System Memory Map Size:\n");
 	set_to_last();
 	set_colors(VGA_COLOR_DARK_GREY, VGA_DEFAULT_BG);
-	printf("\t%llu bytes\n\t%llu KiB\n\t%llu MiB\n", memory_map_size, memory_map_size / 1000, (memory_map_size / 1000) / 1000);
+	printf("\t%llu bytes\n\t%llu KiB\n\t%llu MiB\n", memory_map_size, memory_map_size / 1024, (memory_map_size / 1024) / 1024);
 	set_to_last();
 }
 
@@ -62,7 +63,7 @@ void printKernelSize() {
 	set_to_last();
 	set_colors(VGA_COLOR_CYAN, VGA_DEFAULT_BG);
 	uint64_t k_end = (uint64_t) &kernel_end - KERNEL_VIRTUAL_BASE;
-	printf("\t%llu bytes\n\t%llu KiB\n\t%llu MiB\n", k_end, k_end / 1000, (k_end / 1000) / 1000);
+	printf("\t%llu bytes\n\t%llu KiB\n\t%llu MiB\n", k_end, k_end / 1024, (k_end / 1024) / 1024);
 	set_to_last();
 }
 
@@ -100,19 +101,7 @@ bool printIndividual(int argc, char** argv) {
 }
 
 int meminfo(int argc, char** argv) {
-	struct multiboot_tag_mmap* mmap_tag = MultibootManager::getMMap();
-	struct multiboot_mmap_entry* mmap;
-	total = 0;
-	usable = 0;
-	reserved = 0;
-	for (mmap = mmap_tag->entries; (size_t) mmap < (size_t) mmap_tag + mmap_tag->size; mmap = (struct multiboot_mmap_entry*) ((size_t) mmap + (size_t) mmap_tag->entry_size)) {
-		total += mmap->len;
-		if (mmap->type == MULTIBOOT_MEMORY_AVAILABLE) {
-			usable += mmap->len;
-		} else {
-			reserved += mmap->len;
-		}
-	}
+	memory_info = Memory::Info::getMMapInfo();
 
 	if (argc > 1) {
 		if (printIndividual(argc, argv)) return 0;

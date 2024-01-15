@@ -312,8 +312,9 @@ void terminalMain() {
 	// They both require access to the command buffers.
 	registerCommand((Command) { helpMain, helpHelp, "help", 0, 0 });
 	registerCommand((Command) { historyCommand, historyHelp, "history", historyAliases, 1 });
-	sleep(1500);
+	sleep(1000);
 	executeCommand("logo");  // This is where the cursor first gets enabled
+	sysinfo_boot(); // print general system info
 
 	char oldCommand[MAX_COMMAND_BUF];
 	oldCommand[0] = '\0';

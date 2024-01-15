@@ -39,8 +39,6 @@ extern "C" {
 	} acpi_tag;
 }
 
-
-
 /**
  * @brief Manages the multiboot information provided by grub and other Multiboot2 compliant bootloaders.
  */

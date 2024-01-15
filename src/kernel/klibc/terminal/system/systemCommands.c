@@ -5,22 +5,6 @@
 #include <stdlib.h>
 #include <string.h>
 
-#pragma GCC diagnostic ignored "-Wunused-parameter" 
-int hwinfo(int argc, char** argv) {
-	/* <logo>
-	 * OS: WallOS v0.1
-	 * Uptime: <time>
-	 * Packages: 847 (dpkg), 6 (snap)
-	 * Shell: WallOS Shell v1.0
-	 * Theme: Adwaita [GTK3]
-	 * Icons: Adwaita [GTK3]
-	 * CPU: AMD Ryzen 7 5825U with Radeon Graphics (16) @ 1.996GHz
-	 * Memory: 550MiB / 7594MiB
-	 */
-
-	return 0;
-}
-
 // A lot of these dont use argc or argv
 #pragma GCC diagnostic ignored "-Wunused-parameter" 
 
@@ -200,4 +184,5 @@ void registerSystemCommands() {
 	registerCommand((Command) { logo_command, logo_help, "logo", NULL, 0 });
 	registerCommand((Command) { time_command, time_help, "time", NULL, 0 });
 	registerCommand((Command) { meminfo, meminfo_help, "meminfo", NULL, 0 });
+	registerCommand((Command) { sysinfo, NULL, "sysinfo", NULL, 0 });
 }
