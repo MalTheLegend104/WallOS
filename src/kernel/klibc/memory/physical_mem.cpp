@@ -1,4 +1,4 @@
-#include <memory/physical_mem.h>
+#include <memory/physical_mem.hpp>
 #include <memory/virtual_mem.hpp>
 #include <stdlib.h>
 #include <string.h>
@@ -19,67 +19,25 @@ Block* block_list = NULL;
 Block* last_block = NULL;
 Block* last_block_start = NULL;
 
+uintptr_t phys_kernel_end = 0;
+
 extern "C" {
 	extern uint64_t kernel_end;
 }
 
-uintptr_t phys_kernel_end = 0;
+uintptr_t Memory::Info::getPhysKernelEnd() {
+	return phys_kernel_end;
+}
 
-#pragma GCC diagnostic ignored "-Wunused-parameter" 
-int memtest(int argc, char** argv) {
-	struct multiboot_tag_mmap* mmap_tag = MultibootManager::getMMap();
-	logger(INFO, "Entry size: %d\n", mmap_tag->entry_size);
-	logger(INFO, "Entries: %d\n", mmap_tag->size / mmap_tag->entry_size);
-	struct multiboot_mmap_entry* mmap;
-	size_t total = 0, usable = 0, reserved = 0;
-	for (mmap = mmap_tag->entries; (size_t) mmap < (size_t) mmap_tag + mmap_tag->size; mmap = (struct multiboot_mmap_entry*) ((size_t) mmap + (size_t) mmap_tag->entry_size)) {
-
-		printf("New Entry:\tBase: 0x%llx", mmap->addr);
-		printf("\tLength: %llu", mmap->len);
-		printf("\tType: %llu\n", mmap->type);
-		total += mmap->len;
-		if (mmap->type == MULTIBOOT_MEMORY_AVAILABLE) {
-			usable += mmap->len;
-		} else {
-			logger(WARN, "Unusable memory: Addr: %X Reason: %d Bytes: %llu\n", mmap->addr, mmap->type, mmap->len);
-			reserved += mmap->len;
-		}
-	}
-	set_colors(VGA_COLOR_PINK, VGA_DEFAULT_BG);
-	printf("Total Memory:\n");
-	set_to_last();
-	set_colors(VGA_COLOR_PURPLE, VGA_DEFAULT_BG);
-	printf("\t%llu bytes\n\t%llu KiB\n\t%llu MiB\n", total, total / 1024, (total / 1024) / 1024);
-
-	set_to_last();
-	set_colors(VGA_COLOR_LIGHT_GREEN, VGA_DEFAULT_BG);
-	printf("Usable Memory:\n");
-	set_to_last();
-	set_colors(VGA_COLOR_GREEN, VGA_DEFAULT_BG);
-	printf("\t%llu bytes\n\t%llu KiB\n\t%llu MiB\n", usable, usable / 1024, (usable / 1024) / 1024);
-
-	set_to_last();
-	set_colors(VGA_COLOR_LIGHT_RED, VGA_DEFAULT_BG);
-	printf("Reserved Memory:\n");
-	set_to_last();
-	set_colors(VGA_COLOR_RED, VGA_DEFAULT_BG);
-	printf("\t%llu bytes\n\t%llu KiB\n\t%llu MiB\n", reserved, reserved / 1000, (reserved / 1000) / 1000);
-	set_to_last();
-
+size_t Memory::Info::getFreePageCount() {
 	size_t free_phys_pages = 0;
 	Block* current = block_list;
 	while (current != NULL) {
 		if (current->free) free_phys_pages++;
 		current = current->next_block;
 	}
-	logger(INFO, "Total free physical pages: %llu\n", free_phys_pages);
-	logger(INFO, "Total memory map size: 0x%llx\n", phys_kernel_end - ((uintptr_t) (&kernel_end) - KERNEL_VIRTUAL_BASE));
-	logger(INFO, "Total kernel size: 0x%llx\n", phys_kernel_end);
-
-	return 0;
+	return free_phys_pages;
 }
-
-
 
 /**
  * @brief This is some voodoo magic. It's also poorly commented. GLHF :)
@@ -115,7 +73,7 @@ void map_chunk(uintptr_t start_address, size_t length, uint32_t type) {
 	Block* first_block;
 	// Write all the blocks in the chunk
 	if (last_block == NULL) {
-		last_block = (Block*) ((uint64_t) start_address + KERNEL_VIRTUAL_BASE);
+		last_block = (Block*) ((uint64_t) (&kernel_end));
 		first_block = (Block*) (last_block);
 	} else {
 		first_block = (Block*) (last_block);
@@ -133,7 +91,7 @@ void map_chunk(uintptr_t start_address, size_t length, uint32_t type) {
 	// This will map the entire next 2mb block of memory. This avoids a page fault.
 	// The page fault handler will handle page faults correctly *after* we initialize the physical allocator.
 	// Unfortunately until then we have to be a little bit messy. 
-	if ((uintptr_t) last_block >= Memory::getMappingEnd()) Memory::MapPreAllocMem((uintptr_t) last_block);
+	if ((uintptr_t) last_block + sizeof(Block) >= (Memory::getMappingEnd() + KERNEL_VIRTUAL_BASE)) Memory::MapPreAllocMem((uintptr_t) last_block);
 
 	Block* last = first_block;
 	// We've already allocated block 0
@@ -147,7 +105,9 @@ void map_chunk(uintptr_t start_address, size_t length, uint32_t type) {
 		last_block_start = current_block;
 		last_block = current_block + sizeof(Block);
 		last = current_block;
-		if ((uintptr_t) last_block >= Memory::getMappingEnd()) Memory::MapPreAllocMem((uintptr_t) last_block);
+		if ((uintptr_t) last_block + sizeof(Block) >= (Memory::getMappingEnd() + KERNEL_VIRTUAL_BASE)) {
+			Memory::MapPreAllocMem((uintptr_t) last_block);
+		}
 	}
 
 	printf("\t\tTotal Blocks: %llu -> Last Addr: 0x%llx\n", max_pages, start_address + (max_pages * PAGE_2MB_SIZE));
@@ -185,10 +145,7 @@ void Memory::PhysicalMemInit() {
 		current = current->next_block;
 		index++;
 	}
-}
 
-uintptr_t Memory::getPhysKernelEnd() {
-	return phys_kernel_end;
 }
 
 // ------------------------------------------------------------------------------------------------
@@ -196,6 +153,10 @@ uintptr_t Memory::getPhysKernelEnd() {
 // The allocator will deal with these 2mb by further dividing it up into 4kb pages if needed,
 // along with dealing with actually mapping it to the virtual address space. 
 // ------------------------------------------------------------------------------------------------
+// We're going to keep a pointer to the last allocated block, which makes allocation O(1) normal case
+// In the case that the user uses all memory, this will likely end up being O(n) normal
+Block* last_allocated_block = NULL;
+
 /**
  * @brief Get a 2MB page in physical memory.
  *
@@ -203,10 +164,21 @@ uintptr_t Memory::getPhysKernelEnd() {
  * Check for a 0 return value, this means it couldn't find a chunk of memory.
  */
 uintptr_t Memory::PhysicalAlloc2MB() {
+	// First attempt, we check if last_allocated_block.next_block is free
+	if (last_allocated_block != NULL && last_allocated_block->next_block != NULL) {
+		if (last_allocated_block->next_block->free) {
+			last_allocated_block = last_allocated_block->next_block;
+			last_allocated_block->free = false;
+			return last_allocated_block->pointer;
+		}
+	}
+
+	// We have to go through the entire map otherwise
 	Block* current = block_list;
 	while (current != NULL) {
 		if (current->free) {
 			current->free = false;
+			last_allocated_block = current;
 			return (current->pointer);
 		}
 		current = current->next_block;

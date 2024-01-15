@@ -16,7 +16,7 @@
 
 #include <drivers/keyboard.h>
 
-#include <memory/physical_mem.h>
+#include <memory/physical_mem.hpp>
 #include <memory/virtual_mem.hpp>
 
 #include <terminal/terminal.h>

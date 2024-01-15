@@ -25,7 +25,7 @@
  * 63: (NX) - No execute. Controls the ability to execute code from all physical pages mapped by the table entry.
  * 62-52: Free for the OS to use as it wishes, ignored by the processor.
  * 51-12: Page Table Base Address. It's the pointer to the base of the next page (or beginning of physical page).
- *        The lower 11 bits of this address are assumed to be 0, since the pointer should be to an aligned boundary.
+ *        The lower 11 bits of this address are assumed to be 0, since the pointer should be aligned to a boundary.
  * !-- It is important to note that the following, bits 11-0, are all flags. --!
  * 11-9: Free for the OS to use as it wishes, ignored by the processor.
  * 8: Global Page Bit. WallOS likely wont use these, see page 158 in Volume 2 of the AMD Manuals for reference.
@@ -73,6 +73,7 @@
 #include <assert.h>
 #include <klibc/logger.h>
 #include <memory/virtual_mem.hpp>
+#include <memory/physical_mem.hpp>
 
 /* To start out, we're defining:
  * The top level page (pml4)
@@ -126,7 +127,7 @@ extern "C" {
 	extern const uint64_t kernel_end;
 }
 
-uintptr_t kernel_mapping_end;
+uintptr_t kernel_mapping_end = 0;
 
 /* Just some notes for my future self.
  * We're mapping both lower memory (bottom 1MB) and upper memory to the kpdp
@@ -184,6 +185,8 @@ void Memory::initVirtualMemory() {
 	if (total_pages <= 511) {
 		for (uint64_t i = 1; i <= total_pages; i++) {
 			set_page_frame(&(kpde[i]), PAGE_2MB_SIZE * i);
+
+
 			kernel_mapping_end = PAGE_2MB_SIZE * i;
 			kpde[i] |= BIT_SIZE | BIT_WRITE | BIT_PRESENT;
 		}
@@ -209,21 +212,19 @@ void Memory::initVirtualMemory() {
 	asm volatile("mov %%rax, %%cr3" ::"a"(ptr));
 }
 
-#pragma GCC diagnostic ignored "-Wunused-parameter" 
-void Memory::MarkPage(uintptr_t addr, uint64_t attributes) {
-
-}
-
-uintptr_t getVirtual(uintptr_t ptr) {
-
-	return ptr;
-}
-
-#define CLEAR_LOWER_12(addr) ((addr << 12) >> 12)
-#define CLEAR_LOWER_21(addr) ((addr << 20) >> 20)
-
 uintptr_t Memory::getMappingEnd() {
 	return kernel_mapping_end;
+}
+
+/**
+ * @brief Removes the upper 12 bits and the lower 12 bits from the page frame.
+ * This results in getting the physical address contained in the page.
+ *
+ * @param ptr
+ * @return uintptr_t
+ */
+uintptr_t getFrame(uintptr_t ptr) {
+	return (ptr & ~0xFFF0000000000FFF);
 }
 
 /**
@@ -234,18 +235,21 @@ uintptr_t Memory::getMappingEnd() {
  */
 void Memory::MapPreAllocMem(uintptr_t addr) {
 	// This address will be the virtual address, including the offset from KERNEL_VIRTUAL_BASE
-	// Before we set up any allocators, we use 2mb pages. We need to clear the lower 21 bits of addr
-	addr = CLEAR_LOWER_21(addr);
+	// Before we set up any allocators, we use 2mb pages.
+	addr = addr & ~0x1FFFFF; // Clear the lower bytes of the addr to get the base page pointer
 	int pml4_index = GET_PML4_INDEX(addr);
 	int pdp_index = GET_PDPT_INDEX(addr);
 	int pde_index = GET_PAGE_DIR_INDEX(addr);
 
-	uint64_t* pdp_t = (uint64_t*) pml4[pml4_index];
-	uint64_t* pde_t = (uint64_t*) pdp_t[pdp_index];
+	// Extract the addresses from the pages.
+	uint64_t* pdp_t = (uint64_t*) getFrame(pml4[pml4_index]);
+	uint64_t* pde_t = (uint64_t*) getFrame(pdp_t[pdp_index]);
+
 	// We need to map the entry. We're going to "identity" map it in a sense
 	// We're still going to use the kernel offset, but it's going to be mapped immediately after the kernel binary.
 	addr -= KERNEL_VIRTUAL_BASE;
 	set_page_frame(&(pde_t[pde_index]), addr);
 	pde_t[pde_index] |= BIT_SIZE | BIT_WRITE | BIT_PRESENT;
+
 	kernel_mapping_end = addr + PAGE_2MB_SIZE;
 }

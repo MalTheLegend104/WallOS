@@ -50,11 +50,7 @@ namespace Memory {
 	void initVirtualMemory();
 	void postInitPhysical(uintptr_t final_mmap);
 
-	void MarkPage(uintptr_t addr, uint64_t attributes);
-
 	void MapPreAllocMem(uintptr_t addr);
-
-	void MapNextKernelPage();
 
 	uintptr_t getMappingEnd();
 }

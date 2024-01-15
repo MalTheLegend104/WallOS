@@ -13,7 +13,7 @@ WallOS has a three layer approach to memory.
 
 ### Physical Memory
 
-- `physical_mem.c/physical_mem.h`
+- `physical_mem.c/physical_mem.hpp`
 - Buddy Allocation
 - Deals with the physical allocation and dealloction of physical memory.
 
