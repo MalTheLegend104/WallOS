@@ -5,7 +5,7 @@ Most of the things in this folder are referenced elsewhere in the project.
 ## Categories
 
 ### General Information
-- [Documentation](General%20Information/documentation.md)
+- [Documentation](General/documentation.md)
 
 ### Terminal Information
 - Run `help` in the terminal to get a list of commands.
