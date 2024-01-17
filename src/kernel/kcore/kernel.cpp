@@ -60,6 +60,12 @@ int acpi_command(int argc, char** argv) {
 // 	screen[where + 2] = (color >> 16) & 255;  // RED
 // }
 
+int mem_alloc(int argc, char** argv) {
+	uintptr_t ptr = Memory::NewKernelPage();
+	//Logger::infof("Base pointer of allocated mem: 0x%llx\n", ptr);
+	return 0;
+}
+
 void kernel_main(unsigned int magic, multiboot_info* mbt_info) {
 	initScreen();
 
@@ -87,5 +93,6 @@ void kernel_main(unsigned int magic, multiboot_info* mbt_info) {
 	// After we're done checking features, we need to set up our terminal.
 	// Eventually this will be a userspace program. 
 	registerCommand((Command) { acpi_command, 0, "acpi", 0, 0 });
+	registerCommand((Command) { mem_alloc, 0, "mem_alloc", 0, 0 });
 	terminalMain();
 }

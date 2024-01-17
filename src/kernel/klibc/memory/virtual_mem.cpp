@@ -45,6 +45,8 @@
  *    If zero, only the OS has access. If a user attempts to access supervisor memory a #PF occurs.
  * 1: Read/Write. If set to 0, the page, or all physical entries further down the hierarchy are read only.
  *    If set to 1, the page is able to be written to.
+ * 0: Present. If set to 1, the page is present in physical memory. If 0, the cpu will throw a page fault.
+ *    This page fault can be dealt with by either assigning a physical memory chunk or loading a page from a disk.
  * Important Note: The entire hierarchy MUST have the write bit set to 1 for the page to be writeable.
  *                 Any zero for the r/w bit through the hierarchy makes the page read only.
  *                 This also applies to the User/Supervisor bit, where the entire hierarchy must have the
@@ -189,8 +191,6 @@ void Memory::initVirtualMemory() {
 	if (total_pages <= 511) {
 		for (uint64_t i = 1; i <= total_pages; i++) {
 			set_page_frame(&(kpde[i]), PAGE_2MB_SIZE * i);
-
-
 			kernel_mapping_end = PAGE_2MB_SIZE * i;
 			kpde[i] |= BIT_SIZE | BIT_WRITE | BIT_PRESENT;
 		}
@@ -216,9 +216,10 @@ void Memory::initVirtualMemory() {
 	asm volatile("mov %%rax, %%cr3" ::"a"(ptr));
 }
 
-uintptr_t Memory::getMappingEnd() {
+uintptr_t Memory::GetMappingEnd() {
 	return kernel_mapping_end;
 }
+
 
 /**
  * @brief Removes the upper 12 bits and the lower 12 bits from the page frame.
@@ -257,3 +258,94 @@ void Memory::MapPreAllocMem(uintptr_t addr) {
 
 	kernel_mapping_end = addr + PAGE_2MB_SIZE;
 }
+
+uintptr_t Memory::VirtToPhysBase(uintptr_t addr) {
+	addr = addr & ~0x1FFFFF; // Clear the lower bytes of the addr to get the base page pointer
+	int pml4_index = GET_PML4_INDEX(addr);
+	int pdp_index = GET_PDPT_INDEX(addr);
+	int pde_index = GET_PAGE_DIR_INDEX(addr);
+	int pte_index = GET_PAGE_TABLE_INDEX(addr);
+
+	// Extract the addresses from the pages.
+	uint64_t* pdp_t = (uint64_t*) getFrame(pml4[pml4_index]);
+	if (pdp_t[pdp_index] & BIT_SIZE) {
+		// 1GB pages, the physical address is pdp_t entry
+		return (uintptr_t) getFrame(pdp_t[pdp_index]);
+	}
+	uint64_t* pde_t = (uint64_t*) getFrame(pdp_t[pdp_index]);
+	if (pde_t[pde_index] & BIT_SIZE) {
+		// 2MB pages, the physical address is pde_t entry
+		return (uintptr_t) getFrame(pdp_t[pdp_index]);
+	}
+	uint64_t* pdt_t = (uint64_t*) getFrame(pde_t[pde_index]);
+	// If we made it this far, it's a 4kb page entry
+	return (uintptr_t) getFrame(pdt_t[pte_index]);
+}
+
+uintptr_t Memory::NewKernelPage() {
+	// We need to find an entry in the kpdp that we can map to.
+	// Each entry in kpdp is a 1GB region of memory. 
+	// We start at kpdp[510], if that's full we go to kpdp[511]
+	// If both of those are full, we start at kpdp[1]->kpdp[509]
+	// If we somehow need more than 512GB of virtual mappings for the kernel we've messed up somewhere.
+	// For our purposes, at least for now, we're only using 2MB pages.
+	// The allocators themselves that call this function will actually deal with them and break them down.
+	// Eventually I want to be able to have the allocators request that the virtual memory manager breaks down
+	// these 2MB pages into their 4KB chunks.
+
+	/* First attempt. Check kpdp[510] and kpdp[511] for empty entry. */
+	for (int i = 510; i < TABLE_ENTRIES; i++) {
+		uint64_t* pde_t = (uint64_t*) getFrame(kpdp[i]);
+		// Each pdp entry has 512 pde entries.
+		// Each pde entry corresponds to 1GB of virtual addresses.
+		// Each entry in a pde is a 2MB page.
+		printf("pde_t addr: 0x%llx -> index: %d", pde_t, i);
+		for (int j = 0; j < TABLE_ENTRIES; j++) {
+			printf("\nE: %d -> frame: 0x%llx", pde_t[j] & ~BIT_PRESENT, pde_t[j]);
+			if (pde_t[j] & ~BIT_PRESENT) {
+				uintptr_t addr = Memory::PhysicalAlloc2MB();
+				/* This will be dealt with properly at a later time.
+				 * To deal with this properly I need to implement filesystems and swap space.
+				 */
+				if (!addr) panic_s("Out of physical memory.");
+				set_page_frame(&(pde_t[j]), addr);
+				pde_t[j] |= BIT_SIZE | BIT_WRITE | BIT_PRESENT;
+				printf("\npde_entry: 0x%llx", pde_t[j]);
+				// TODO make this use invlpg instead of this
+				// This forces a full tlb flush
+				uintptr_t new_addr = (511 << PML4_OFFSET)
+					+ (i << PDP_OFFSET)
+					+ (j << PDE_OFFSET)
+					+ addr;
+				printf("\naddr: 0x%llx", new_addr);
+				uint64_t ptr = (uint64_t) pml4 - KERNEL_VIRTUAL_BASE;
+				asm volatile("mov %%rax, %%cr3" ::"a"(ptr));
+				// The new virtual address must be assembled. It's a lil janky.
+				// pml4 index is 511
+				// pdp index is `i`
+				// pde index is `j`
+				// the rest is the base pointer to the address.
+				return (511 << PML4_OFFSET)
+					+ (i << PDP_OFFSET)
+					+ (j << PDE_OFFSET)
+					+ addr;
+			}
+		}
+
+	}
+
+	/* Second attempt. Check the rest of kpdp. */
+	for (int i = 1; i < 510; i++) {
+
+	}
+	// If we still haven't found something we got a problem.
+	panic_s("Kernel has run out of virtual memory space.");
+	return 0; // Keep GCC happy. This is irrelevent.
+}
+
+void FreeKernelPage(uintptr_t addr) {
+
+}
+
+uintptr_t NewUserPage();
+void FreeUserPage(uintptr_t addr);

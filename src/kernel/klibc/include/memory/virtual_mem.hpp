@@ -45,13 +45,25 @@
 #define PAGE_2MB_SIZE 0x200000   // 512 * 4096
 #define PAGE_1GB_SIZE 0x40000000 // 512 * 512 * 4096
 
+#define PML4_OFFSET 39
+#define PDP_OFFSET  30
+#define PDE_OFFSET  21
+#define PTE_OFFSET  12
+
+
 namespace Memory {
 	void initVirtualMemory();
-	void postInitPhysical(uintptr_t final_mmap);
 
+	uintptr_t VirtToPhysBase(uintptr_t addr);
 	void MapPreAllocMem(uintptr_t addr);
 
-	uintptr_t getMappingEnd();
+	uintptr_t NewKernelPage();
+	void FreeKernelPage(uintptr_t addr);
+
+	uintptr_t NewUserPage();
+	void FreeUserPage(uintptr_t addr);
+
+	uintptr_t GetMappingEnd();
 }
 
 #endif //VIRTUAL_MEM_HPP

@@ -101,7 +101,7 @@ void map_chunk(uintptr_t start_address, size_t length, uint32_t type) {
 	// This will map the entire next 2mb block of memory. This avoids a page fault.
 	// The page fault handler will handle page faults correctly *after* we initialize the physical allocator.
 	// Unfortunately until then we have to be a little bit messy. 
-	if ((uintptr_t) last_block + sizeof(Block) >= (Memory::getMappingEnd() + KERNEL_VIRTUAL_BASE)) Memory::MapPreAllocMem((uintptr_t) last_block);
+	if ((uintptr_t) last_block + sizeof(Block) >= (Memory::GetMappingEnd() + KERNEL_VIRTUAL_BASE)) Memory::MapPreAllocMem((uintptr_t) last_block);
 
 	Block* last = first_block;
 	// We've already allocated block 0
@@ -109,12 +109,12 @@ void map_chunk(uintptr_t start_address, size_t length, uint32_t type) {
 		Block* current_block = (Block*) (last_block);
 		last->next_block = current_block;
 		current_block->next_block = NULL;
-		current_block->pointer = start_address + (PAGE_2MB_SIZE * pages_taken);
+		current_block->pointer = last->pointer + PAGE_2MB_SIZE;
 		current_block->free = true;
 		last_block_start = current_block;
 		last_block = current_block + sizeof(Block);
 		last = current_block;
-		if ((uintptr_t) last_block + sizeof(Block) >= (Memory::getMappingEnd() + KERNEL_VIRTUAL_BASE)) {
+		if ((uintptr_t) last_block + sizeof(Block) >= (Memory::GetMappingEnd() + KERNEL_VIRTUAL_BASE)) {
 			Memory::MapPreAllocMem((uintptr_t) last_block);
 		}
 	}
@@ -200,7 +200,7 @@ uintptr_t Memory::PhysicalAlloc2MB() {
 		if (last_allocated_block->next_block->free) {
 			last_allocated_block = last_allocated_block->next_block;
 			last_allocated_block->free = false;
-			return last_allocated_block->pointer;
+			return (last_allocated_block->pointer);
 		}
 	}
 
