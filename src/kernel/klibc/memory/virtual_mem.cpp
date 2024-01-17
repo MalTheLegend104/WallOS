@@ -1,4 +1,4 @@
-/* Read the AMD and Intel programmers manuals to get an understanding as to how page tabels work. The wiki does a bad job in my opinion.
+/* Read the AMD and Intel programmers manuals to get an understanding as to how page tables work. The osdev wiki does a bad job in my opinion.
  * The naming of things and the general structure are heavily inspired by the AMD manuals.
  *
  * Below is a summary of how the three most important addresses work in terms of paging:
@@ -15,7 +15,11 @@
  * 29-21: Offset in the PDE that the PDP pointed to.
  * 20-11: Offset in the PTE that the PDE pointed to.
  * 11-0:  Offset in the page. 4095 is the max, pointing to the very last byte of the page.
- *
+ * Important Note: This only applies to level 4 paging. Using different levels of paging results in slightly different addresses.
+ *                 5 level paging would result in bits 56:48 being used for the offset into the 5th level table.
+ *                 Conversely, using larger sized pages, such as 2MB or 1GB, also change the address. 2MB pages would result in there
+ *                 being no pde, meaning bits 20:0 are the offset into the physical page. 1GB would mean that bits 29:0 are the offset
+ *                 in the page.
  *
  * Page tables are explained further down in another comment, but it's important to note that they contain special addressing.
  * Page tables contain a different format of address than anything else in x86-64:
@@ -29,9 +33,9 @@
  * !-- It is important to note that the following, bits 11-0, are all flags. --!
  * 11-9: Free for the OS to use as it wishes, ignored by the processor.
  * 8: Global Page Bit. WallOS likely wont use these, see page 158 in Volume 2 of the AMD Manuals for reference.
- * 7: Page Size. This is only relavent if we dont want 4KB pages.
+ * 7: Page Size. This is only relevant if we dont want 4KB pages.
  *    If we want say, 2MB pages, this bit would be set in the PDE, and the address would point to a physical page.
- * 6: Dirty Bit. Only set on the lowest level of heirarchy (pte for 4KB pages, pde for 2MB, etc.).
+ * 6: Dirty Bit. Only set on the lowest level of hierarchy (pte for 4KB pages, pde for 2MB, etc.).
  *    Set to 1 by the processor upon first write to the page. OS has to manually change the bit back to zero.
  * 5: Accessed. Much like the dirty bit, set to 1 by the processor whenever the table or page has been accessed for
  *    a read or write for the first time. Must be manually cleared by the OS.
@@ -44,16 +48,16 @@
  * Important Note: The entire hierarchy MUST have the write bit set to 1 for the page to be writeable.
  *                 Any zero for the r/w bit through the hierarchy makes the page read only.
  *                 This also applies to the User/Supervisor bit, where the entire hierarchy must have the
- *                 User bit set for the memory to be accessable in ring 3.
+ *                 User bit set for the memory to be accessible in ring 3.
  *
  * For a better understanding of all the above, see page 142 (section 5 - long mode paging) in Volume 2 of the AMD Manuals.
  *
- * Physical Addresses are dervied from both virtual addresses and the hierarchy of page tables.
+ * Physical Addresses are derived from both virtual addresses and the hierarchy of page tables.
  * After parsing through each page table, the final table entry contains an address as seen above.
  * The final table contains the same structure as those before it, with one exception.
  * Bits 51-12 correspond to a physical address like before. x86_64 supports 52 bit addressing, meaning we're missing the lower 12 bytes (11-0).
  * When translating page tables before, the processor could easily assume that the next page table would start on a page boundary, meaning those bits are zero.
- * It can't do this when trying to find a certain spot in memory. Therefore, these lower 12 bytes come from the orginial virtual address.
+ * It can't do this when trying to find a certain spot in memory. Therefore, these lower 12 bytes come from the original virtual address.
  * This gives physical addresses this final structure:
  * |63        52|51                                    12|11         0|
  *  000000000000 0000000000000000000000000000000000000000 000000000000
@@ -113,7 +117,7 @@ uint64_t pde[TABLE_ENTRIES]  __attribute__((aligned(4096)));
 
 void set_page_frame(uint64_t* page, uint64_t addr) {
 	/* This voodoo magic does two things
-	 * (*page & ~PAGE_FRAME) - clears the upper 52 bits of the page entry.
+	 * (*page & ~PAGE_FRAME) - clears the upper 52 bits of the page entry. Leaves the bottom 12 alone.
 	 * (addr & PAGE_FRAME) - Sets the proper bits in the entry to the entry.
 	 * Since it uses and bitwise AND, and the addr should be canonical form, this copies only the important bits.
 	 * It means that bits 52-12 are filled, and nothing else gets touched.

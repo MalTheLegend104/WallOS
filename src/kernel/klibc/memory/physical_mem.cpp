@@ -13,7 +13,6 @@ mmap_info mem_info;
 typedef struct Block {
 	uintptr_t pointer;
 	bool free;
-	short size; // 0 if 2mb, 1 if 4kb
 	Block* next_block;
 } __attribute__((packed)) Block;
 
@@ -95,7 +94,6 @@ void map_chunk(uintptr_t start_address, size_t length, uint32_t type) {
 	first_block->next_block = NULL;
 	first_block->pointer = start_address + (PAGE_2MB_SIZE * pages_taken);
 	first_block->free = true;
-	first_block->size = 0;
 	last_block = first_block + sizeof(Block);
 	if (block_list == NULL)
 		block_list = first_block;
@@ -113,7 +111,6 @@ void map_chunk(uintptr_t start_address, size_t length, uint32_t type) {
 		current_block->next_block = NULL;
 		current_block->pointer = start_address + (PAGE_2MB_SIZE * pages_taken);
 		current_block->free = true;
-		current_block->size = 0;
 		last_block_start = current_block;
 		last_block = current_block + sizeof(Block);
 		last = current_block;

@@ -27,7 +27,6 @@ extern "C" {
 		size_t aliases_count;
 	} Command;
 
-
 	typedef struct {
 		const char* commandName;
 		const char* description;
