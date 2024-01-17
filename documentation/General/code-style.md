@@ -2,9 +2,19 @@
 
 ## Table of Contents
 
+- [Assembly Code](#assembly)
 - [Indentation](#indentation)
 - [Names](#names)
-- [General Rules (braces, indentation levels)](#braces)
+- [General Rules (braces, indentation levels)](#braces--general-rules)
+- [Alignment and Grouping](#alignment-and-grouping)
+
+## Assembly
+- All assembly code *that is in its own source file*, should use [NASM](https://github.com/netwide-assembler/nasm) syntax. 
+  - NASM syntax is essentially the `intel` syntax, with a few additional keywords.
+  - If something *must* be compiled with [`gas`](https://en.wikipedia.org/wiki/GNU_Assembler), use the AT&T syntax.
+    - NASM should be able to handle virtually everything we need asm for. The only exception is the `CRTI` & `CRTEND` needed by GCC.
+- All *inline* assembly must be in the AT&T syntax, as that's what `gas` expects.
+  - Technically you can force inline asm to be intel syntax, but changing that now would cause a major refactoring.
 
 ## Indentation
 
@@ -101,7 +111,7 @@ The code style for this project is largely based on [K&amp;R](https://en.wikiped
 - Starting brace on the same line as the definition
 - A space should follow the closing parenthesis
 - The end brace should be either a part of the same line, or indented at the same level as the start of the definition.
-- Functions that take no parameters can either include `void` in the parenthesis or leave them empty.
+- Functions that take no parameters can either include `void` in the parentheses or leave them empty.
 - One-liners are allowed for functions that have a single statement.
 
 ```C
@@ -156,12 +166,12 @@ typedef enum {
 ### Classes
 
 - Starting brace on the same line as the definition, with a space before it.
-- Private members should come before public ones
+- Private members should come before public ones.
   - Occasionally it comes up that you need to define something publicly that then referenced in a private declaration.
   - In this case, it is of course perfectly acceptable to define that before the private members.
-    Make sure to put only the necessary members before, and everything where it would normally go.
-- Private and public labels, along with the closing brace, should be on the same indentation level as the definition
-
+    Make sure to put only the necessary members before the private ones, and everything where it would normally go.
+- Private and public labels, along with the closing brace, should be on the same indentation level as the definition.
+- Constructors and Deconstructors should be treated like functions.
 ```C++
 class ExampleClass{
 private:
@@ -169,7 +179,10 @@ private:
     void privateMethod();
 public:
     class SubClass{
-        // subclass internals
+    private:
+        // private subclass internals
+    public:
+        // public subclass internals
     };
     int public_variable;
     void publicMethod();
@@ -179,7 +192,7 @@ public:
 ### Namespaces
 
 - Starting brace on the same line as the definition, with a space before it.
-- Closing brace on the same level as the defintion.
+- Closing brace on the same level as the definition.
 
 ```C++
 namespace Example {
@@ -187,17 +200,12 @@ namespace Example {
 }
 ```
 
-### If/Else & Switch Case
+### If/Else
 
-#### Both
-
-- Starting brace on the same line as the definition
-- A space should follow the closing parenthesis
-
-#### If/Else Specific
-
+- Starting brace on the same line as the definition.
+- A space should follow the closing parenthesis.
 - `else` and `else if` should be on the same line as the closing brace for the previous statement.
-  - There should be a space between the closing brace and next statement
+  - There should be a space between the closing brace and next statement.
 
 ```C
 if (expression) {
@@ -229,12 +237,13 @@ if (expression) {
     > This goes both ways, if the `else` only has one statement but the `if` has more, both must have braces.
     >
 
-#### Switch Case Specific
-
+### Switch Case
+- Starting brace on the same line as the definition.
+- A space should follow the closing parenthesis.
 - Case labels should be indented a level in from the switch statement.
 - Case statements can be surrounded in braces if there is more than two statements inside the case.
-  - This is required for very long cases, 10+ statements
-  - These braces follow the same rules as everything else, same line as definition with a space before it, and ends on same level as definition.
+  - This is required for very long cases (10+ statements).
+  - These braces follow the same rules as everything else: same line as definition with a space before it, and ends on same level as definition.
 
 ```C
 switch (expression) {
