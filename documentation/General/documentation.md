@@ -5,6 +5,38 @@
 Documentation is key to collaboration. 
 I want to create a welcoming community and take away some of the complexities of OS development.
 
+## Table of Contents
+- [Semantics](#semantics)
+- [Exposed Constructs](#exposed-constructs)
+- [Internal Constructs](#internal-constructs)
+- [Code Complexity](#code-complexity)
+- [Comment Clarity](#comment-clarity)
+
+## Semantics
+For the purposes of this document, I want to define a few words.
+
+#### Constructs
+- Any "top level" structure in either C or C++.
+  - This includes things like:
+    - namespaces
+    - classes
+    - structs
+    - enums
+    - unions
+    - functions
+
+#### Declaration
+- Where the function is declared.
+    ```C 
+    int function(void);
+    ```
+#### Definition
+- Where the function is defined. 
+  ```C
+  int function(void) { /* actual implementation */ }
+  ```
+  
+
 ## Exposed Constructs
 
 Constructs that are exposed and can be called from headers should be documented using Doxygen comments.
@@ -47,7 +79,7 @@ Examples:
         void publicMethod(int param1, int param2);
     };
     ```
-   - Constructors, public methods, and destructors are required. Private methods follow the same guidelines as [internal functions](#internal-constructs) 
+   - Constructors, public methods, and destructors are required. Private methods follow the same guidelines as [internal functions](#internal-constructs). 
  - Namespaces:
     ```C++
     /**
@@ -68,6 +100,50 @@ There are a lot of tags in Doxygen. There are only a few requirements:
 - A more detailed description is appreciated, but only required for [complex code.](#code-complexity)
   - It's also not required if the brief covers everything, and the internals are well commented.
 - Any other tags can be added if needed (such as `@deprecated`, `@ref`, `@todo`, etc.).
+
+### Where to put the comments
+- In general, the doxygen comments should be where the ***definition*** is.
+  ```C++
+  // -----------------------------
+  // example.hpp
+  // -----------------------------
+  /**
+   * @brief Example class...
+   */
+  class ExampleClass {
+  private:
+      int privateInt;
+      void privateMethod(void);
+  public:
+      /**
+       * @brief Description of getPrivateInt
+       * 
+       * @return What the function returns
+       */
+      inline int getPrivateInt(void) { return privateInt; }
+      int publicMethod(int c);
+  };
+  
+  // -----------------------------
+  // example.cpp
+  // -----------------------------
+  int ExampleClass::privateInt = 10;
+  void ExampleClass::privateMethod(void){
+      // Implementation
+  }
+  
+  /**
+   * @brief Description of publicMethod
+   * 
+   * @param c What int c should be
+   * @return What the function returns
+   */
+  int ExampleClass::publicMethod(int c){
+      // Implementation
+      return random_integer;
+  }
+  ```
+
 ## Internal Constructs
 For constructs that are meant to be used only within the same source file, Doxygen comments are **_not_** mandatory (but are appreciated).
 However, if the constructs' logic is complex or its behavior is not immediately obvious, add comments for clarity.
@@ -106,9 +182,53 @@ length = length - (start_address - old_start_addr); // Adjust length to start at
 
 ### Breaking up your code
 Comments are useful for breaking up chunks of code. This is *highly* encouraged. Just don't do it obsessively.
-- Look at other examples already in the kernel.
-- Comments used to break up code can come in pretty much any form, just don't make it unnecessarily large.
-  - This falls under [comment clarity.](#comment-clarity)
+- Comments used to break up code can come in a few forms.
+  - "Bar" Style for longer sections of code:
+    - Single-line:
+      ```C
+      // -----------------------------------
+      // Next chunk of code is...
+      // -----------------------------------
+      ```
+      or
+      ```C
+      // ===================================
+      // Next chunk of code is...
+      // ===================================
+      ```
+    - Multi-line:
+      ```C
+      /*****************************************
+       * Next chunk of code is...
+       *****************************************/
+      ```
+    - The length of the "bars" doesn't matter, just make them uniform throughout the file, and long enough to be properly seen.
+    - If the file is large (500+ lines) and you need to break it into multiple sections with subsections,
+      you should add an extra "bar" on the top and bottom:
+      ```C
+      // -----------------------------------
+      // -----------------------------------
+      // Next chunk of code is...
+      // -----------------------------------
+      // -----------------------------------
+      ```
+      - Your final subsection should have 1 bar on top and bottom.
+  - "Non-Bar" Style for short sections of code:
+    - Single-line:
+      ```C
+      // This next chunk of code does...
+      ```
+      or
+      ```C
+      /* This next chunk of code does... */
+      ```
+    - Multi-line:
+      ```C
+      /* This next chunk of code does...
+       * (long description)
+       */
+      ```
+- This falls under [comment clarity.](#comment-clarity)
 > Pull request that don't document complex code will be denied. 
 > What seems straightforward to one contributor might be challenging for others.
 > Don't be afraid to comment your code, then resubmit your pull request.
