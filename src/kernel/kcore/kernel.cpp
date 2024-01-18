@@ -60,9 +60,18 @@ int acpi_command(int argc, char** argv) {
 // 	screen[where + 2] = (color >> 16) & 255;  // RED
 // }
 
+extern "C" {
+	extern uint64_t kernel_end;
+}
+
 int mem_alloc(int argc, char** argv) {
 	uintptr_t ptr = Memory::NewKernelPage();
-	//Logger::infof("Base pointer of allocated mem: 0x%llx\n", ptr);
+	Logger::infof("Virtal Addr:         0x%llx\n", ptr);
+	Logger::infof("KERNEL_VIRTUAL_BASE: 0x%llx\n", KERNEL_VIRTUAL_BASE);
+	Logger::infof("Physical:            0x%llx\n", Memory::VirtToPhysBase(ptr));
+	Logger::infof("Kernel end:          0x%llx\n", kernel_end);
+	Logger::infof("Kernel mapping end:  0x%llx\n", Memory::Info::getPhysKernelEnd());
+
 	return 0;
 }
 

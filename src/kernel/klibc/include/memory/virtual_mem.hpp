@@ -5,6 +5,7 @@
 #define KERNEL_VIRTUAL_BASE 0xFFFFFFFF80000000ULL
 // The first 52 bytes of memory: 0b1111111111111111111111111111111111111111000000000000
 #define PAGE_FRAME 0xFFFFFFFFFF000ULL
+#define CANONICAL_UPPER 0xFFFF000000000000ULL
 #define TABLE_ENTRIES 512 
 
 /* Macros to make page modification not magic. */
@@ -27,6 +28,20 @@
 #define BIT_WRITE                  0x02ULL
 #define BIT_PRESENT                0x01ULL
 
+#define POS_NX                     63
+#define POS_11                     11
+#define POS_10                     10
+#define POS_9                      9
+#define POS_GLOBAL                 8
+#define POS_SIZE                   7
+#define POS_DIRTY                  6
+#define POS_ACCESS                 5
+#define POS_PCD                    4
+#define POS_PWT                    3
+#define POS_USR                    2
+#define POS_WRITE                  1
+#define POS_PRESENT                0
+
 #define SET_BIT_NX(page)           (page = (page | BIT_NX))
 #define SET_BIT_11(page)           (page = (page | BIT_11))
 #define SET_BIT_10(page)           (page = (page | BIT_10))
@@ -45,10 +60,10 @@
 #define PAGE_2MB_SIZE 0x200000   // 512 * 4096
 #define PAGE_1GB_SIZE 0x40000000 // 512 * 512 * 4096
 
-#define PML4_OFFSET 39
-#define PDP_OFFSET  30
-#define PDE_OFFSET  21
-#define PTE_OFFSET  12
+#define PML4_OFFSET 39ULL
+#define PDP_OFFSET  30ULL
+#define PDE_OFFSET  21ULL
+#define PTE_OFFSET  12ULL
 
 
 namespace Memory {
