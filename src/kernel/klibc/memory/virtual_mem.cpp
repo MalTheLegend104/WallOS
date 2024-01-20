@@ -72,6 +72,7 @@
  * Quite frankly it doesn't have to be. The CPU takes care of the translation for you as long as you properly set up your tables.
  * Regardless, this entire summary is meant to make x86_64 paging less daunting, and hopefully make it easier to follow the code below.
  */
+
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -123,7 +124,7 @@ void set_page_frame(uint64_t* page, uint64_t addr) {
 	 * (addr & PAGE_FRAME) - Sets the proper bits in the entry to the entry.
 	 * Since it uses and bitwise AND, and the addr should be canonical form, this copies only the important bits.
 	 * It means that bits 52-12 are filled, and nothing else gets touched.
-	 * It also means that addr doesn't even have to the be the base pointer,
+	 * It also means that addr doesn't even have to be the base pointer,
 	 * although this isn't ever a problem, we always use the base.
 	 */
 	*page = (*page & ~PAGE_FRAME) | (addr & PAGE_FRAME);
@@ -345,7 +346,7 @@ uintptr_t Memory::NewKernelPage() {
 
 	// If we still haven't found something we got a problem.
 	panic_s("Kernel has run out of virtual memory space.");
-	return 0; // Keep GCC happy. This is irrelevent.
+	return 0; // Keep GCC happy. This is irrelevant.
 }
 
 #pragma GCC diagnostic ignored "-Wunused-parameter" 

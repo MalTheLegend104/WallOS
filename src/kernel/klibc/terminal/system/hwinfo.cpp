@@ -134,7 +134,7 @@ int sysinfo(int argc, char** argv) {
 
 /**
  * @brief Information to display on terminal boot.
- * Should avoid things like uptime, since it's kinda irrelevent at boot time.
+ * Should avoid things like uptime, since it's kinda irrelevant at boot time.
  */
 void sysinfo_boot() {
 	printValue("General System Info:\n", "");

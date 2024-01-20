@@ -66,7 +66,7 @@ extern "C" {
 
 int mem_alloc(int argc, char** argv) {
 	uintptr_t ptr = Memory::NewKernelPage();
-	Logger::infof("Virtal Addr:         0x%llx\n", ptr);
+	Logger::infof("Virtual Addr:        0x%llx\n", ptr);
 	Logger::infof("KERNEL_VIRTUAL_BASE: 0x%llx\n", KERNEL_VIRTUAL_BASE);
 	Logger::infof("Physical:            0x%llx\n", Memory::VirtToPhysBase(ptr));
 	Logger::infof("Kernel end:          0x%llx\n", kernel_end);
