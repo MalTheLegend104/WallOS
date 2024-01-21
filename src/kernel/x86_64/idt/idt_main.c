@@ -6,6 +6,8 @@
 #include <idt.h>
 #include <stdbool.h>
 #include <drivers/keyboard.h>
+#include <drivers/serial.h>
+
 // I aint touching the interrupt frame on 99% of these but it's required by gcc.
 #pragma GCC diagnostic ignored "-Wunused-parameter" 
 
@@ -94,6 +96,11 @@ __attribute__((interrupt)) void page_fault_handler(struct interrupt_frame* frame
 	logger(ERROR, "Page fault Error Code: %s\n", err);
 	logger(ERROR, "Page fault at address (CR2): 0x%llx\n", cr2);
 	logger(ERROR, "Present: %d, Write: %d, User Mode: %d, Reserved: %d, Instruction Fetch: %d, Protection: %d, Shadow Stack: %d, SGX: %d\n",
+		present, write, user_mode, reserved, instruction_fetch, protection_key, shadow_stack, sgx);
+
+	printf_serial("Page fault Error Code: %s\r\n", err);
+	printf_serial("Page fault at address (CR2): 0x%llx\r\n", cr2);
+	printf_serial("Present: %d, Write: %d, User Mode: %d, Reserved: %d, Instruction Fetch: %d, Protection: %d, Shadow Stack: %d, SGX: %d\r\n",
 		present, write, user_mode, reserved, instruction_fetch, protection_key, shadow_stack, sgx);
 	asm volatile("hlt");
 }

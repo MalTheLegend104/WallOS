@@ -78,6 +78,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <assert.h>
+#include <panic.h>
 #include <klibc/logger.h>
 #include <memory/virtual_mem.hpp>
 #include <memory/physical_mem.hpp>
@@ -112,10 +113,13 @@ uint64_t kpde[TABLE_ENTRIES] __attribute__((aligned(4096)));
 // The lower 1MB of this is for identity mapping, the rest is mapped to KERNEL_VIRTUAL_BASE
 uint64_t kpte[TABLE_ENTRIES] __attribute__((aligned(4096)));
 
-// pml4[1] - First table for general purpose memory. [512GB] 
+// pml4[1] - First table for general purpose memory. [512GB]
 uint64_t pdp[TABLE_ENTRIES]  __attribute__((aligned(4096)));
-// First entry in normal pdp [1GB]
+// First three entries in normal pdp [1GB each]
 uint64_t pde[TABLE_ENTRIES]  __attribute__((aligned(4096)));
+
+// The framebuffer will get put in the upper limit of 4gb memory
+uint64_t pde_3gb[TABLE_ENTRIES] __attribute__((aligned(4096)));
 
 
 void set_page_frame(uint64_t* page, uint64_t addr) {
@@ -154,6 +158,8 @@ void Memory::initVirtualMemory() {
 	memset(kpte, 0, sizeof(uint64_t) * TABLE_ENTRIES);
 	memset(pdp, 0, sizeof(uint64_t) * TABLE_ENTRIES);
 	memset(pde, 0, sizeof(uint64_t) * TABLE_ENTRIES);
+	memset(pde_3gb, 0, sizeof(uint64_t) * TABLE_ENTRIES);
+
 	/* The three most important things for us to do are:
 	 * 1.) Set up the tables to point to each other
 	 * 2.) Identity map the lower 1MB
@@ -169,6 +175,10 @@ void Memory::initVirtualMemory() {
 	set_page_frame(&(kpdp[510]), ((uint64_t) kpde - KERNEL_VIRTUAL_BASE));
 	kpdp[510] |= BIT_WRITE | BIT_PRESENT;
 	kpdp[0] = kpdp[510];
+
+	// Set kpdp[1] to the framebuffer
+	set_page_frame(&(kpdp[3]), ((uint64_t) pde_3gb - KERNEL_VIRTUAL_BASE));
+	kpdp[3] |= BIT_WRITE | BIT_PRESENT;
 
 	// Map the lower 2MB, using 4kb pages
 	set_page_frame(&(kpde[0]), ((uint64_t) kpte - KERNEL_VIRTUAL_BASE));
@@ -201,17 +211,13 @@ void Memory::initVirtualMemory() {
 		assert("Kernel is too big.");
 	}
 
-	/* User memory space */
+	/* User memory space & framebuffer */
+	/* We're going to set the lower 4gb to their respective pde */
 	set_page_frame(&(pml4[1]), ((uint64_t) pdp - KERNEL_VIRTUAL_BASE));
 	pml4[1] |= BIT_USR | BIT_WRITE | BIT_PRESENT;
 
 	set_page_frame(&(pdp[0]), ((uint64_t) pde - KERNEL_VIRTUAL_BASE));
 	pdp[0] |= BIT_USR | BIT_WRITE | BIT_PRESENT;
-
-	for (int i = 0; i < TABLE_ENTRIES; i++) {
-		set_page_frame(&(pde[i]), PAGE_2MB_SIZE * i);
-		pde[i] |= BIT_USR | BIT_WRITE;
-	}
 
 	uint64_t ptr = (uint64_t) pml4 - KERNEL_VIRTUAL_BASE;
 	asm volatile("mov %%rax, %%cr3" ::"a"(ptr));
@@ -231,33 +237,6 @@ uintptr_t Memory::GetMappingEnd() {
  */
 uintptr_t getFrame(uintptr_t ptr) {
 	return (ptr & ~0xFFF0000000000FFF);
-}
-
-/**
- * @brief Map the next 2mb page at addr. This is only meant to be used before/during initialization of the physical allocator.
- * The page fault handler can't deal with non-present accesses before the physical allocator is set up.
- *
- * @param addr Address of the page to be mapped. Does NOT matter if it's the base address or not.
- */
-void Memory::MapPreAllocMem(uintptr_t addr) {
-	// This address will be the virtual address, including the offset from KERNEL_VIRTUAL_BASE
-	// Before we set up any allocators, we use 2mb pages.
-	addr = addr & ~0x1FFFFF; // Clear the lower bytes of the addr to get the base page pointer
-	int pml4_index = GET_PML4_INDEX(addr);
-	int pdp_index = GET_PDPT_INDEX(addr);
-	int pde_index = GET_PAGE_DIR_INDEX(addr);
-
-	// Extract the addresses from the pages.
-	uint64_t* pdp_t = (uint64_t*) getFrame(pml4[pml4_index]);
-	uint64_t* pde_t = (uint64_t*) getFrame(pdp_t[pdp_index]);
-
-	// We need to map the entry. We're going to "identity" map it in a sense
-	// We're still going to use the kernel offset, but it's going to be mapped immediately after the kernel binary.
-	addr -= KERNEL_VIRTUAL_BASE;
-	set_page_frame(&(pde_t[pde_index]), addr);
-	pde_t[pde_index] |= BIT_SIZE | BIT_WRITE | BIT_PRESENT;
-
-	kernel_mapping_end = addr + PAGE_2MB_SIZE;
 }
 
 uintptr_t Memory::VirtToPhysBase(uintptr_t addr) {
@@ -290,6 +269,71 @@ uintptr_t physToVirt(uint64_t pml4_index, uint64_t pdp_index, uint64_t pde_index
 		+ (pml4_index << PML4_OFFSET)
 		+ (pdp_index << PDP_OFFSET)
 		+ (pde_index << PDE_OFFSET);
+}
+#include <drivers/serial.h>
+/**
+ * @brief Maps a framebuffer into both physical and virtual memory.
+ *
+ * @param base_addr The physical memory address of the framebuffer.
+ * @param size The size of the framebuffer in bytes.
+ */
+void Memory::mapFramebuffer(uintptr_t base_addr, size_t size) {
+	// We need to map the memory region provided into both physical and virtual memory.
+	Memory::reserveMemory(base_addr, size);
+	// The framebuffer should be in kernel memory
+
+	// amount of 2mb sections this takes up
+	size_t mb_pages_taken = (size + PAGE_2MB_SIZE) / PAGE_2MB_SIZE;
+
+	// clear the lower 21 bytes of the ptr so we can map the virutal pages
+	uintptr_t addr = base_addr & ~0x1FFFFF;
+	// for the amount of pages taken by the map, we're going to map each page to virtual memory.
+
+	for (size_t i = 0; i < mb_pages_taken; i++) {
+		int pml4_index = GET_PML4_INDEX(addr);
+		int pdp_index = GET_PDPT_INDEX(addr);
+		int pde_index = GET_PAGE_DIR_INDEX(addr);
+
+		// Extract the addresses from the pages.
+		uint64_t* pdp_t = (uint64_t*) getFrame(pml4[pml4_index]);
+		uint64_t* pde_t = (uint64_t*) getFrame(pdp_t[pdp_index]);
+
+		set_page_frame(&(pde_t[pde_index]), addr);
+		pde_t[pde_index] |= BIT_SIZE | BIT_WRITE | BIT_PRESENT;
+
+		addr += PAGE_2MB_SIZE;
+	}
+
+	printf_serial("", Memory::VirtToPhysBase(base_addr));
+
+	return;
+}
+
+/**
+ * @brief Map the next 2mb page at provided addr. This is only meant to be used before/during initialization of the physical allocator.
+ * The page fault handler can't deal with non-present accesses before the physical allocator is set up.
+ *
+ * @param addr Address of the page to be mapped. Does NOT matter if it's the base address or not.
+ */
+void Memory::MapPreAllocMem(uintptr_t addr) {
+	// This address will be the virtual address, including the offset from KERNEL_VIRTUAL_BASE
+	// Before we set up any allocators, we use 2mb pages.
+	addr = addr & ~0x1FFFFF; // Clear the lower bytes of the addr to get the base page pointer
+	int pml4_index = GET_PML4_INDEX(addr);
+	int pdp_index = GET_PDPT_INDEX(addr);
+	int pde_index = GET_PAGE_DIR_INDEX(addr);
+
+	// Extract the addresses from the pages.
+	uint64_t* pdp_t = (uint64_t*) getFrame(pml4[pml4_index]);
+	uint64_t* pde_t = (uint64_t*) getFrame(pdp_t[pdp_index]);
+
+	// We need to map the entry. We're going to "identity" map it in a sense
+	// We're still going to use the kernel offset, but it's going to be mapped immediately after the kernel binary.
+	addr -= KERNEL_VIRTUAL_BASE;
+	set_page_frame(&(pde_t[pde_index]), addr);
+	pde_t[pde_index] |= BIT_SIZE | BIT_WRITE | BIT_PRESENT;
+
+	kernel_mapping_end = addr + PAGE_2MB_SIZE;
 }
 
 uintptr_t Memory::NewKernelPage() {

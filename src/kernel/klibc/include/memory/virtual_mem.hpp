@@ -71,6 +71,9 @@ namespace Memory {
 
 	uintptr_t VirtToPhysBase(uintptr_t addr);
 	void MapPreAllocMem(uintptr_t addr);
+	void mapFramebuffer(uintptr_t base_addr, size_t size);
+
+	void reserveMemory(uintptr_t base_addr, size_t size);
 
 	uintptr_t NewKernelPage();
 	void FreeKernelPage(uintptr_t addr);

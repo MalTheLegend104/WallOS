@@ -7,6 +7,7 @@
 #include <klibc/kprint.h>
 #include <klibc/logger.h>
 #include <idt.h>
+#include <assert.h>
 
 mmap_info mem_info;
 
@@ -19,6 +20,14 @@ typedef struct Block {
 Block* block_list = NULL;
 Block* last_block = NULL;
 Block* last_block_start = NULL;
+
+#define MAX_RESERVED 50
+typedef struct {
+	uintptr_t addr;
+	size_t size;
+} region;
+region reservedMemory[MAX_RESERVED];
+size_t reservedChunks = 0;
 
 uintptr_t phys_kernel_end = 0;
 
@@ -55,7 +64,7 @@ size_t Memory::Info::getUsedPageCount() {
  *
  * @param start_address Start address of the chunk of memory
  * @param length Length of the chunk of memory
- * @param type Type of memory chunk, as defined by the Multiboot2 Memory Map Tag
+ * @param type Type of memory chunk, as defined by the MultiBoot2 Memory Map Tag
  */
 void map_chunk(uintptr_t start_address, size_t length, uint32_t type) {
 	if (type != MULTIBOOT_MEMORY_AVAILABLE) return;
@@ -65,6 +74,27 @@ void map_chunk(uintptr_t start_address, size_t length, uint32_t type) {
 		if (start_address + length < phys_kernel_end) return;
 		length = length - (phys_kernel_end - start_address);
 		start_address = phys_kernel_end;
+	}
+
+	// check if the memory region just so happens to contain reserved memory
+	uintptr_t end_addr = start_address + length;
+	for (size_t i = 0; i < reservedChunks; i++) {
+		uintptr_t start_reserved = reservedMemory[i].addr;
+		uintptr_t end_reserved = reservedMemory[i].addr + reservedMemory[i].size;
+
+		if (start_reserved > start_address && start_reserved < end_addr) {
+			// split the chunk into start_address -> start_reserved then end_reserved -> end_addr
+			// First chunk
+			size_t len = start_reserved - start_address;
+			map_chunk(start_address, len, MULTIBOOT_MEMORY_AVAILABLE);
+			if (end_reserved > end_addr) {
+				Memory::reserveMemory(end_addr, end_reserved - end_addr);
+				break;
+			}
+			// second chunk
+			len = end_addr - end_reserved;
+			map_chunk(end_reserved, len, MULTIBOOT_MEMORY_AVAILABLE);
+		}
 	}
 
 	// We want the start address to be on a 2MB boundary.
@@ -101,7 +131,7 @@ void map_chunk(uintptr_t start_address, size_t length, uint32_t type) {
 	// This will map the entire next 2mb block of memory. This avoids a page fault.
 	// The page fault handler will handle page faults correctly *after* we initialize the physical allocator.
 	// Unfortunately until then we have to be a little bit messy. 
-	if ((uintptr_t) last_block + sizeof(Block) >= (Memory::GetMappingEnd() + KERNEL_VIRTUAL_BASE)) Memory::MapPreAllocMem((uintptr_t) last_block);
+	if ((uintptr_t) last_block + sizeof(Block) >= (Memory::GetMappingEnd() + KERNEL_VIRTUAL_BASE)) Memory::MapPreAllocMem((uintptr_t) last_block + sizeof(Block));
 
 	Block* last = first_block;
 	// We've already allocated block 0
@@ -114,9 +144,7 @@ void map_chunk(uintptr_t start_address, size_t length, uint32_t type) {
 		last_block_start = current_block;
 		last_block = current_block + sizeof(Block);
 		last = current_block;
-		if ((uintptr_t) last_block + sizeof(Block) >= (Memory::GetMappingEnd() + KERNEL_VIRTUAL_BASE)) {
-			Memory::MapPreAllocMem((uintptr_t) last_block);
-		}
+		if ((uintptr_t) last_block + sizeof(Block) >= (Memory::GetMappingEnd() + KERNEL_VIRTUAL_BASE)) { Memory::MapPreAllocMem((uintptr_t) last_block + sizeof(Block)); }
 	}
 
 	printf("\t\tTotal Blocks: %llu -> Last Addr: 0x%llx\n", max_pages, start_address + (max_pages * PAGE_2MB_SIZE));
@@ -141,6 +169,19 @@ void fillMMapInfo(struct multiboot_tag_mmap* mmap_tag) {
 
 const mmap_info* Memory::Info::getMMapInfo() {
 	return &mem_info;
+}
+
+/**
+ * @brief Reserves an area of memory for system processes. This is to prevent the mmap from (1) overwriting it, and (2) the mmap from pointing to it.
+ *
+ * @param base_addr Base address of the section to mark as reserved.
+ * @param size Length of the region in bytes.
+ */
+void Memory::reserveMemory(uintptr_t base_addr, size_t size) {
+	assert(reservedChunks <= MAX_RESERVED);
+	reservedMemory[reservedChunks].addr = base_addr;
+	reservedMemory[reservedChunks].size = size;
+	reservedChunks++;
 }
 
 void Memory::PhysicalMemInit() {
@@ -176,7 +217,6 @@ void Memory::PhysicalMemInit() {
 		current = current->next_block;
 		index++;
 	}
-
 }
 
 // ------------------------------------------------------------------------------------------------
