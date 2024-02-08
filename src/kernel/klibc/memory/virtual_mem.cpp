@@ -304,8 +304,6 @@ void Memory::mapFramebuffer(uintptr_t base_addr, size_t size) {
 		addr += PAGE_2MB_SIZE;
 	}
 
-	printf_serial("", Memory::VirtToPhysBase(base_addr));
-
 	return;
 }
 
