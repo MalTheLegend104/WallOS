@@ -80,6 +80,7 @@
 #include <assert.h>
 #include <panic.h>
 #include <klibc/logger.h>
+#include <drivers/serial.h>
 #include <memory/virtual_mem.hpp>
 #include <memory/physical_mem.hpp>
 
@@ -270,7 +271,7 @@ uintptr_t physToVirt(uint64_t pml4_index, uint64_t pdp_index, uint64_t pde_index
 		+ (pdp_index << PDP_OFFSET)
 		+ (pde_index << PDE_OFFSET);
 }
-#include <drivers/serial.h>
+
 /**
  * @brief Maps a framebuffer into both physical and virtual memory.
  *
