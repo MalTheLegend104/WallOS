@@ -2,6 +2,7 @@
 
 This folder contains a series of documentation, ranging across anything to do with this repo.
 Most of the things in this folder are referenced elsewhere in the project.
+
 > This folder in general is for documentation relating to the project itself, not code documentation.
 > See the [doxygen section](#doxygen) for code documentation.
 
@@ -27,5 +28,5 @@ If you want general code documentation, you can use [doxygen](https://www.doxyge
 ### Memory Information
 
 - [Memory System Structure](Memory/memory_structure.md)
-- [Ramblings on |Memory Addresses](../src/kernel/klibc/memory/virtual_mem.cpp)
-- [Structure of Kernel Slab Allocator](../src/kernel/klibc/memory/kernel_alloc.cpp)
+- [Ramblings on Memory Addresses](../src/kernel/klibc/memory/virtual_mem.cpp)
+- [Structure of Kernel Slab Allocator](Memory/kernel_allocator.md)
