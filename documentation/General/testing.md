@@ -44,7 +44,7 @@ Bochs is an open source x86_64 emulator. Like QEMU, it runs fairly well and fair
 
 ### [Virtualbox](https://www.virtualbox.org/wiki/VirtualBox)
 Virtualbox is a very well-developed and tested virtual machine written by Oracle. 
-- Supports a wide amount of customization
+- Supports a wide amount of customization.
 - More user-friendly interface than QEMU and Bochs.
 - It is harder to get the proper setup to emulate a "normal" x86_64 system, since you have to go through and enable/disable certain features.
 - While it *can* be used from the command line, it's more cumbersome to set up this way than either bochs or QEMU.
@@ -57,4 +57,10 @@ Virtualbox is a very well-developed and tested virtual machine written by Oracle
 > Testing on other VMs is encouraged, but issues on other VMs will likely be ignored as long as it works properly on the above three.
 
 ## Real Hardware
-The end-all-be-all for 
+The be-all and end-all for a hobby OS is to be run on real hardware. All WallOS releases are tested on real hardware before being released.
+- It's impossible to test all real hardware configurations.
+- It goes through a maximum of two different hardware configurations before being released.
+  - The x86_64 version is going to be more tested than any other versions.
+  - The Aarch64 version will be tested, but likely only on a single machine before being released.
+- Please feel free to test on your hardware any time, and report any bugs related to real hardware on GitHub using the proper template.
+

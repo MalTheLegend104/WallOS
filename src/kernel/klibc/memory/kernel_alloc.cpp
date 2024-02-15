@@ -1,7 +1,10 @@
-#include <memory/kernel_alloc.h>
-#include <memory/virtual_mem.hpp>
 #include <stdint.h>
 #include <stddef.h>
+#include <stdio.h>
+#include <string.h>
+
+#include <memory/kernel_alloc.h>
+#include <memory/virtual_mem.hpp>
 
 /* General structure of each slab
  *
@@ -36,10 +39,14 @@ typedef struct slab_header_t {
 	uintptr_t chunk_base;
 	size_t chunk_count; // There will be this / 8 entries in bitlist
 	uint8_t* bitlist;
-} slab_header_t;
+} __attribute__((packed)) slab_header_t;
 
 slab_header_t* first_slab;
 slab_header_t* last_slab;
+
+uint64_t calculatePadding(uint64_t bitlist_size, uint64_t chunksize) {
+	return PAGE_2MB_SIZE - 64 - bitlist_size - (bitlist_size * chunksize * 8);
+}
 
 // This will leave up to 7 * chunksize of bytes left over.
 // This would cause more memory wastage than it's worth to keep track of the rest. 
@@ -53,22 +60,79 @@ uint64_t calculateBitlistSize(uint64_t chunksize) {
 	return p / divisor;
 }
 
-void initKernelAllocator() {
-	// Init 2 byte slab
+void printSlabInfo(slab_header_t* info, uintptr_t base, size_t bls, size_t padding) {
+	printf("\tADDR: 0x%llx\n", base);
+	printf("\tOBJ_SIZE: %u\n", info->object_size);
+	printf("\tCHUNK_BASE: 0x%llx\n", info->chunk_base);
+	printf("\tCHUNK_COUNT: %llu\n", info->chunk_count);
+	printf("\tBLS: %llu\n", bls);
+	printf("\tPADDING: %llu\n", padding);
+}
+
+void initTwoByte() {
+	/* Init 2 byte slab */
 	uintptr_t two_byte_base = Memory::NewKernelPage();
 	slab_header_t* two_byte_header = (slab_header_t*) two_byte_base;
 	two_byte_header->object_size = WORD;
 	two_byte_header->next_slab = NULL;
 
+	uint64_t two_byte_bls = calculateBitlistSize(2);
+	two_byte_header->chunk_count = two_byte_bls * 8;
+	// Set all entries in the bitlist to zero.
+	memset(two_byte_header->bitlist, 0, two_byte_bls);
+
+	// Calculate the base
+	uint64_t two_byte_padding = calculatePadding(two_byte_bls, 2);
+
+	// This should be border aligned.
+	// The calculation grows the chunklist "backwards" ensuring no overlap and a perfect alignment.
+	two_byte_header->chunk_base = two_byte_base + 64 + two_byte_bls + two_byte_padding;
+
+	first_slab = two_byte_header;
+	last_slab = two_byte_header;
+
+	printf("2 Byte Header:\n");
+	printSlabInfo(two_byte_header, two_byte_base, two_byte_bls, two_byte_padding);
+}
+
+void initSlab(uint64_t object_size) {
+	uintptr_t base = Memory::NewKernelPage();
+	slab_header_t* header = (slab_header_t*) base;
+	header->object_size = object_size;
+	header->next_slab = NULL;
+
+	uint64_t bls = calculateBitlistSize(object_size);
+	header->chunk_count = bls * 8;
+	// Set all entries in the bitlist to zero.
+	memset(header->bitlist, 0, bls);
+
+	// Calculate the base
+	uint64_t padding = calculatePadding(bls, object_size);
+
+	// This should be border aligned.
+	// The calculation grows the chunklist "backwards" ensuring no overlap and a perfect alignment.
+	header->chunk_base = base + 64 + bls + padding;
+
+	last_slab->next_slab = header;
+	last_slab = header;
+
+	printf("%u Byte Header:\n", object_size);
+	printSlabInfo(header, base, bls, padding);
+}
+
+void initKernelAllocator() {
+	initTwoByte();
+	initSlab(DWORD);
+	initSlab(QWORD);
+	initSlab(PAGE_ENTRY);
+
 	// After removing the size of the header, there's 131068 chunks. This is 16383 uint8_t's. 
 	// There's a balance between size of the bitlist and amount of chunks but I cant figure out the math for it right now.
 
+	/* Init 4 byte slab */
 
+	/* Init 8 byte slab */
 
-	// Init 4 byte slab
-
-	// Init 8 byte slab
-
-	// Init page entry slab
+	/* Init page slab */
 
 }

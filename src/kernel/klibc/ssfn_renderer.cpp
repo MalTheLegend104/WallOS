@@ -34,7 +34,8 @@ extern "C" {
 		}
 	}
 
-	int print_logo_ssfn() {
+// This is really annoying in the GCC
+/*	int print_logo_ssfn() {
 		char* a = "██╗    ██╗ █████╗ ██╗     ██╗      ██████╗ ███████╗\n\
 ██║    ██║██╔══██╗██║     ██║     ██╔═══██╗██╔════╝\n\
 ██║ █╗ ██║███████║██║     ██║     ██║   ██║███████╗\n\
@@ -44,5 +45,5 @@ extern "C" {
 		ssfn_dst.fg = 0x2BE3FF;
 		print_str(a);
 		ssfn_dst.fg = 0xFFFFFF;
-	}
+	}*/
 }

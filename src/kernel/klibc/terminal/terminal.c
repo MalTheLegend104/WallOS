@@ -314,7 +314,6 @@ void terminalMain() {
 	registerCommand((Command) { historyCommand, historyHelp, "history", historyAliases, 1 });
 	sleep(1000);
 	executeCommand("logo");  // This is where the cursor first gets enabled
-	sysinfo_boot(); // print general system info
 
 	char oldCommand[MAX_COMMAND_BUF];
 	oldCommand[0] = '\0';
@@ -326,7 +325,7 @@ void terminalMain() {
 	bool tab_pressed;
 
 	// Actually do command stuff now.
-	printf("\n> ");
+	printf("> ");
 	while (true) {
 		char current = kb_getc();
 		KeyboardState state = getKeyboardState();

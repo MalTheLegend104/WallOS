@@ -363,7 +363,7 @@ uintptr_t Memory::NewKernelPage() {
 		for (int j = 0; j < TABLE_ENTRIES; j++) {
 			if (!(pde_t[j] & (1 << (BIT_PRESENT - 1)))) {
 				uintptr_t addr = Memory::PhysicalAlloc2MB();
-				printf("\n0x%llx\n", addr);
+				// printf("\n0x%llx\n", addr);
 				/* This will be dealt with properly at a later time.
 				 * To deal with this properly I need to implement filesystems and swap space.
 				 */

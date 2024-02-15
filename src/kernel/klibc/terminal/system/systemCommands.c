@@ -155,23 +155,38 @@ int panic_help(int argc, char** argv) {
 // Logo Command
 // ------------------------------------------------------------------------------------------------
 int logo_command(int argc, char** argv) {
+	if (argc > 1) {
+		if (strcmp(argv[1], "-nsi") == 0 || strcmp(argv[1], "--no-sysinfo") == 0) {
+			clearVGABuf();
+			print_logo();
+			time_command(0, NULL); // Print the time and date beneath the logo
+			printf("\n");
+			return 0;
+		}
+	}
 	clearVGABuf();
 	print_logo();
 	time_command(0, NULL); // Print the time and date beneath the logo
+	printf("\n");
+	sysinfo_boot();
 	printf("\n");
 	return 0;
 }
 
 int logo_help(int argc, char** argv) {
-	HelpEntryGeneral entry = {
+	const char* optional[] = {
+		"--no-sysinfo",
+		"-nsi -> Prints the logo with just the time, no sysinfo."
+	};
+	HelpEntry entry = {
 		"Logo",
 		"Prints the logo.",
 		NULL,
 		0,
-		NULL,
-		0
+		optional,
+		2
 	};
-	printGeneralHelp(&entry);
+	printSpecificHelp(&entry);
 	return 0;
 }
 

@@ -117,7 +117,7 @@ static void fillrect(unsigned char* vram, unsigned char r, unsigned char g, unsi
 	}
 }
 
-
+#include <memory/kernel_alloc.h>
 
 void kernel_main(unsigned int magic, multiboot_info* mbt_info) {
 	initScreen();
@@ -162,6 +162,8 @@ void kernel_main(unsigned int magic, multiboot_info* mbt_info) {
 	// Framebuffer ignore this
 	//multiboot_tag_framebuffer* e = MultibootManager::getFramebufferTag();
 	//putpixel((uintptr_t*) e->common.framebuffer_addr, 50, 50, 255, e->common.framebuffer_bpp, e->common.framebuffer_pitch);
+
+	initKernelAllocator();
 
 	// After we're done checking features, we need to set up our terminal.
 	// Eventually this will be a userspace program. 
