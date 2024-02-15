@@ -18,6 +18,7 @@ If you want general code documentation, you can use [doxygen](https://www.doxyge
 - [Documentation](General/documentation.md)
 - [Code Style](General/code-style.md)
 - [Contribution Guide](General/contributing.md)
+- [Testing and Releases](General/testing.md)
 
 ### Terminal Information
 
