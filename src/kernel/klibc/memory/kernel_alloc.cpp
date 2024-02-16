@@ -199,6 +199,22 @@ void kfree(void* ptr) {
 	}
 }
 
+typedef struct allocated_span_t {
+	uintptr_t ptr;
+	size_t size;
+	allocated_span_t* next_span;
+} allocated_span_t;
+
+allocated_span_t* first_span;
+
+void allocateSpanList() {
+	initSlab(sizeof(allocated_span_t));
+
+}
+
+allocated_span_t* allocateSpan();
+void freeSpan();
+
 void* kalloc(size_t bytes) {
 	size_t object_size = 2;
 	if (bytes % 8 == 0) object_size = 8;
@@ -217,14 +233,16 @@ void* kalloc(size_t bytes) {
 		size_t consective_chunks = 0;
 		chunk_number = 0;
 		for (size_t i = 0; i < header->chunk_count / 8; i++) {
-			for (int j = 1; j <= 8; i++) {
+			for (int j = 1; j <= 8; j++) {
 				if (!GET_BIT(header->bitlist[i], j)) {
 					if (consective_chunks == 0) chunk_number = (i * 8) + j;
 
 					consective_chunks++;
 
 					if (consective_chunks == amount_of_objects) {
-						setChunkUsed(header, chunk_number);
+						for (size_t k = 0; k < amount_of_objects; k++) {
+							setChunkUsed(header, chunk_number + k);
+						}
 						goto finish;
 					}
 				} else {
