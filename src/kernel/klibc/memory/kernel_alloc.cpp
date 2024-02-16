@@ -7,6 +7,11 @@
 #include <memory/kernel_alloc.h>
 #include <memory/virtual_mem.hpp>
 
+
+#define SET_BIT(bitlist_entry, bit)   (bitlist_entry = bitlist_entry | (1 << (8 - bit)))
+#define CLEAR_BIT(bitlist_entry, bit) (bitlist_entry = bitlist_entry & ~(1 << (8 - bit)))
+#define GET_BIT(bitlist_entry, bit)   (bitlist_entry & (1 << (8 - bit)))
+
 /* General structure of each slab
  *
  * |<--Header-->|<--BitList-->|<--Padding-->|<--1st Chunk-->|<--...-->|<--Last Chunk-->|
@@ -60,6 +65,68 @@ uint64_t calculateBitlistSize(uint64_t chunksize) {
 	uint64_t divisor = (8 * chunksize) + 1;
 	return p / divisor;
 }
+
+typedef struct allocated_span_t {
+	uintptr_t ptr;
+	size_t size;
+	allocated_span_t* next_span;
+	allocated_span_t* prev_span;
+} allocated_span_t;
+
+allocated_span_t* first_span;
+allocated_span_t* last_span;
+
+slab_header_t* span_list_start;
+slab_header_t* span_list_end;
+
+void allocateSpanList() {
+	uintptr_t base = Memory::NewKernelPage();
+	slab_header_t* header = (slab_header_t*) base;
+	header->object_size = sizeof(allocated_span_t);
+	header->next_slab = NULL;
+
+	uint64_t bls = calculateBitlistSize(sizeof(allocated_span_t));
+	header->chunk_count = bls * 8;
+	// Set all entries in the bitlist to zero.
+	memset(header->bitlist, 0, bls);
+
+	// Calculate the base
+	uint64_t padding = calculatePadding(bls, sizeof(allocated_span_t));
+
+	// This should be border aligned.
+	// The calculation grows the chunklist "backwards" ensuring no overlap and a perfect alignment.
+	header->chunk_base = base + 64 + bls + padding;
+
+	span_list_start = header;
+	span_list_end = header;
+
+	printf("\t%u Byte Header Initialized.\n", sizeof(allocated_span_t));
+}
+
+allocated_span_t* allocateSpan() {
+	slab_header_t* header = span_list_start;
+	size_t chunk_number = 0;
+	while (header != NULL) {
+		if (header->object_size != sizeof(allocated_span_t)) {
+			header = header->next_slab;
+			continue;
+		}
+		chunk_number = 1;
+		for (size_t i = 0; i < header->chunk_count / 8; i++) {
+			for (int j = 1; j <= 8; j++) {
+				if (!GET_BIT(header->bitlist[i], j)) {
+					setChunkUsed(header, chunk_number);
+					return (allocated_span_t*) (header->chunk_base + ((chunk_number - 1) * sizeof(allocated_span_t)));
+				}
+				chunk_number++;
+			}
+		}
+		header = header->next_slab;
+	}
+	return NULL;
+}
+
+void freeSpan();
 
 // Prints debug information about the slab.
 void printSlabInfo(slab_header_t* info, uintptr_t base, size_t bls, size_t padding) {
@@ -144,10 +211,6 @@ void initKernelAllocator() {
 	// Init any more structures here (like FILE* or other common structs)
 }
 
-#define SET_BIT(bitlist_entry, bit)   (bitlist_entry = bitlist_entry | (1 << (8 - bit)))
-#define CLEAR_BIT(bitlist_entry, bit) (bitlist_entry = bitlist_entry & ~(1 << (8 - bit)))
-#define GET_BIT(bitlist_entry, bit)   (bitlist_entry & (1 << (8 - bit)))
-
 /**
  * @brief Set if the chunk is used in the bitlist.
  *
@@ -198,22 +261,6 @@ void kfree(void* ptr) {
 		header = header->next_slab;
 	}
 }
-
-typedef struct allocated_span_t {
-	uintptr_t ptr;
-	size_t size;
-	allocated_span_t* next_span;
-} allocated_span_t;
-
-allocated_span_t* first_span;
-
-void allocateSpanList() {
-	initSlab(sizeof(allocated_span_t));
-
-}
-
-allocated_span_t* allocateSpan();
-void freeSpan();
 
 void* kalloc(size_t bytes) {
 	size_t object_size = 2;
