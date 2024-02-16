@@ -319,7 +319,7 @@ void terminalMain() {
 	oldCommand[0] = '\0';
 	commandBuf[0] = '\0';
 	size_t position_in_previous = 0;
-	size_t position_in_current = 0;
+	// size_t position_in_current = 0;
 
 	newCommand = false;
 	bool tab_pressed;

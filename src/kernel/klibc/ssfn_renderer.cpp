@@ -32,6 +32,7 @@ extern "C" {
 		for (size_t i = 0; i < strlen(str); i++) {
 			ssfn_putc(ssfn_utf8(&string));
 		}
+		return 0;
 	}
 
 // This is really annoying in the GCC
