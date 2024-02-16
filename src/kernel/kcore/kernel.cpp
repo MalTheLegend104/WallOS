@@ -119,6 +119,23 @@ static void fillrect(unsigned char* vram, unsigned char r, unsigned char g, unsi
 
 #include <memory/kernel_alloc.h>
 
+void testKalloc() {
+	char* a = (char*) kalloc(64);
+	printf("Kalloc 64: 0x%llx\n", a);
+	memset(a, 0, 64);
+	a[0] = 'K';
+	a[1] = 'A';
+	a[2] = 'L';
+	a[3] = 'L';
+	a[4] = 'O';
+	a[5] = 'C';
+	a[6] = '\0';
+	printf("%s", a);
+
+	asm volatile("cli");
+	asm volatile("hlt");
+}
+
 void kernel_main(unsigned int magic, multiboot_info* mbt_info) {
 	initScreen();
 	init_serial();
@@ -131,7 +148,8 @@ void kernel_main(unsigned int magic, multiboot_info* mbt_info) {
 	Features::enableFeatures();
 	setup_idt();
 	Memory::PhysicalMemInit();
-
+	asm volatile("cli");
+	asm volatile("hlt");
 	// This is all framebuffer stuff. 
 	// I'm not in too much of a rush about it, it was just a fun experiement
 	// multiboot_tag_framebuffer* e = MultibootManager::getFramebufferTag();
@@ -164,6 +182,7 @@ void kernel_main(unsigned int magic, multiboot_info* mbt_info) {
 	//putpixel((uintptr_t*) e->common.framebuffer_addr, 50, 50, 255, e->common.framebuffer_bpp, e->common.framebuffer_pitch);
 
 	initKernelAllocator();
+	testKalloc();
 
 	// After we're done checking features, we need to set up our terminal.
 	// Eventually this will be a userspace program. 

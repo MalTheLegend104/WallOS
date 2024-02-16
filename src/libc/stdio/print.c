@@ -84,7 +84,6 @@ char* convert_ull(unsigned long long num, int base) {
 	return(ptr);
 }
 
-
 //straight print until \0 is hit
 int print_until_null(const char* data) {
 	int amount = 0;

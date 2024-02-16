@@ -105,8 +105,6 @@ void map_chunk(uintptr_t start_address, size_t length, uint32_t type) {
 	printf("\tMemory Chunk: 0x%llx -> 0x%llx bytes\n", start_address, length);
 	size_t max_pages = length / PAGE_2MB_SIZE;
 
-	// TODO change start_address to be boundary aligned
-
 	// Calculate the size of the linked list, then see how many pages it takes up
 	size_t size = (sizeof(Block) * max_pages);
 	size_t pages_taken = (size / PAGE_2MB_SIZE) + 1;

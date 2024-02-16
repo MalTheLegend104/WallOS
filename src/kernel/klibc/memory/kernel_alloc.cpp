@@ -60,6 +60,7 @@ uint64_t calculateBitlistSize(uint64_t chunksize) {
 	return p / divisor;
 }
 
+// Prints debug information about the slab.
 void printSlabInfo(slab_header_t* info, uintptr_t base, size_t bls, size_t padding) {
 	printf("\tADDR: 0x%llx\n", base);
 	printf("\tOBJ_SIZE: %u\n", info->object_size);
@@ -69,6 +70,7 @@ void printSlabInfo(slab_header_t* info, uintptr_t base, size_t bls, size_t paddi
 	printf("\tPADDING: %llu\n", padding);
 }
 
+// This has to be seperate because we need a "first" entry in the linked list.
 void initTwoByte() {
 	/* Init 2 byte slab */
 	uintptr_t two_byte_base = Memory::NewKernelPage();
@@ -95,6 +97,11 @@ void initTwoByte() {
 	printSlabInfo(two_byte_header, two_byte_base, two_byte_bls, two_byte_padding);
 }
 
+/**
+ * @brief Creates a slab of object_size byte chunks.
+ *
+ * @param object_size Amount of bytes per chunk.
+ */
 void initSlab(uint64_t object_size) {
 	uintptr_t base = Memory::NewKernelPage();
 	slab_header_t* header = (slab_header_t*) base;
@@ -120,19 +127,116 @@ void initSlab(uint64_t object_size) {
 	printSlabInfo(header, base, bls, padding);
 }
 
+/**
+ * @brief Initializes the kernel allocator. Creates a 2, 4, 8, and 4096 cache.
+ */
 void initKernelAllocator() {
 	initTwoByte();
 	initSlab(DWORD);
 	initSlab(QWORD);
 	initSlab(PAGE_ENTRY);
+	// Init any more structures here (like FILE* or other common structs)
+}
 
-	// After removing the size of the header, there's 131068 chunks. This is 16383 uint8_t's. 
-	// There's a balance between size of the bitlist and amount of chunks but I cant figure out the math for it right now.
+#define SET_BIT(bitlist_entry, bit)   (bitlist_entry = bitlist_entry | (1 << (8 - bit)))
+#define CLEAR_BIT(bitlist_entry, bit) (bitlist_entry = bitlist_entry & ~(1 << (8 - bit)))
+#define GET_BIT(bitlist_entry, bit)   (bitlist_entry & (1 << (8 - bit)))
 
-	/* Init 4 byte slab */
+/**
+ * @brief Set if the chunk is used in the bitlist.
+ *
+ * @param header Header containing the chunk
+ * @param chunk chunk number in the slab
+ */
+void setChunkUsed(slab_header_t* header, size_t chunk) {
+	// We can divide the chunk by 8 to get which spot in the bitlist it is
+	size_t bitlist_spot = chunk / 8;
+	// Anything that's 8 % 8 = 0 will produce a number 1 too high
+	if (chunk % 8 == 0) bitlist_spot--;
 
-	/* Init 8 byte slab */
+	// The bitlist is in squential order, so it starts filling at the highest bit of the uint8_t
+	// This means bit "8" is the final bit in 0b00000001
+	// The macro takes this into account.
+	uint8_t index = chunk % 8;
+	if (chunk % 8 == 0) index = 8;
 
-	/* Init page slab */
+	SET_BIT(header->bitlist[bitlist_spot], index);
+}
 
+/**
+ * @brief Set if the chunk is free in the bitlist.
+ *
+ * @param header Header containing the chunk
+ * @param chunk chunk number in the slab
+ */
+void setChunkFree(slab_header_t* header, size_t chunk) {
+	size_t bitlist_spot = chunk / 8;
+	if (chunk % 8 == 0) bitlist_spot--;
+
+	uint8_t index = chunk % 8;
+	if (chunk % 8 == 0) index = 8;
+
+	CLEAR_BIT(header->bitlist[bitlist_spot], index);
+}
+
+void kfree(void* ptr) {
+	slab_header_t* header = first_slab;
+	while (header != NULL) {
+		// If the addr is after the starting addr of the header and before the end address it's in that slab
+		if (ptr > header && ptr < header + PAGE_2MB_SIZE) {
+			size_t chunk = (size_t) (ptr - header->chunk_base) / header->object_size;
+			memset(ptr, 0, header->object_size);
+			setChunkFree(header, chunk);
+			return;
+		}
+		header = header->next_slab;
+	}
+}
+
+void* kalloc(size_t bytes) {
+	size_t object_size = 2;
+	if (bytes % 8 == 0) object_size = 8;
+	else if (bytes % 4 == 0) object_size = 4;
+	else if (bytes % 2 != 0) bytes++;
+	size_t amount_of_objects = bytes / object_size;
+
+	slab_header_t* header = first_slab;
+	size_t chunk_number = 0;
+	while (header != NULL) {
+		if (header->object_size != object_size) {
+			header = header->next_slab;
+			continue;
+		}
+
+		int consective_chunks = 0;
+		chunk_number = 0;
+		for (size_t i = 0; i < header->chunk_count / 8; i++) {
+			for (int j = 1; j <= 8; i++) {
+				if (!GET_BIT(header->bitlist[i], j)) {
+					if (consective_chunks == 0) chunk_number = (i * 8) + j;
+
+					consective_chunks++;
+
+					if (consective_chunks == amount_of_objects) {
+						setChunkUsed(header, chunk_number);
+						goto finish;
+					}
+				} else {
+					consective_chunks = 0;
+				}
+			}
+			if (consective_chunks == 0) chunk_number = i * 8;
+		}
+		header = header->next_slab;
+	}
+
+finish:
+	if (header == NULL) {
+		// didnt find memory
+		// for now we're just going to return a nullptr, but we're going to eventually allocate a new slab and then allocate it.
+		return NULL;
+	} else {
+		printf("chunk #: %llu\n", (chunk_number - 1));
+		return (void*) (header->chunk_base + ((chunk_number - 1) * object_size));
+	}
 }

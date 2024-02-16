@@ -6,6 +6,8 @@ extern "C" {
 #endif 
 
 	void initKernelAllocator();
+	void kfree(void* ptr);
+	void* kalloc(size_t bytes);
 
 #ifdef __cplusplus
 }
