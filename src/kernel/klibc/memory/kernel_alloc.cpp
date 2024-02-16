@@ -3,6 +3,7 @@
 #include <stdio.h>
 #include <string.h>
 
+#include <klibc/kprint.h>
 #include <memory/kernel_alloc.h>
 #include <memory/virtual_mem.hpp>
 
@@ -93,8 +94,8 @@ void initTwoByte() {
 	first_slab = two_byte_header;
 	last_slab = two_byte_header;
 
-	printf("2 Byte Header:\n");
-	printSlabInfo(two_byte_header, two_byte_base, two_byte_bls, two_byte_padding);
+	printf("\t2 Byte Header Initialized.\n");
+	//printSlabInfo(two_byte_header, two_byte_base, two_byte_bls, two_byte_padding);
 }
 
 /**
@@ -123,18 +124,23 @@ void initSlab(uint64_t object_size) {
 	last_slab->next_slab = header;
 	last_slab = header;
 
-	printf("%u Byte Header:\n", object_size);
-	printSlabInfo(header, base, bls, padding);
+	printf("\t%u Byte Header Initialized.\n", object_size);
+	//printSlabInfo(header, base, bls, padding);
 }
 
 /**
  * @brief Initializes the kernel allocator. Creates a 2, 4, 8, and 4096 cache.
  */
 void initKernelAllocator() {
+	set_colors(VGA_COLOR_LIGHT_GREEN, VGA_DEFAULT_BG);
+	printf("Initializing Kernel Slab Allocator.\n");
+	set_to_last();
+	set_colors(VGA_COLOR_GREEN, VGA_DEFAULT_BG);
 	initTwoByte();
 	initSlab(DWORD);
 	initSlab(QWORD);
 	initSlab(PAGE_ENTRY);
+	set_to_last();
 	// Init any more structures here (like FILE* or other common structs)
 }
 
@@ -184,7 +190,7 @@ void kfree(void* ptr) {
 	while (header != NULL) {
 		// If the addr is after the starting addr of the header and before the end address it's in that slab
 		if (ptr > header && ptr < header + PAGE_2MB_SIZE) {
-			size_t chunk = (size_t) (ptr - header->chunk_base) / header->object_size;
+			size_t chunk = (size_t) ((uintptr_t) ptr - header->chunk_base) / header->object_size;
 			memset(ptr, 0, header->object_size);
 			setChunkFree(header, chunk);
 			return;
@@ -208,7 +214,7 @@ void* kalloc(size_t bytes) {
 			continue;
 		}
 
-		int consective_chunks = 0;
+		size_t consective_chunks = 0;
 		chunk_number = 0;
 		for (size_t i = 0; i < header->chunk_count / 8; i++) {
 			for (int j = 1; j <= 8; i++) {
@@ -236,7 +242,7 @@ finish:
 		// for now we're just going to return a nullptr, but we're going to eventually allocate a new slab and then allocate it.
 		return NULL;
 	} else {
-		printf("chunk #: %llu\n", (chunk_number - 1));
+		//printf("chunk #: %llu\n", (chunk_number - 1));
 		return (void*) (header->chunk_base + ((chunk_number - 1) * object_size));
 	}
 }

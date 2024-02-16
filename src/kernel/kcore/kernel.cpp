@@ -148,8 +148,6 @@ void kernel_main(unsigned int magic, multiboot_info* mbt_info) {
 	Features::enableFeatures();
 	setup_idt();
 	Memory::PhysicalMemInit();
-	asm volatile("cli");
-	asm volatile("hlt");
 	// This is all framebuffer stuff. 
 	// I'm not in too much of a rush about it, it was just a fun experiement
 	// multiboot_tag_framebuffer* e = MultibootManager::getFramebufferTag();
