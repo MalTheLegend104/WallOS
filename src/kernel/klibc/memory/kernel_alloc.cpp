@@ -51,7 +51,7 @@ slab_header_t* first_slab;
 slab_header_t* last_slab;
 
 uint64_t calculatePadding(uint64_t bitlist_size, uint64_t chunksize) {
-	return PAGE_2MB_SIZE - 64 - bitlist_size - (bitlist_size * chunksize * 8);
+	return PAGE_2MB_SIZE - sizeof(slab_header_t) - bitlist_size - (bitlist_size * chunksize * 8);
 }
 
 // This will leave up to 7 * chunksize of bytes left over.
@@ -61,154 +61,9 @@ uint64_t calculateBitlistSize(uint64_t chunksize) {
 	// P/8C+1
 	// We round down
 	// P is the page size - the header
-	uint64_t p = PAGE_2MB_SIZE - 64;
+	uint64_t p = PAGE_2MB_SIZE - sizeof(slab_header_t);
 	uint64_t divisor = (8 * chunksize) + 1;
 	return p / divisor;
-}
-
-typedef struct allocated_span_t {
-	uintptr_t ptr;
-	size_t size;
-	allocated_span_t* next_span;
-	allocated_span_t* prev_span;
-} allocated_span_t;
-
-allocated_span_t* first_span;
-allocated_span_t* last_span;
-
-slab_header_t* span_list_start;
-slab_header_t* span_list_end;
-
-void allocateSpanList() {
-	uintptr_t base = Memory::NewKernelPage();
-	slab_header_t* header = (slab_header_t*) base;
-	header->object_size = sizeof(allocated_span_t);
-	header->next_slab = NULL;
-
-	uint64_t bls = calculateBitlistSize(sizeof(allocated_span_t));
-	header->chunk_count = bls * 8;
-	// Set all entries in the bitlist to zero.
-	memset(header->bitlist, 0, bls);
-
-	// Calculate the base
-	uint64_t padding = calculatePadding(bls, sizeof(allocated_span_t));
-
-	// This should be border aligned.
-	// The calculation grows the chunklist "backwards" ensuring no overlap and a perfect alignment.
-	header->chunk_base = base + 64 + bls + padding;
-
-	span_list_start = header;
-	span_list_end = header;
-
-	printf("\t%u Byte Header Initialized.\n", sizeof(allocated_span_t));
-}
-
-allocated_span_t* allocateSpan() {
-	slab_header_t* header = span_list_start;
-	size_t chunk_number = 0;
-	while (header != NULL) {
-		if (header->object_size != sizeof(allocated_span_t)) {
-			header = header->next_slab;
-			continue;
-		}
-		chunk_number = 1;
-		for (size_t i = 0; i < header->chunk_count / 8; i++) {
-			for (int j = 1; j <= 8; j++) {
-				if (!GET_BIT(header->bitlist[i], j)) {
-					setChunkUsed(header, chunk_number);
-					return (allocated_span_t*) (header->chunk_base + ((chunk_number - 1) * sizeof(allocated_span_t)));
-				}
-				chunk_number++;
-			}
-		}
-		header = header->next_slab;
-	}
-	return NULL;
-}
-
-void freeSpan();
-
-// Prints debug information about the slab.
-void printSlabInfo(slab_header_t* info, uintptr_t base, size_t bls, size_t padding) {
-	printf("\tADDR: 0x%llx\n", base);
-	printf("\tOBJ_SIZE: %u\n", info->object_size);
-	printf("\tCHUNK_BASE: 0x%llx\n", info->chunk_base);
-	printf("\tCHUNK_COUNT: %llu\n", info->chunk_count);
-	printf("\tBLS: %llu\n", bls);
-	printf("\tPADDING: %llu\n", padding);
-}
-
-// This has to be seperate because we need a "first" entry in the linked list.
-void initTwoByte() {
-	/* Init 2 byte slab */
-	uintptr_t two_byte_base = Memory::NewKernelPage();
-	slab_header_t* two_byte_header = (slab_header_t*) two_byte_base;
-	two_byte_header->object_size = WORD;
-	two_byte_header->next_slab = NULL;
-
-	uint64_t two_byte_bls = calculateBitlistSize(2);
-	two_byte_header->chunk_count = two_byte_bls * 8;
-	// Set all entries in the bitlist to zero.
-	memset(two_byte_header->bitlist, 0, two_byte_bls);
-
-	// Calculate the base
-	uint64_t two_byte_padding = calculatePadding(two_byte_bls, 2);
-
-	// This should be border aligned.
-	// The calculation grows the chunklist "backwards" ensuring no overlap and a perfect alignment.
-	two_byte_header->chunk_base = two_byte_base + 64 + two_byte_bls + two_byte_padding;
-
-	first_slab = two_byte_header;
-	last_slab = two_byte_header;
-
-	printf("\t2 Byte Header Initialized.\n");
-	//printSlabInfo(two_byte_header, two_byte_base, two_byte_bls, two_byte_padding);
-}
-
-/**
- * @brief Creates a slab of object_size byte chunks.
- *
- * @param object_size Amount of bytes per chunk.
- */
-void initSlab(uint64_t object_size) {
-	uintptr_t base = Memory::NewKernelPage();
-	slab_header_t* header = (slab_header_t*) base;
-	header->object_size = object_size;
-	header->next_slab = NULL;
-
-	uint64_t bls = calculateBitlistSize(object_size);
-	header->chunk_count = bls * 8;
-	// Set all entries in the bitlist to zero.
-	memset(header->bitlist, 0, bls);
-
-	// Calculate the base
-	uint64_t padding = calculatePadding(bls, object_size);
-
-	// This should be border aligned.
-	// The calculation grows the chunklist "backwards" ensuring no overlap and a perfect alignment.
-	header->chunk_base = base + 64 + bls + padding;
-
-	last_slab->next_slab = header;
-	last_slab = header;
-
-	printf("\t%u Byte Header Initialized.\n", object_size);
-	//printSlabInfo(header, base, bls, padding);
-}
-
-/**
- * @brief Initializes the kernel allocator. Creates a 2, 4, 8, and 4096 cache.
- */
-void initKernelAllocator() {
-	set_colors(VGA_COLOR_LIGHT_GREEN, VGA_DEFAULT_BG);
-	printf("Initializing Kernel Slab Allocator.\n");
-	set_to_last();
-	set_colors(VGA_COLOR_GREEN, VGA_DEFAULT_BG);
-	initTwoByte();
-	initSlab(DWORD);
-	initSlab(QWORD);
-	initSlab(PAGE_ENTRY);
-	set_to_last();
-	// Init any more structures here (like FILE* or other common structs)
 }
 
 /**
@@ -248,6 +103,194 @@ void setChunkFree(slab_header_t* header, size_t chunk) {
 	CLEAR_BIT(header->bitlist[bitlist_spot], index);
 }
 
+typedef struct allocated_span_t {
+	uintptr_t ptr;
+	size_t size;
+	slab_header_t* span_slab;
+	allocated_span_t* next_span;
+	allocated_span_t* prev_span;
+} __attribute__((packed)) allocated_span_t;
+
+allocated_span_t* first_span;
+allocated_span_t* last_span;
+
+slab_header_t* span_list_start;
+slab_header_t* span_list_end;
+
+void allocateSpanList() {
+	uintptr_t base = Memory::NewKernelPage();
+	slab_header_t* header = (slab_header_t*) base;
+	header->object_size = sizeof(allocated_span_t);
+	header->next_slab = NULL;
+
+	uint64_t bls = calculateBitlistSize(sizeof(allocated_span_t));
+	header->chunk_count = bls * 8;
+	// Set all entries in the bitlist to zero.
+	memset(header->bitlist, 0, bls);
+
+	// Calculate the base
+	uint64_t padding = calculatePadding(bls, sizeof(allocated_span_t));
+
+	// This should be border aligned.
+	// The calculation grows the chunklist "backwards" ensuring no overlap and a perfect alignment.
+	header->chunk_base = base + sizeof(slab_header_t) + bls + padding;
+
+	if (span_list_start == NULL) {
+		span_list_start = header;
+	} else {
+		span_list_end->next_slab = header;
+	}
+
+	span_list_end = header;
+
+	printf("\t%u Byte Header Initialized.\n", sizeof(allocated_span_t));
+}
+
+allocated_span_t* allocateSpan() {
+	slab_header_t* header = span_list_start;
+	size_t chunk_number = 0;
+	while (header != NULL) {
+		if (header->object_size != sizeof(allocated_span_t)) {
+			header = header->next_slab;
+			continue;
+		}
+		chunk_number = 1;
+		for (size_t i = 0; i < header->chunk_count / 8; i++) {
+			for (int j = 1; j <= 8; j++) {
+				if (!GET_BIT(header->bitlist[i], j)) {
+					setChunkUsed(header, chunk_number);
+					return (allocated_span_t*) (header->chunk_base + ((chunk_number - 1) * sizeof(allocated_span_t)));
+				}
+				chunk_number++;
+			}
+		}
+		header = header->next_slab;
+	}
+	allocateSpanList();
+	return allocateSpan();
+}
+
+void addSpan(uintptr_t ptr, size_t size) {
+	printf("Adding span -> ADDR: 0x%llx, SIZE: %llu\n", ptr, size);
+	allocated_span_t* span = allocateSpan();
+	// TODO this needs to be a properly handled case.
+	// Right now it shouldn't happen, and until we get swap space we cant really do much.
+	if (span == NULL) return;
+	span->ptr = ptr;
+	span->size = size;
+
+	span->next_span = NULL;
+	span->prev_span = last_span;
+	last_span = span;
+
+	if (first_span == NULL) first_span = span;
+}
+
+allocated_span_t* findSpan(uintptr_t ptr) {
+	allocated_span_t* span = first_span;
+	while (span != NULL) {
+		if (span->ptr == ptr) {
+			return span;
+		}
+		span = span->next_span;
+	}
+	return NULL;
+}
+
+void removeSpan(allocated_span_t* span) {
+	span->prev_span->next_span = span->next_span;
+	span->next_span->prev_span = span->prev_span;
+
+	slab_header_t* header = span->span_slab;
+	size_t chunk = (size_t) ((uintptr_t) span - header->chunk_base) / header->object_size;
+	memset(span, 0, header->object_size);
+	setChunkFree(header, chunk);
+}
+
+// Prints debug information about the slab.
+void printSlabInfo(slab_header_t* info, uintptr_t base, size_t bls, size_t padding) {
+	printf("\tADDR: 0x%llx\n", base);
+	printf("\tOBJ_SIZE: %u\n", info->object_size);
+	printf("\tCHUNK_BASE: 0x%llx\n", info->chunk_base);
+	printf("\tCHUNK_COUNT: %llu\n", info->chunk_count);
+	printf("\tBLS: %llu\n", bls);
+	printf("\tPADDING: %llu\n", padding);
+}
+
+// This has to be seperate because we need a "first" entry in the linked list.
+void initTwoByte() {
+	/* Init 2 byte slab */
+	uintptr_t two_byte_base = Memory::NewKernelPage();
+	slab_header_t* two_byte_header = (slab_header_t*) two_byte_base;
+	two_byte_header->object_size = WORD;
+	two_byte_header->next_slab = NULL;
+
+	uint64_t two_byte_bls = calculateBitlistSize(2);
+	two_byte_header->chunk_count = two_byte_bls * 8;
+	// Set all entries in the bitlist to zero.
+	memset(two_byte_header->bitlist, 0, two_byte_bls);
+
+	// Calculate the base
+	uint64_t two_byte_padding = calculatePadding(two_byte_bls, 2);
+
+	// This should be border aligned.
+	// The calculation grows the chunklist "backwards" ensuring no overlap and a perfect alignment.
+	two_byte_header->chunk_base = two_byte_base + sizeof(slab_header_t) + two_byte_bls + two_byte_padding;
+
+	first_slab = two_byte_header;
+	last_slab = two_byte_header;
+
+	printf("\t2 Byte Header Initialized.\n");
+	//printSlabInfo(two_byte_header, two_byte_base, two_byte_bls, two_byte_padding);
+}
+
+/**
+ * @brief Creates a slab of object_size byte chunks.
+ *
+ * @param object_size Amount of bytes per chunk.
+ */
+void initSlab(uint64_t object_size) {
+	uintptr_t base = Memory::NewKernelPage();
+	slab_header_t* header = (slab_header_t*) base;
+	header->object_size = object_size;
+	header->next_slab = NULL;
+
+	uint64_t bls = calculateBitlistSize(object_size);
+	header->chunk_count = bls * 8;
+	// Set all entries in the bitlist to zero.
+	memset(header->bitlist, 0, bls);
+
+	// Calculate the base
+	uint64_t padding = calculatePadding(bls, object_size);
+
+	// This should be border aligned.
+	// The calculation grows the chunklist "backwards" ensuring no overlap and a perfect alignment.
+	header->chunk_base = base + sizeof(slab_header_t) + bls + padding;
+
+	last_slab->next_slab = header;
+	last_slab = header;
+
+	printf("\t%u Byte Header Initialized.\n", object_size);
+	//printSlabInfo(header, base, bls, padding);
+}
+
+/**
+ * @brief Initializes the kernel allocator. Creates a 2, 4, 8, and 4096 cache.
+ */
+void initKernelAllocator() {
+	set_colors(VGA_COLOR_LIGHT_GREEN, VGA_DEFAULT_BG);
+	printf("Initializing Kernel Slab Allocator.\n");
+	set_to_last();
+	set_colors(VGA_COLOR_GREEN, VGA_DEFAULT_BG);
+	initTwoByte();
+	initSlab(DWORD);
+	initSlab(QWORD);
+	initSlab(PAGE_ENTRY);
+	allocateSpanList();
+	set_to_last();
+	// Init any more structures here (like FILE* or other common structs)
+}
+
 void kfree(void* ptr) {
 	slab_header_t* header = first_slab;
 	while (header != NULL) {
@@ -255,7 +298,15 @@ void kfree(void* ptr) {
 		if (ptr > header && ptr < header + PAGE_2MB_SIZE) {
 			size_t chunk = (size_t) ((uintptr_t) ptr - header->chunk_base) / header->object_size;
 			memset(ptr, 0, header->object_size);
-			setChunkFree(header, chunk);
+
+			allocated_span_t* span = findSpan((uintptr_t) ptr);
+			if (span != NULL) {
+				for (size_t i = 0; i < span->size; i++) {
+					setChunkFree(header, chunk + i);
+				}
+			} else {
+				setChunkFree(header, chunk);
+			}
 			return;
 		}
 		header = header->next_slab;
@@ -308,6 +359,9 @@ finish:
 		return NULL;
 	} else {
 		//printf("chunk #: %llu\n", (chunk_number - 1));
-		return (void*) (header->chunk_base + ((chunk_number - 1) * object_size));
+		uintptr_t ptr = (header->chunk_base + ((chunk_number - 1) * object_size));
+		if (amount_of_objects > 1)
+			addSpan(ptr, amount_of_objects);
+		return (void*) ptr;
 	}
 }
