@@ -95,11 +95,15 @@ void setChunkUsed(slab_header_t* header, size_t chunk) {
  */
 void setChunkFree(slab_header_t* header, size_t chunk) {
 	size_t bitlist_spot = chunk / 8;
-	if (chunk % 8 == 0) bitlist_spot--;
+	if (bitlist_spot != 0) {
+		if (chunk % 8 == 0) bitlist_spot--;
+	}
 
 	uint8_t index = chunk % 8;
 	if (chunk % 8 == 0) index = 8;
 
+	//printf("Bitlist spot: 0x%llx -> index: %u -> addr: 0x%llx\n", bitlist_spot, index, &(header->bitlist));
+	//printf("chunk: %llu -> bitlist spot: %llu -> index: %u\n", chunk, bitlist_spot, index);
 	CLEAR_BIT(header->bitlist[bitlist_spot], index);
 }
 
@@ -159,7 +163,9 @@ allocated_span_t* allocateSpan() {
 			for (int j = 1; j <= 8; j++) {
 				if (!GET_BIT(header->bitlist[i], j)) {
 					setChunkUsed(header, chunk_number);
-					return (allocated_span_t*) (header->chunk_base + ((chunk_number - 1) * sizeof(allocated_span_t)));
+					allocated_span_t* span = (allocated_span_t*) (header->chunk_base + ((chunk_number - 1) * sizeof(allocated_span_t)));
+					span->span_slab = header;
+					return span;
 				}
 				chunk_number++;
 			}
@@ -171,7 +177,7 @@ allocated_span_t* allocateSpan() {
 }
 
 void addSpan(uintptr_t ptr, size_t size) {
-	printf("Adding span -> ADDR: 0x%llx, SIZE: %llu\n", ptr, size);
+	//printf("Adding span -> ADDR: 0x%llx, SIZE: %llu\n", ptr, size);
 	allocated_span_t* span = allocateSpan();
 	// TODO this needs to be a properly handled case.
 	// Right now it shouldn't happen, and until we get swap space we cant really do much.
@@ -198,11 +204,18 @@ allocated_span_t* findSpan(uintptr_t ptr) {
 }
 
 void removeSpan(allocated_span_t* span) {
-	span->prev_span->next_span = span->next_span;
-	span->next_span->prev_span = span->prev_span;
+	if (span->prev_span != NULL)
+		span->prev_span->next_span = span->next_span;
+	if (span->next_span != NULL)
+		span->next_span->prev_span = span->prev_span;
+	if (first_span == span)
+		first_span = NULL;
+	if (last_span == span)
+		last_span = span->prev_span;
 
 	slab_header_t* header = span->span_slab;
 	size_t chunk = (size_t) ((uintptr_t) span - header->chunk_base) / header->object_size;
+	printf("chunk#: %llu\n", chunk);
 	memset(span, 0, header->object_size);
 	setChunkFree(header, chunk);
 }
@@ -292,19 +305,26 @@ void initKernelAllocator() {
 }
 
 void kfree(void* ptr) {
+
 	slab_header_t* header = first_slab;
 	while (header != NULL) {
 		// If the addr is after the starting addr of the header and before the end address it's in that slab
-		if (ptr > header && ptr < header + PAGE_2MB_SIZE) {
+		if ((uintptr_t) ptr > (uintptr_t) header && (uintptr_t) ptr < (uintptr_t) header + PAGE_2MB_SIZE) {
 			size_t chunk = (size_t) ((uintptr_t) ptr - header->chunk_base) / header->object_size;
-			memset(ptr, 0, header->object_size);
-
+			printf("chunk_base = 0x%llx -> ptr = 0x%llx\n", header->chunk_base, ptr);
+			printf("ptr - chunk_base = 0x%llx\n", (uintptr_t) ptr - header->chunk_base);
 			allocated_span_t* span = findSpan((uintptr_t) ptr);
 			if (span != NULL) {
+				printf("Found span: 0x%llx -> PTR: 0x%llx -> SIZE: 0x%llx\n", span, span->ptr, span->size);
+
 				for (size_t i = 0; i < span->size; i++) {
 					setChunkFree(header, chunk + i);
 				}
+
+				memset(ptr, 0, span->size * header->object_size);
+				removeSpan(span);
 			} else {
+				memset(ptr, 0, header->object_size);
 				setChunkFree(header, chunk);
 			}
 			return;
@@ -341,6 +361,9 @@ void* kalloc(size_t bytes) {
 						for (size_t k = 0; k < amount_of_objects; k++) {
 							setChunkUsed(header, chunk_number + k);
 						}
+						printf("Header: 0x%llx -> bitlist_base: 0x%llx\n", header, &(header->bitlist));
+						printf("chunk count: %llu -> object_size: %llu\n", header->chunk_count, header->object_size);
+						printf("chunk base: 0x%llx\n", header->chunk_base);
 						goto finish;
 					}
 				} else {

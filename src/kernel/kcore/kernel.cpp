@@ -71,8 +71,8 @@ int mem_alloc(int argc, char** argv) {
 
 #include <memory/kernel_alloc.h>
 
-void testKalloc() {
-	char* a = (char*) kalloc(64);
+int testKalloc(int argc, char** argv) {
+	char* a = (char*) kalloc(125);
 	printf("Kalloc 64: 0x%llx\n", a);
 	memset(a, 0, 64);
 	a[0] = 'K';
@@ -82,10 +82,9 @@ void testKalloc() {
 	a[4] = 'O';
 	a[5] = 'C';
 	a[6] = '\0';
-	printf("%s", a);
-
-	asm volatile("cli");
-	asm volatile("hlt");
+	printf("%s\n", a);
+	kfree(a);
+	return 0;
 }
 
 void kernel_main(unsigned int magic, multiboot_info* mbt_info) {
@@ -132,10 +131,10 @@ void kernel_main(unsigned int magic, multiboot_info* mbt_info) {
 	//putpixel((uintptr_t*) e->common.framebuffer_addr, 50, 50, 255, e->common.framebuffer_bpp, e->common.framebuffer_pitch);
 
 	initKernelAllocator();
-	testKalloc();
 
 	// After we're done checking features, we need to set up our terminal.
 	// Eventually this will be a userspace program. 
+	registerCommand((Command) { testKalloc, 0, "kalloc", 0, 0 });
 	registerCommand((Command) { acpi_command, 0, "acpi", 0, 0 });
 	registerCommand((Command) { mem_alloc, 0, "mem_alloc", 0, 0 });
 	terminalMain();
