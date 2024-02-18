@@ -99,10 +99,10 @@ void map_chunk(uintptr_t start_address, size_t length, uint32_t type) {
 
 	// We want the start address to be on a 2MB boundary.
 	uintptr_t old_start_addr = start_address;
-	start_address = (start_address + 0x1FFFFF) & ~0x1FFFFF; // Round up & clear the lower 21 bits 
-	length = length - (start_address - old_start_addr); // Adjust length to start at the new boundary
+	uintptr_t new_start_address = (start_address + 0x1FFFFF) & ~0x1FFFFF; // Round up & clear the lower 21 bits 
+	length = length - (new_start_address - old_start_addr); // Adjust length to start at the new boundary
 
-	printf("\tMemory Chunk: 0x%llx -> 0x%llx bytes\n", start_address, length);
+	printf("\tMemory Chunk: 0x%llx -> 0x%llx bytes\n", new_start_address, length);
 	size_t max_pages = length / PAGE_2MB_SIZE;
 
 	// Calculate the size of the linked list, then see how many pages it takes up
@@ -120,7 +120,7 @@ void map_chunk(uintptr_t start_address, size_t length, uint32_t type) {
 	}
 	// We have to round up the start address to the nearest 2mb boundary
 	first_block->next_block = NULL;
-	first_block->pointer = start_address + (PAGE_2MB_SIZE * pages_taken);
+	first_block->pointer = new_start_address + (PAGE_2MB_SIZE * pages_taken);
 	first_block->free = true;
 	last_block = first_block + sizeof(Block);
 	if (block_list == NULL)
@@ -129,7 +129,7 @@ void map_chunk(uintptr_t start_address, size_t length, uint32_t type) {
 	// This will map the entire next 2mb block of memory. This avoids a page fault.
 	// The page fault handler will handle page faults correctly *after* we initialize the physical allocator.
 	// Unfortunately until then we have to be a little bit messy. 
-	if ((uintptr_t) last_block + sizeof(Block) >= (Memory::GetMappingEnd() + KERNEL_VIRTUAL_BASE)) Memory::MapPreAllocMem((uintptr_t) last_block + sizeof(Block));
+	if (((uintptr_t) last_block) + sizeof(Block) >= (Memory::GetMappingEnd() + KERNEL_VIRTUAL_BASE)) Memory::MapPreAllocMem(((uintptr_t) last_block) + sizeof(Block));
 
 	Block* last = first_block;
 	// We've already allocated block 0
@@ -142,10 +142,10 @@ void map_chunk(uintptr_t start_address, size_t length, uint32_t type) {
 		last_block_start = current_block;
 		last_block = current_block + sizeof(Block);
 		last = current_block;
-		if ((uintptr_t) last_block + sizeof(Block) >= (Memory::GetMappingEnd() + KERNEL_VIRTUAL_BASE)) { Memory::MapPreAllocMem((uintptr_t) last_block + sizeof(Block)); }
+		if (((uintptr_t) last_block) + sizeof(Block) >= (Memory::GetMappingEnd() + KERNEL_VIRTUAL_BASE)) { Memory::MapPreAllocMem(((uintptr_t) last_block) + sizeof(Block)); }
 	}
 
-	printf("\t\tTotal Blocks: %llu -> Last Addr: 0x%llx\n", max_pages, start_address + (max_pages * PAGE_2MB_SIZE));
+	printf("\t\tTotal Blocks: %llu -> Last Addr: 0x%llx\n", max_pages, new_start_address + (max_pages * PAGE_2MB_SIZE));
 }
 
 void fillMMapInfo(struct multiboot_tag_mmap* mmap_tag) {

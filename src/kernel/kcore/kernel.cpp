@@ -83,7 +83,7 @@ int testKalloc(int argc, char** argv) {
 	a[5] = 'C';
 	a[6] = '\0';
 	printf("%s\n", a);
-	kfree(a);
+	//kfree(a);
 	return 0;
 }
 

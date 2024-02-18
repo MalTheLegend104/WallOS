@@ -47,8 +47,8 @@ typedef struct slab_header_t {
 	uint8_t* bitlist;
 } __attribute__((packed)) slab_header_t;
 
-slab_header_t* first_slab;
-slab_header_t* last_slab;
+slab_header_t* first_slab = NULL;
+slab_header_t* last_slab = NULL;
 
 uint64_t calculatePadding(uint64_t bitlist_size, uint64_t chunksize) {
 	return PAGE_2MB_SIZE - sizeof(slab_header_t) - bitlist_size - (bitlist_size * chunksize * 8);
@@ -76,7 +76,9 @@ void setChunkUsed(slab_header_t* header, size_t chunk) {
 	// We can divide the chunk by 8 to get which spot in the bitlist it is
 	size_t bitlist_spot = chunk / 8;
 	// Anything that's 8 % 8 = 0 will produce a number 1 too high
-	if (chunk % 8 == 0) bitlist_spot--;
+	if (bitlist_spot != 0) {
+		if (chunk % 8 == 0) bitlist_spot--;
+	}
 
 	// The bitlist is in squential order, so it starts filling at the highest bit of the uint8_t
 	// This means bit "8" is the final bit in 0b00000001
@@ -115,11 +117,11 @@ typedef struct allocated_span_t {
 	allocated_span_t* prev_span;
 } __attribute__((packed)) allocated_span_t;
 
-allocated_span_t* first_span;
-allocated_span_t* last_span;
+allocated_span_t* first_span = NULL;
+allocated_span_t* last_span = NULL;
 
-slab_header_t* span_list_start;
-slab_header_t* span_list_end;
+slab_header_t* span_list_start = NULL;
+slab_header_t* span_list_end = NULL;
 
 void allocateSpanList() {
 	uintptr_t base = Memory::NewKernelPage();
@@ -150,28 +152,63 @@ void allocateSpanList() {
 	printf("\t%u Byte Header Initialized.\n", sizeof(allocated_span_t));
 }
 
+// allocated_span_t* allocateSpan() {
+// 	slab_header_t* header = span_list_start;
+// 	size_t chunk_number;
+// 	while (header != NULL) {
+// 		if (header->object_size != sizeof(allocated_span_t)) {
+// 			printf("header wrong size\n");
+// 			header = header->next_slab;
+// 			continue;
+// 		}
+
+// 		chunk_number = 0;
+// 		for (size_t i = 0; i < header->chunk_count / 8; i++) {
+// 			chunk_number = i * 8;
+// 			for (int j = 1; j <= 8; j++) {
+// 				if (!GET_BIT(header->bitlist[i], j)) {
+// 					chunk_number = (i * 8) + j;
+// 					setChunkUsed(header, chunk_number);
+// 					printf("chunk#: %llu -> header: 0x%llx -> chunk_base: 0x%llx\n", chunk_number, (uintptr_t) header, header->chunk_base);
+// 					allocated_span_t* span = (allocated_span_t*) (header->chunk_base + ((chunk_number - 1) * header->object_size));
+// 					span->span_slab = header;
+// 					return span;
+// 				}
+// 			}
+// 		}
+// 		header = header->next_slab;
+// 	}
+
+// 	allocateSpanList();
+// 	return allocateSpan();
+// }
+
 allocated_span_t* allocateSpan() {
 	slab_header_t* header = span_list_start;
-	size_t chunk_number = 0;
+	size_t current_chunk = 0;
 	while (header != NULL) {
 		if (header->object_size != sizeof(allocated_span_t)) {
 			header = header->next_slab;
 			continue;
 		}
-		chunk_number = 1;
+
 		for (size_t i = 0; i < header->chunk_count / 8; i++) {
+			current_chunk = i * 8;
 			for (int j = 1; j <= 8; j++) {
+				current_chunk += j;
 				if (!GET_BIT(header->bitlist[i], j)) {
-					setChunkUsed(header, chunk_number);
-					allocated_span_t* span = (allocated_span_t*) (header->chunk_base + ((chunk_number - 1) * sizeof(allocated_span_t)));
+					uintptr_t ptr = header->chunk_base + ((current_chunk - 1) * sizeof(allocated_span_t));
+					allocated_span_t* span = (allocated_span_t*) ptr;
 					span->span_slab = header;
+
+					printf("\nspan ptr: 0x%llx -> header: 0x%llx -> chunk_base: 0x%llx\n\n", ptr, header, header->chunk_base);
+
 					return span;
 				}
-				chunk_number++;
 			}
 		}
-		header = header->next_slab;
 	}
+
 	allocateSpanList();
 	return allocateSpan();
 }
@@ -190,6 +227,8 @@ void addSpan(uintptr_t ptr, size_t size) {
 	last_span = span;
 
 	if (first_span == NULL) first_span = span;
+
+	printf("added span: addr: 0x%llx -> ptr: 0x%llx -> size: %llu\n", (uintptr_t) span, span->ptr, span->size);
 }
 
 allocated_span_t* findSpan(uintptr_t ptr) {
@@ -214,7 +253,10 @@ void removeSpan(allocated_span_t* span) {
 		last_span = span->prev_span;
 
 	slab_header_t* header = span->span_slab;
+	printf("span addr: 0x%llx -> chunk_base: 0x%llx -> object_size: %llu\n", (uintptr_t) span, header->chunk_base, header->object_size);
+	printf("diff: 0x%llx\n", (uintptr_t) span - header->chunk_base);
 	size_t chunk = (size_t) ((uintptr_t) span - header->chunk_base) / header->object_size;
+	chunk++;
 	printf("chunk#: %llu\n", chunk);
 	memset(span, 0, header->object_size);
 	setChunkFree(header, chunk);
@@ -305,14 +347,12 @@ void initKernelAllocator() {
 }
 
 void kfree(void* ptr) {
-
 	slab_header_t* header = first_slab;
 	while (header != NULL) {
 		// If the addr is after the starting addr of the header and before the end address it's in that slab
 		if ((uintptr_t) ptr > (uintptr_t) header && (uintptr_t) ptr < (uintptr_t) header + PAGE_2MB_SIZE) {
 			size_t chunk = (size_t) ((uintptr_t) ptr - header->chunk_base) / header->object_size;
-			printf("chunk_base = 0x%llx -> ptr = 0x%llx\n", header->chunk_base, ptr);
-			printf("ptr - chunk_base = 0x%llx\n", (uintptr_t) ptr - header->chunk_base);
+			chunk++; // The caluclation gives it in terms of index, we need index + 1
 			allocated_span_t* span = findSpan((uintptr_t) ptr);
 			if (span != NULL) {
 				printf("Found span: 0x%llx -> PTR: 0x%llx -> SIZE: 0x%llx\n", span, span->ptr, span->size);
@@ -351,6 +391,7 @@ void* kalloc(size_t bytes) {
 		size_t consective_chunks = 0;
 		chunk_number = 0;
 		for (size_t i = 0; i < header->chunk_count / 8; i++) {
+			if (consective_chunks == 0) chunk_number = i * 8;
 			for (int j = 1; j <= 8; j++) {
 				if (!GET_BIT(header->bitlist[i], j)) {
 					if (consective_chunks == 0) chunk_number = (i * 8) + j;
@@ -361,16 +402,16 @@ void* kalloc(size_t bytes) {
 						for (size_t k = 0; k < amount_of_objects; k++) {
 							setChunkUsed(header, chunk_number + k);
 						}
+						printf("i: %llu -> j: %llu\nchunk#: %llu\n", i, j, chunk_number);
 						printf("Header: 0x%llx -> bitlist_base: 0x%llx\n", header, &(header->bitlist));
 						printf("chunk count: %llu -> object_size: %llu\n", header->chunk_count, header->object_size);
-						printf("chunk base: 0x%llx\n", header->chunk_base);
+						printf("chunk base: 0x%llx\n\n", header->chunk_base);
 						goto finish;
 					}
 				} else {
 					consective_chunks = 0;
 				}
 			}
-			if (consective_chunks == 0) chunk_number = i * 8;
 		}
 		header = header->next_slab;
 	}
