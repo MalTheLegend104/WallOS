@@ -146,7 +146,6 @@ void allocateSpanList() {
 	} else {
 		span_list_end->next_slab = header;
 	}
-
 	span_list_end = header;
 
 	printf("\t%u Byte Header Initialized.\n", sizeof(allocated_span_t));
@@ -184,33 +183,45 @@ void allocateSpanList() {
 // }
 
 allocated_span_t* allocateSpan() {
+	size_t object_size = sizeof(allocated_span_t);
+
 	slab_header_t* header = span_list_start;
-	size_t current_chunk = 0;
+	size_t chunk_number = 0;
 	while (header != NULL) {
-		if (header->object_size != sizeof(allocated_span_t)) {
+		if (header->object_size != object_size) {
 			header = header->next_slab;
 			continue;
 		}
 
 		for (size_t i = 0; i < header->chunk_count / 8; i++) {
-			current_chunk = i * 8;
+			chunk_number = i * 8;
 			for (int j = 1; j <= 8; j++) {
-				current_chunk += j;
 				if (!GET_BIT(header->bitlist[i], j)) {
-					uintptr_t ptr = header->chunk_base + ((current_chunk - 1) * sizeof(allocated_span_t));
-					allocated_span_t* span = (allocated_span_t*) ptr;
-					span->span_slab = header;
-
-					printf("\nspan ptr: 0x%llx -> header: 0x%llx -> chunk_base: 0x%llx\n\n", ptr, header, header->chunk_base);
-
-					return span;
+					chunk_number = (i * 8) + j;
+					setChunkUsed(header, chunk_number);
+					printf("i: %llu -> j: %llu\nchunk#: %llu\n", i, j, chunk_number);
+					printf("SLAB Header: 0x%llx -> bitlist_base: 0x%llx\n", header, &(header->bitlist));
+					printf("chunk count: %llu -> object_size: %llu\n", header->chunk_count, header->object_size);
+					printf("chunk base: 0x%llx\n\n", header->chunk_base);
+					goto ret;
 				}
 			}
 		}
+		header = header->next_slab;
 	}
 
-	allocateSpanList();
-	return allocateSpan();
+ret:
+	if (header == NULL) {
+		// didnt find memory
+		// for now we're just going to return a nullptr, but we're going to eventually allocate a new slab and then allocate it.
+		allocateSpanList();
+		return allocateSpan();
+	} else {
+		//printf("chunk #: %llu\n", (chunk_number - 1));
+		allocated_span_t* span = (allocated_span_t*) (header->chunk_base + ((chunk_number - 1) * header->object_size));
+		span->span_slab = header;
+		return span;
+	}
 }
 
 void addSpan(uintptr_t ptr, size_t size) {
