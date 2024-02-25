@@ -72,7 +72,7 @@ int mem_alloc(int argc, char** argv) {
 #include <memory/kernel_alloc.h>
 
 int testKalloc(int argc, char** argv) {
-	char* a = (char*) kalloc(125);
+	char* a = (char*) kalloc(256);
 	printf("Kalloc 64: 0x%llx\n", a);
 	memset(a, 0, 64);
 	a[0] = 'K';
