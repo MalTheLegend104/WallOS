@@ -48,7 +48,7 @@ extern "C" {
 
 	bool add_interrupt_handler(uint8_t entry, void (*handler)(struct interrupt_frame*), uint8_t ist, uint8_t type_attr);
 
-	void setup_idt();
+	void initIDT();
 	/**
 	 * @brief Enable the IRQ number on the legacy 8529 PIC.
 	 * Ideally we should use the APIC, but legacy PIC support is baked in so idrc.
