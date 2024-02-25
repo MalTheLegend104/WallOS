@@ -312,20 +312,20 @@ void terminalMain() {
 	// They both require access to the command buffers.
 	registerCommand((Command) { helpMain, helpHelp, "help", 0, 0 });
 	registerCommand((Command) { historyCommand, historyHelp, "history", historyAliases, 1 });
-	sleep(1500);
+	sleep(1000);
 	executeCommand("logo");  // This is where the cursor first gets enabled
 
 	char oldCommand[MAX_COMMAND_BUF];
 	oldCommand[0] = '\0';
 	commandBuf[0] = '\0';
 	size_t position_in_previous = 0;
-	size_t position_in_current = 0;
+	// size_t position_in_current = 0;
 
 	newCommand = false;
 	bool tab_pressed;
 
 	// Actually do command stuff now.
-	printf("\n> ");
+	printf("> ");
 	while (true) {
 		char current = kb_getc();
 		KeyboardState state = getKeyboardState();

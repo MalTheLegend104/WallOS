@@ -13,7 +13,7 @@
 #ifdef __cplusplus
 extern "C" {
 #endif
-	enum vga_color {
+	typedef enum {
 		VGA_COLOR_BLACK = 0,
 		VGA_COLOR_BLUE = 1,
 		VGA_COLOR_GREEN = 2,
@@ -32,7 +32,7 @@ extern "C" {
 		VGA_COLOR_WHITE = 15,
 		VGA_DEFAULT_FG = 7,
 		VGA_DEFAULT_BG = 0
-	};
+	} vga_color;
 
 	void clearVGABuf();
 	void clear_current_row();
@@ -50,6 +50,8 @@ extern "C" {
 	void enable_cursor(uint8_t cursor_start, uint8_t cursor_end);
 	void update_cursor(int x, int y);
 	void disable_cursor();
+
+	void initScreen();
 
 	// this is temporarily here
 	static inline void outb(uint16_t port, uint8_t val) {

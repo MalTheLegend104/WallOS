@@ -1,6 +1,9 @@
-#include <klibc/multiboot.hpp>
-#include <klibc/logger.h>
 #include <stdio.h>
+#include <panic.h>
+#include <string.h>
+#include <klibc/logger.h>
+#include <klibc/multiboot.hpp>
+#include <memory/virtual_mem.hpp>
 uint32_t MultibootManager::magic;
 multiboot_header* MultibootManager::header;
 multiboot_info* MultibootManager::mbt_info;
@@ -12,6 +15,11 @@ multiboot_tag_framebuffer* MultibootManager::framebuffer_tag;
 void logExists(const char* string) {
 	puts_vga("    ");
 	Logger::Checklist::blankEntry("%s tag exists.", string);
+}
+
+multiboot_tag_mmap internal_mmap;
+void copy_mmap(multiboot_tag_mmap* map) {
+	memcpy((void*) ((uint64_t) (&internal_mmap) - KERNEL_VIRTUAL_BASE), map, map->size);
 }
 
 // See https://www.gnu.org/software/grub/manual/multiboot2/multiboot.html#Boot-information
@@ -43,6 +51,10 @@ void MultibootManager::loadTags() {
 			case MULTIBOOT_TAG_TYPE_MMAP:
 				puts_vga("    ");
 				Logger::Checklist::checkEntry("MMAP tag exists.");
+				// printf("mmap internal addr: 0x%llx", (uint64_t) (&internal_mmap) - KERNEL_VIRTUAL_BASE);
+				// copy_mmap((multiboot_tag_mmap*) tag);
+				// mmap = (multiboot_tag_mmap*) ((uint64_t) (&internal_mmap) - KERNEL_VIRTUAL_BASE);
+				//asm("hlt");
 				mmap = (multiboot_tag_mmap*) tag;
 				break;
 			case MULTIBOOT_TAG_TYPE_VBE:
@@ -111,9 +123,13 @@ void MultibootManager::loadTags() {
  * @param info The pointer provided in ebx on boot.
  */
 void MultibootManager::initialize(uint32_t m, multiboot_info* info) {
+	puts_vga_color("\nChecking Multiboot Configuration:\n", VGA_COLOR_PURPLE, VGA_COLOR_BLACK);
 	magic = m;
 	mbt_info = info;
 	header = &header_start;
+	if (!MultibootManager::validateAll()) {
+		panic_s("Multiboot is invalid.");
+	}
 }
 
 /**

@@ -1,6 +1,6 @@
-#include "klibc/logger.h"
-#include "klibc/kprint.h"
 #include <stdio.h>
+#include <klibc/kprint.h>
+#include <klibc/logger.h>
 
 void set_green() {
 	set_colors(VGA_COLOR_GREEN, VGA_COLOR_BLACK);

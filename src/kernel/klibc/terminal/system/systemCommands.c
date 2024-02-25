@@ -1,26 +1,9 @@
 #include <terminal/terminal.h>
 #include <terminal/commands/systemCommands.h>
-#include <memory/physical_mem.h>
 #include <stdio.h>
 #include <klibc/kprint.h>
 #include <stdlib.h>
 #include <string.h>
-
-#pragma GCC diagnostic ignored "-Wunused-parameter" 
-int hwinfo(int argc, char** argv) {
-	/* <logo>
-	 * OS: WallOS v0.1
-	 * Uptime: <time>
-	 * Packages: 847 (dpkg), 6 (snap)
-	 * Shell: WallOS Shell v1.0
-	 * Theme: Adwaita [GTK3]
-	 * Icons: Adwaita [GTK3]
-	 * CPU: AMD Ryzen 7 5825U with Radeon Graphics (16) @ 1.996GHz
-	 * Memory: 550MiB / 7594MiB
-	 */
-
-	return 0;
-}
 
 // A lot of these dont use argc or argv
 #pragma GCC diagnostic ignored "-Wunused-parameter" 
@@ -172,23 +155,38 @@ int panic_help(int argc, char** argv) {
 // Logo Command
 // ------------------------------------------------------------------------------------------------
 int logo_command(int argc, char** argv) {
+	if (argc > 1) {
+		if (strcmp(argv[1], "-nsi") == 0 || strcmp(argv[1], "--no-sysinfo") == 0) {
+			clearVGABuf();
+			print_logo();
+			time_command(0, NULL); // Print the time and date beneath the logo
+			printf("\n");
+			return 0;
+		}
+	}
 	clearVGABuf();
 	print_logo();
 	time_command(0, NULL); // Print the time and date beneath the logo
+	printf("\n");
+	sysinfo_boot();
 	printf("\n");
 	return 0;
 }
 
 int logo_help(int argc, char** argv) {
-	HelpEntryGeneral entry = {
+	const char* optional[] = {
+		"--no-sysinfo",
+		"-nsi -> Prints the logo with just the time, no sysinfo."
+	};
+	HelpEntry entry = {
 		"Logo",
 		"Prints the logo.",
 		NULL,
 		0,
-		NULL,
-		0
+		optional,
+		2
 	};
-	printGeneralHelp(&entry);
+	printSpecificHelp(&entry);
 	return 0;
 }
 
@@ -200,5 +198,6 @@ void registerSystemCommands() {
 	registerCommand((Command) { panic_command, NULL, "panic", NULL, 0 });
 	registerCommand((Command) { logo_command, logo_help, "logo", NULL, 0 });
 	registerCommand((Command) { time_command, time_help, "time", NULL, 0 });
-	registerCommand((Command) { memtest, NULL, "memtest", NULL, 0 });
+	registerCommand((Command) { meminfo, meminfo_help, "meminfo", NULL, 0 });
+	registerCommand((Command) { sysinfo, NULL, "sysinfo", NULL, 0 });
 }

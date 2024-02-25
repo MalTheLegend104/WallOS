@@ -1,43 +1,57 @@
+[BITS 32]
 global start
-extern long_mode_start
+extern kernel_main
 
-section .data
+KERNEL_VIRTUAL_BASE equ 0xFFFFFFFF80000000
+KERNEL_BASE_PML4_INDEX equ (((KERNEL_VIRTUAL_BASE) >> 39) & 0x1FF)
+KERNEL_BASE_PDPT_INDEX equ  (((KERNEL_VIRTUAL_BASE) >> 30) & 0x1FF)
+
+section .boot.data
 multiboot_data_magic:     dq 0
 multiboot_data_address:   dq 0
-global multiboot_data_magic
-global multiboot_data_address
 
-section .text
-bits 32
-start:
-	mov esp, stack_top
-	
-	call check_multiboot
-	; Move multiboot pointer to ebx (assuming it exists)s
-	mov DWORD [multiboot_data_magic],    eax
-	mov DWORD [multiboot_data_address],  ebx
-	
-	call check_cpuid
-	call check_long_mode
-	
-	;This is just 32 bit paging, it's only used to get to long mode
-	call setup_page_tables
-	call enable_paging
+align 16
+GDT64:                           
+	.null: equ $ - GDT64         ; The null descriptor.
+	dq 0
+	.Code: equ $ - GDT64         ; The code descriptor.
+	dw 0                         ; Limit (low).
+	dw 0                         ; Base (low).
+	db 0                         ; Base (middle)
+	db 10011010b                 ; Access (exec/read).
+	db 00100000b                 ; Granularity, 64 bits flag, limit19:16.
+	db 0                         ; Base (high).
+	.Data: equ $ - GDT64         ; The data descriptor.
+	dw 0                         ; Limit (low).
+	dw 0                         ; Base (low).
+	db 0                         ; Base (middle)
+	db 10010010b                 ; Access (read/write).
+	db 00000000b                 ; Granularity.
+	db 0                         ; Base (high).
+GDT64Pointer:                    ; The GDT-pointer.
+	dw $ - GDT64 - 1             ; Limit.
+	dq GDT64                     ; Base.
 
-	lgdt [gdt64.pointer]
-	jmp gdt64.code_segment:long_mode_start
 
-	hlt
+align 4096
+kernel_pml4:
+times 512 dq 0
 
-; Check if there is a multiboot compliant bootloader
-check_multiboot:
-	cmp eax, 0x36d76289
-	jne .no_multiboot
-	ret
-.no_multiboot:
-	mov al, "M"
-	jmp error
+align 4096
+kernel_pde:
+times 512 dq 0
 
+align 4096
+kernel_pdpt:
+dq 0
+times 511 dq 0
+
+align 4096
+kernel_pdpt2:
+times KERNEL_BASE_PDPT_INDEX dq 0
+dq 0
+
+section .boot.text
 ; Make sure this is an x86_64 CPU
 check_cpuid:
 	pushfd
@@ -73,40 +87,41 @@ check_long_mode:
 	mov al, "L"
 	jmp error
 
-; Sets up 32bit paging
+; Sets up paging
 setup_page_tables:
-	mov eax, page_table_l3
-	or eax, 0b11 ; present, writable
-	mov [page_table_l4], eax
-	
-	mov eax, page_table_l2
-	or eax, 0b11 ; present, writable
-	mov [page_table_l3], eax
+	mov ecx, 512
+	mov eax, kernel_pde
+	mov ebx, 0x83
+.fill_pde:
+	mov dword [eax], ebx
+	add ebx, 0x200000 ; Go to next 2M
+	add eax, 8
+	loop .fill_pde
 
-	mov ecx, 0 ; counter
-.loop:
+	mov eax, kernel_pdpt ; Get address of PDPT
+	or eax, 3 ; Present, Write
+	mov dword [kernel_pml4], eax
 
-	mov eax, 0x200000 ; 2MiB
-	mul ecx
-	or eax, 0b10000011 ; present, writable, huge page
-	mov [page_table_l2 + ecx * 8], eax
+	mov eax, kernel_pdpt2 ; Second PDPT
+	or eax, 3
+	mov dword [kernel_pml4 + KERNEL_BASE_PML4_INDEX * 8], eax
 
-	inc ecx ; increment counter
-	cmp ecx, 512 ; checks if the whole table is mapped
-	jne .loop ; if not, continue
+	mov eax, kernel_pde ; Second PDPT
+	or eax, 3
+	mov dword [kernel_pdpt], eax
+	mov dword [kernel_pdpt2 + KERNEL_BASE_PDPT_INDEX * 8], eax
 
+	; Put the base pointer in cr3
+	mov eax, kernel_pml4
+	mov cr3, eax
 	ret
 
 enable_paging:
-	; pass page table location to cpu
-	mov eax, page_table_l4
-	mov cr3, eax
-
 	; enable PAE
 	mov eax, cr4
 	or eax, 1 << 5
 	mov cr4, eax
-
+	
 	; enable long mode
 	mov ecx, 0xC0000080
 	rdmsr
@@ -128,23 +143,64 @@ error:
 	mov byte  [0xb800a], al
 	hlt
 
+start:
+	; Move multiboot pointer to ebx (assuming it exists)
+	; We'll check for the header in kernel main
+	mov DWORD [multiboot_data_magic],    eax
+	mov DWORD [multiboot_data_address],  ebx
+	
+	; Make sure we have a x86_64 processor and it has long mode
+	call check_cpuid
+	call check_long_mode
+	
+	; Set up our base page tables.
+	call setup_page_tables
+	call enable_paging
+
+	lgdt [GDT64Pointer]
+  	jmp 0x8:long_mode_start - KERNEL_VIRTUAL_BASE
+
+	cli
+	hlt
+
+
+[BITS 64]
+
+extern _bss_start_
+extern _bss_end_
+
+section .data
+GDT64Pointer64:                    ; The GDT-pointer.
+    dw GDT64Pointer - GDT64 - 1    ; Limit.
+    dq GDT64 + KERNEL_VIRTUAL_BASE ; Base.
+
+section .text
+long_mode_start:
+	lgdt [GDT64Pointer64]
+
+   	mov ax, 0x10
+	mov ds, ax
+	mov es, ax
+	mov fs, ax
+	mov gs, ax
+	mov ss, ax
+
+	; Zero uninitialized memory so there's no junk
+	mov rdi, _bss_start_
+	mov rcx, _bss_end_
+	sub rcx, _bss_start_
+	xor rax, rax
+	rep stosb
+
+	mov rsp, stack_top
+
+	mov edi, DWORD[multiboot_data_magic]
+    mov esi, DWORD[multiboot_data_address]
+	call kernel_main
+    hlt
+
 section .bss
 align 4096
-page_table_l4:
-	resb 4096
-page_table_l3:
-	resb 4096
-page_table_l2:
-	resb 4096
 stack_bottom:
-	resb 4096 * 4
+	resb 32768
 stack_top:
-
-section .rodata
-gdt64:
-	dq 0 ; zero entry
-.code_segment: equ $ - gdt64
-	dq (1 << 43) | (1 << 44) | (1 << 47) | (1 << 53) ; code segment
-.pointer:
-	dw $ - gdt64 - 1 ; length
-	dq gdt64 ; address

@@ -1,32 +1,24 @@
-# Terminal Commands
-
-This command handler is **very** verstaile, as long as you treat it well. There are few conventions about this we need to go over.
+# Command Creation
+This command handler is **very** versatile, as long as you treat it well. There are few conventions about this we need to go over.
 
 ### Anything can be a command.
-
 - Any function that takes in argc and argv, and returns an int, can be a command.
 
 ### It is written entirely in C.
-
 - It expects C. You ***can*** write C++ that works with it, but you have to be careful to deal with the structs properly.
 - C++ code is recommended to have a wrapper C function that handles the structs, to avoid C++ treating them as classes.
 
 ### "Counts" are very important.
-
 - For any field in a struct that is a "count", like `aliases_count`, are expected to behave like `strlen`. It's the total count, not the indexes.
 - We will attempt to access any part of the array as long as our "count" says that it's there. If count is wrong, it's unexpected behavior (although it'll probably cause an interrupt of some type).
 
 ### Char** MUST be declared outside of context.
-
 * Until we have `malloc` and `free`, we cannot declare `char**` in context. It will get destroyed when the function declaring them exits, causing a page fault when trying to access them. If you declare them outside the scope of a function, it will behave as expected.
-
   > The exception to this is `help` commands. If you create `HelpEntry`'s inside the same scope that you print them, they will behave properly. This mostly applies to aliases.
-  >
 
 
 ## Example of a perfect setup
-
-This command can be called using `example`, `ex`, or `exam`, and `help example` (or any of it's aliases), will display the help message. Running `help example a` will display the specific help message for `example a`.
+This command can be called using `example`, `ex`, or `exam`, and `help example` (or any of its aliases), will display the help message. Running `help example a` will display the specific help message for `example a`.
 
 ```c
 const char* example_aliases[] = { "ex", "exam" };

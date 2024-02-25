@@ -42,11 +42,6 @@ char* convert_ui(unsigned int num, int base) {
 	ptr = &buffer[INT_BUF_SIZE - 1];
 	*ptr = '\0';
 
-	if (num < 0) {
-		num = -num;
-		*--ptr = '-';
-	}
-
 	do {
 		*--ptr = Representation[num % base];
 		num /= base;
@@ -88,7 +83,6 @@ char* convert_ull(unsigned long long num, int base) {
 	} while (num != 0);
 	return(ptr);
 }
-
 
 //straight print until \0 is hit
 int print_until_null(const char* data) {

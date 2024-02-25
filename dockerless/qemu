@@ -32,7 +32,7 @@ run_with_debug () {
 	strip_debug
 	echo -e "<------------Running QEMU------------->"
 	echo "Running with debug config. Connect using GDB on port \`localhost:1234\`"
-	qemu-system-x86_64 -cdrom ../dist/x86_64/WallOS.iso -s -S "${default_args[@]}" "${args[@]}"
+	qemu-system-x86_64 -cdrom ../dist/x86_64/WallOS.iso -s -S -d int --no-reboot --no-shutdown "${default_args[@]}" "${args[@]}"
 }
 
 run_native () {
@@ -50,7 +50,7 @@ run_native_db () {
 	echo -e "<------------Running QEMU------------->"
 	echo "Running with debug config. Connect using GDB on port \`localhost:1234\`"
 	echo -e "Running native QEMU. This should only have an effect if you are using WSL.\nIf you run into an error, or a window does not open, try running again without --native."
-	qemu-system-x86_64 -cdrom ../dist/x86_64/WallOS.iso -s -S "${default_args[@]}" "${args[@]}"
+	qemu-system-x86_64 -cdrom ../dist/x86_64/WallOS.iso -s -S -d int --no-reboot --no-shutdown "${default_args[@]}" "${args[@]}"
 }
 
 # Iterate over the command line arguments

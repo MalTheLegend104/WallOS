@@ -1,8 +1,9 @@
 #ifndef FEATURES_HPP
 #define FEATURES_HPP
 
-#include "cpuid_calls.h"
 #include <stdbool.h>
+#include <klibc/cpuid_calls.h>
+
 class Features {
 private:
 	static bool AVX;
@@ -14,13 +15,17 @@ private:
 	static bool listFeature(const char* name, bool a);
 	static bool listFeatureCheck(const char* name, bool a);
 	static void checkFloatingPointSupport();
+	static void loadCPUName();
+	static void enableSSE();
+	static bool setupAPIC();
 public:
 	static void checkFeatures(struct cpu_features* f);
 	static const char* highestFloat();
+	static const char* getCPUName();
 	static bool getAPIC();
 
-	static void enableSSE();
-	static bool setupAPIC();
+
+	static void enableFeatures();
 };
 
 #endif // FEATURES_HPP

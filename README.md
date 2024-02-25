@@ -69,6 +69,16 @@ int test(int a);
 - Multitasking
 - Userspace Applications
 
+## Contributing
+There are many ways to contribute to the project:
+- Simply report any bugs or make suggestions.
+- Look through `bug` and `feature-reqests` tags in issues for something that interests you.
+- Review the codebase and changes to see if you find any bugs or potential optimizations.
+- Participate in the discussion board.
+  - You can ask questions, help others out, talk about potential features, etc.
+
+If you are interested in fixing issues, adding features, or otherwise contributing to the codebase, read the [contribution guide](documentation/General/contributing.md).
+
 ## Building
 #### Building results in a `*.iso` file, and an associated binary file being put in `/dist/<platform architecture>/`. This iso CAN be deployed to actual systems.
 ### Docker

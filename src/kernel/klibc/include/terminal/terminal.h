@@ -1,8 +1,14 @@
 #ifndef TERMINAL_H
 #define TERMINAL_H
 
+// For lack of a better spot to put this, the OS version is going to be defined here
+// TODO, put this somewhere else in the kernel. It has to be in klibc because it gets linked before kcore
+#define WALLOS_VERSION "WallOS v0.1"
+#define WALLOS_SHELL_VERSION "WallShell v1.0"
+
 #include <stdint.h>
 #include <stddef.h>
+
 
 #define MAX_COMMAND_BUF 	256
 #define MAX_COMMAND_COUNT	32
@@ -20,7 +26,6 @@ extern "C" {
 		const char** aliases;
 		size_t aliases_count;
 	} Command;
-
 
 	typedef struct {
 		const char* commandName;

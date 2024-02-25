@@ -1,22 +1,27 @@
-// We really need to clean up these includes.
 #include <stdlib.h>
+#include <stdio.h>
 #include <string.h>
+
 #include <cpuid.h>
 #include <panic.h>
-#include <stdio.h>
+#include <timing.h>
+#include <multiboot.h>
+#include <idt.h>
+
 #include <klibc/kprint.h>
 #include <klibc/cpuid_calls.h>
 #include <klibc/logger.h>
 #include <klibc/features.hpp>
-#include <multiboot.h>
 #include <klibc/multiboot.hpp>
-#include <idt.h>
-#include <gdt.h>
-#include <testing.h>
+
 #include <drivers/keyboard.h>
+#include <drivers/serial.h>
+
+#include <memory/physical_mem.hpp>
+#include <memory/virtual_mem.hpp>
+#include <memory/kernel_alloc.h>
+
 #include <terminal/terminal.h>
-#include <timing.h>
-#include <memory/physical_mem.h>
 
 /* Okay, this is where the fun begins. Literally and figuratively.
  * We mark these extern c because we need to call it from asm,
@@ -34,7 +39,7 @@ extern "C" {
 }
 
 #pragma GCC diagnostic ignored "-Wunused-parameter" 
-int acpi(int argc, char** argv) {
+int acpi_command(int argc, char** argv) {
 	acpi_tag* acpi = MultibootManager::getACPI();
 	RSDP_t* r = acpi->rsdp;
 	puts_vga_color("ACPI INFO:\n", VGA_COLOR_PINK, VGA_DEFAULT_BG);
@@ -50,69 +55,86 @@ int acpi(int argc, char** argv) {
 	return 0;
 }
 
+extern "C" {
+	extern uint64_t kernel_end;
+}
 
-// static void putpixel(uintptr_t* screen, int x, int y, int color, int pixelwidth, int pitch) {
-// 	unsigned where = x * pixelwidth + y * pitch;
-// 	screen[where] = color & 255;              // BLUE
-// 	screen[where + 1] = (color >> 8) & 255;   // GREEN
-// 	screen[where + 2] = (color >> 16) & 255;  // RED
-// }
+/* Tests for kalloc and physical/virtual mem
+ *  int mem_alloc(int argc, char** argv) {
+ * 	uintptr_t ptr = Memory::NewKernelPage();
+ * 	Logger::infof("Virtual Addr:        0x%llx\n", ptr);
+ * 	Logger::infof("KERNEL_VIRTUAL_BASE: 0x%llx\n", KERNEL_VIRTUAL_BASE);
+ * 	Logger::infof("Physical:            0x%llx\n", Memory::VirtToPhysBase(ptr));
+ * 	Logger::infof("Kernel end:          0x%llx\n", kernel_end);
+ * 	Logger::infof("Kernel mapping end:  0x%llx\n", Memory::Info::getPhysKernelEnd());
+ *
+ * 	return 0;
+ * }
+
+ * int testKalloc(int argc, char** argv) {
+ * 	char* a = (char*) kalloc(12);
+ * 	printf("Kalloc 64: 0x%llx\n", a);
+ * 	memset(a, 0, 64);
+ * 	a[0] = 'K';
+ * 	a[1] = 'A';
+ * 	a[2] = 'L';
+ * 	a[3] = 'L';
+ * 	a[4] = 'O';
+ * 	a[5] = 'C';
+ * 	a[6] = '\0';
+ * 	printf("%s\n", a);
+ * 	//kfree(a);
+ * 	return 0;
+ * }
+ */
 
 void kernel_main(unsigned int magic, multiboot_info* mbt_info) {
-	clearVGABuf();
-	disable_cursor();
-	set_colors(VGA_DEFAULT_FG, VGA_DEFAULT_BG);
-	print_logo();
+	initScreen();
+	init_serial();
+	Memory::initVirtualMemory();
 
-	// Do stuff that needs to be enabled before interrupts here.
-	puts_vga_color("\n\nIntializing OS.\n", VGA_COLOR_PINK, VGA_COLOR_BLACK);
-
-	puts_vga_color("\nChecking Multiboot Configuration:\n", VGA_COLOR_PURPLE, VGA_COLOR_BLACK);
 	MultibootManager::initialize(magic, mbt_info);
-	if (!MultibootManager::validateAll()) {
-		panic_s("Multiboot is invalid.");
-	}
 
-	puts_vga_color("Checking CPU Features:\n", VGA_COLOR_PURPLE, VGA_COLOR_BLACK);
-	/* Okay imma keep it real C++ hates structs and idk why
-	 * It will NOT let me call cpuFeatures() from the class itself. At all.
-	 * It's marked as extern C. It know's that it's C code.
-	 * If I had to guess it has something to do with how C++ treats structs.
-	 * Regardless, this is how this code has to be, and it is how it will stay.
-	 */
 	cpu_features f = cpuFeatures();
 	Features::checkFeatures(&f);
+	Features::enableFeatures();
+	initIDT();
+	Memory::PhysicalMemInit();
 
-	// Enable CPU features
-	Features::enableSSE();
-	// We'll hopefully get to the APIC eventually.
-	// puts_vga_color("Enabling APIC.\n", VGA_COLOR_LIGHT_CYAN, VGA_COLOR_BLACK);
-	// if (!Features::setupAPIC()) {
+	/* This is all framebuffer stuff.
+	 * I'm not in too much of a rush about it, it was just a fun experiement
+	 * multiboot_tag_framebuffer* e = MultibootManager::getFramebufferTag();
+	 * pixelwidth = e->common.framebuffer_bpp;
+	 * pitch = e->common.framebuffer_pitch;
+	 * uintptr_t fb_addr = e->common.framebuffer_addr;
+	 * uint8_t* fb = (uint8_t*) fb_addr;
+	 * Memory::mapFramebuffer(fb_addr, e->common.framebuffer_height * e->common.framebuffer_pitch);
+	 * framebuf(0, 0);
 
-	// }
-
-	// Enable interrupts
-	puts_vga_color("Enabling Interrupts.\n", VGA_COLOR_LIGHT_CYAN, VGA_COLOR_BLACK);
-	setup_idt();
-
-	physical_mem_init();
-	while (true);
-	//puts_vga_color("Setting up Paging.\n", VGA_COLOR_LIGHT_CYAN, VGA_COLOR_BLACK);
-	//paging_init();
-	//puts_vga_color("Testing Paging.\n", VGA_COLOR_PURPLE, VGA_COLOR_BLACK);
+	 * int bpp = e->common.framebuffer_bpp;
+	 * for (int i = 0; i < 200; i++) {
+	 * 	for (int j = 0; j < 200; j++) {
+	 * 		//putpixel(fb, i, j, 0xffffff, bpp / 8, e->common.framebuffer_pitch);
+	 * 	}
+	 * }
+	 * for (int i = 0; i < 26; i++) {
+	 * 	//putchar(fb, e->common.framebuffer_pitch, 'a', i, 0, 0xFF0000, 0x000000);
+	 * }
+	 * init_ssfn();
+	 * print_logo_ssfn();
+	 */
 
 	// Things that need interrupts here (like keyboard, mouse, etc.)
 	// Everything that needs an IRQ should be done after the PIT as it messes with the mask
 	pit_init(1000);
 	keyboard_init();
 
-	// Framebuffer ignore this
-	// multiboot_tag_framebuffer* e = MultibootManager::getFramebufferTag();
-	// putpixel((uintptr_t*) e->common.framebuffer_addr, 50, 50, 255, e->common.framebuffer_bpp, e->common.framebuffer_pitch);
+	initKernelAllocator();
 
 	// After we're done checking features, we need to set up our terminal.
-	// Eventually we will clear the screen before handing control over, the user doesnt need the debug stuff.
-	//registerCommand((Command) { memtest, 0, "memtest", 0, 0 });
-	registerCommand((Command) { acpi, 0, "acpi", 0, 0 });
+	// Eventually this will be a userspace program. 
+	//registerCommand((Command) { testKalloc, 0, "kalloc", 0, 0 });
+	//registerCommand((Command) { mem_alloc, 0, "mem_alloc", 0, 0 });
+	registerCommand((Command) { acpi_command, 0, "acpi", 0, 0 });
 	terminalMain();
 }

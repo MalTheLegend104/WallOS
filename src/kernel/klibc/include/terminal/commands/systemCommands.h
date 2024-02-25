@@ -6,10 +6,15 @@ extern "C" {
 #endif
 
 	void registerSystemCommands();
+
 	int time_command(int argc, char** argv);
 	int time_help(int argc, char** argv);
 
+	int meminfo(int argc, char** argv);
+	int meminfo_help(int argc, char** argv);
 
+	int sysinfo(int argc, char** argv);
+	void sysinfo_boot();
 #ifdef __cplusplus
 }
 #endif

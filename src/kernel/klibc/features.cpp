@@ -1,12 +1,14 @@
-#include "klibc/features.hpp"
-#include "klibc/kprint.h"
 #include <stdio.h>
-#include "klibc/logger.h"
+#include <string.h>
 #include <panic.h>
+#include <klibc/kprint.h>
+#include <klibc/logger.h>
+#include <klibc/features.hpp>
 
 bool Features::AVX;
 bool Features::FXSR;
 bool Features::APIC;
+char cpu_name[49];
 const char* Features::highest_supported_float;
 struct cpu_features* Features::features;
 
@@ -84,13 +86,52 @@ void Features::checkFloatingPointSupport() {
 	highest_supported_float = nullptr;
 }
 
+#include <cpuid.h>
+
+void Features::loadCPUName() {
+	memset(cpu_name, 0, 49);
+	uint32_t eax, ebx, ecx, edx;
+
+	// Execute cpuid for each level
+	__cpuid(0x80000002, eax, ebx, ecx, edx);
+	*((unsigned int*) (cpu_name)) = eax;
+	*((unsigned int*) (cpu_name + 4)) = ebx;
+	*((unsigned int*) (cpu_name + 8)) = ecx;
+	*((unsigned int*) (cpu_name + 12)) = edx;
+
+	__cpuid(0x80000003, eax, ebx, ecx, edx);
+	*((unsigned int*) (cpu_name + 16)) = eax;
+	*((unsigned int*) (cpu_name + 20)) = ebx;
+	*((unsigned int*) (cpu_name + 24)) = ecx;
+	*((unsigned int*) (cpu_name + 28)) = edx;
+
+	__cpuid(0x80000004, eax, ebx, ecx, edx);
+	*((unsigned int*) (cpu_name + 32)) = eax;
+	*((unsigned int*) (cpu_name + 36)) = ebx;
+	*((unsigned int*) (cpu_name + 40)) = ecx;
+	*((unsigned int*) (cpu_name + 44)) = edx;
+
+	// Null-terminate the string
+	cpu_name[48] = '\0';
+}
+
 /**
  * @brief Check all important features.
  * It will call abort() if needed features do not exist.
  * @param f struct of features that will be checked.
  */
 void Features::checkFeatures(struct cpu_features* f) {
+	puts_vga_color("Checking CPU Features:\n", VGA_COLOR_PURPLE, VGA_COLOR_BLACK);
+	/* Okay imma keep it real C++ hates structs and idk why
+	 * It will NOT let me call cpuFeatures() from the class itself. At all.
+	 * It's marked as extern C. It know's that it's C code.
+	 * If I had to guess it has something to do with how C++ treats structs.
+	 * Regardless, this is how this code has to be, and it is how it will stay.
+	 */
 	features = f;
+
+	loadCPUName();
+
 	// Ideally we are going to be avoiding floats as much as possible
 	// Halts the cpu if not present.
 	puts_vga_color("    Checking Floating Point Support:\n", VGA_COLOR_PURPLE, VGA_COLOR_BLACK);
@@ -142,6 +183,10 @@ bool Features::getAPIC() {
 	return APIC;
 }
 
+const char* Features::getCPUName() {
+	return cpu_name;
+}
+
 
 // ASM code to enable sse
 extern "C" void enable_sse();
@@ -178,4 +223,14 @@ bool Features::setupAPIC() {
 		return false;
 	}
 	return true;
+}
+
+
+void Features::enableFeatures() {
+	Features::enableSSE();
+	// We'll hopefully get to the APIC eventually.
+	// puts_vga_color("Enabling APIC.\n", VGA_COLOR_LIGHT_CYAN, VGA_COLOR_BLACK);
+	// if (!Features::setupAPIC()) {
+
+	// }
 }
