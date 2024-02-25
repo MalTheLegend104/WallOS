@@ -1,6 +1,6 @@
 # WallOS
  
-It's an x86-64 os. It does OS thing
+64-Bit hobby OS. Currently only supports x86-64, but hope to expand to Aarch64 and potentially other platforms. 
 
 ## Project Structure
 
@@ -30,27 +30,19 @@ src┐
       └──<source code for other libc here>
 ```
 
-> This separation of libc and kernel should *hopefully* eventually turn in to separation of kernel and user space.
-
-### **Things that are to only be accessed by the kernel are *aren't* in kcore should be surrounded with the following:**
-
-```cpp
-#ifdef __is_kernel_
-    <your code here>
-#endif // __is_kernel_
-```
+#### Libc is meant to be a minimal implementation for the kernel. Userspace libc will likely be a port of [mlibc](https://github.com/managarm/mlibc).
 
 ### Sys Calls:
 
-System calls will likely be held in a single header, among the likes of <Windows.h> on windows. If this isn't achieveable, we will likely follow the unix-like path of <sys/header>. This will be determined at a later date, after GDT, IDT, and Virtual Memory have been set up.
+System calls will likely be held in a single header, among the likes of <Windows.h> on windows. If this isn't achieveable, we will likely follow the unix-like <sys/header>. This will be determined at a later date, after the userspace is fully designed.
 
 ## Documentation
 
 All code that needs to be documented should be done so by following the rules of [doxygen](https://www.doxygen.nl/). It allows for JavaDoc like commenting, along with other common styles.
-
+> I'm a former Java dev, and heavily perfer the JavaDoc style `@tag` as opposed to the `\\tag`. If commiting, please use the JavaDoc style tag. 
 ```cpp
 /**
-* This is example documentation.
+* @brief This is example documentation.
 *  
 * @param a - an integer doing xyz.
 * @return int - some integer.
@@ -62,11 +54,17 @@ int test(int a);
 
 ### Ordered
 
-1. Virtual Memory (paging/malloc/free/new/delete)
+1. Virtual/Physical Memory (paging/malloc/free/new/delete)
+2. Filesystem
+   - At the very least, want to be able to load from disk and load programs. 
+   - This could also just be a simple ramfs
+3. System Calls
+4. Move terminal to userspace.
+   - Scheduling and multitasking are necessary for me to do userspace apps, but I can still move the terminal to userspace. 
+   - This would also make developing and testing syscalls much easier. 
 
 ### Unordered/Long Term
 
-- System Calls
 - GUI
 - Multitasking
 - Userspace Applications
