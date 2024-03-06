@@ -14,20 +14,22 @@
  * No sys calls should need more than 6 args.
  */
 
-int (*syscalls[256])(registers_t);
+syscall_t syscalls[256];
 
 void setReturn(int ret) {
 	asm volatile("mov %0, %%rax" :: "a"(ret));
 }
 
-void registerSyscall(int num, int (*f)(registers_t)) {
-
+void registerSyscall(int syscall_num, int (*f)(registers_t), uint8_t arg_count) {
+	if (syscall_num > 256 || syscall_num < 0) return;
+	syscalls[syscall_num].func = f;
+	syscalls[syscall_num].arg_count = arg_count;
 }
 
 __attribute__((interrupt)) void syscall_handler(struct interrupt_frame* frame) {
 	uint16_t syscall_num = 0;
 	asm volatile("mov %%rax, %0" :: "=a"(syscall_num));
-	if (syscalls[syscall_num] == NULL) {
+	if (syscalls[syscall_num].func == NULL) {
 		setReturn(-1);
 		return;
 	}
