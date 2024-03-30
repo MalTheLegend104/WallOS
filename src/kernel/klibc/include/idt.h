@@ -13,7 +13,7 @@ typedef unsigned int uword_t;
 extern "C" {
 #endif
 
-		// I stole this from gcc
+	// I stole this from gcc
 	struct interrupt_frame {
 		uword_t ip;
 		uword_t cs;

@@ -122,33 +122,39 @@ $(KCORE_C_OBJ): build/kcore/%.o : src/kernel/kcore/%.c
 # ----------------------------------------------------
 # x86-64
 # ----------------------------------------------------
-x86_64_INCLUDE 	:= src/kernel/x86_64/include
+x86_64_INCLUDE  := src/kernel/x86_64/include
 x86_64_ASM_SRCS := $(shell find src/kernel/x86_64 -name *.asm)
-x86_64_ASM_OBJ 	:= $(patsubst src/kernel/x86_64/%.asm, build/x86_64/%.o, $(x86_64_ASM_SRCS))
-x86_64_C_SRC	:= $(shell find src/kernel/x86_64 -name *.c)
-x86_64_C_SRC 	:= $(filter-out src/kernel/x86_64/idt/idt_main.c, $(x86_64_C_SRC)) #filter out idt
+x86_64_ASM_OBJ  := $(patsubst src/kernel/x86_64/%.asm, build/x86_64/%.o, $(x86_64_ASM_SRCS))
+x86_64_C_SRC    := $(shell find src/kernel/x86_64 -name *.c)
+x86_64_C_SRC    := $(filter-out src/kernel/x86_64/idt/idt_main.c, $(x86_64_C_SRC)) # filter out idt
+IDT_C_SRC       := $(filter src/kernel/x86_64/idt/%.c, $(x86_64_C_SRC)) # filter only idt/*.c files
+x86_64_C_SRC    := $(filter-out src/kernel/x86_64/idt/%.c, $(x86_64_C_SRC)) # remove idt/*.c from x86_64_C_SRC
 
-x86_64_C_OBJ	:= $(patsubst src/kernel/x86_64/%.c, build/x86_64/%.o, $(x86_64_C_SRC))
-# We need to compile the IDT with a few extra flags
-IDT_MAIN_OBJ	:= src/kernel/x86_64/idt/idt_main.c 
-IDT_MAIN_OBJ 	:= build/x86_64/idt/idt_main.o
+x86_64_C_OBJ    := $(patsubst src/kernel/x86_64/%.c, build/x86_64/%.o, $(x86_64_C_SRC))
+IDT_C_OBJ       := $(patsubst src/kernel/x86_64/%.c, build/x86_64/%.o, $(IDT_C_SRC))
+IDT_MAIN_OBJ    := build/x86_64/idt/idt_main.o
 
-x86_64_OBJ := $(x86_64_ASM_OBJ) $(x86_64_C_OBJ)
+x86_64_OBJ := $(x86_64_ASM_OBJ) $(x86_64_C_OBJ) $(IDT_C_OBJ)
 
 $(x86_64_ASM_OBJ): build/x86_64/%.o : src/kernel/x86_64/%.asm
-	echo "Compiling x86_64 asm -> $(patsubst build/x86_64/%.o, src/kernel/x86_64/%.asm, $@)"
+	echo "Compiling x86_64 asm -> $<"
 	mkdir -p $(dir $@) && \
-	nasm -f elf64 $(patsubst build/x86_64/%.o, src/kernel/x86_64/%.asm, $@) $(NASM_FLAGS) -o $@
+	nasm -f elf64 $< $(NASM_FLAGS) -o $@
 
 $(x86_64_C_OBJ): build/x86_64/%.o : src/kernel/x86_64/%.c
-	echo "Compiling x86_64 C   -> $(patsubst build/x86_64/%.o, src/kernel/x86_64/%.c, $@)"
+	echo "Compiling x86_64 C   -> $<"
 	mkdir -p $(dir $@) && \
-	x86_64-elf-gcc -c $(patsubst build/x86_64/%.o, src/kernel/x86_64/%.c, $@) -o $@ -I $(x86_64_INCLUDE) -I $(KCORE_INCLUDE) -I $(KLIBC_INCLUDE) -I $(LIBC_INCLUDE) $(C_FLAGS) -D__is_kernel_
+	x86_64-elf-gcc -c $< -o $@ -I $(x86_64_INCLUDE) -I $(KCORE_INCLUDE) -I $(KLIBC_INCLUDE) -I $(LIBC_INCLUDE) $(C_FLAGS) -D__is_kernel_
 
-$(IDT_MAIN_OBJ): build/x86_64/%.o : src/kernel/x86_64/%.c
-	echo "Compiling IDT_MAIN   -> $(patsubst build/x86_64/%.o, src/kernel/x86_64/%.c, $@)"
+$(IDT_C_OBJ): build/x86_64/%.o : src/kernel/x86_64/%.c
+	echo "Compiling IDT C      -> $<"
 	mkdir -p $(dir $@) && \
-	x86_64-elf-gcc -c $(patsubst build/x86_64/%.o, src/kernel/x86_64/%.c, $@) -o $@ -mgeneral-regs-only -I $(x86_64_INCLUDE) -I $(KCORE_INCLUDE) -I $(KLIBC_INCLUDE) -I $(LIBC_INCLUDE) $(C_FLAGS) -D__is_kernel_
+	x86_64-elf-gcc -c $< -o $@ -mgeneral-regs-only -I $(x86_64_INCLUDE) -I $(KCORE_INCLUDE) -I $(KLIBC_INCLUDE) -I $(LIBC_INCLUDE) $(C_FLAGS) -D__is_kernel_
+
+$(IDT_MAIN_OBJ): src/kernel/x86_64/idt/idt_main.c
+	echo "Compiling IDT_MAIN   -> $<"
+	mkdir -p $(dir $@) && \
+	x86_64-elf-gcc -c $< -o $@ -mgeneral-regs-only -I $(x86_64_INCLUDE) -I $(KCORE_INCLUDE) -I $(KLIBC_INCLUDE) -I $(LIBC_INCLUDE) $(C_FLAGS) -D__is_kernel_
 
 # ----------------------------------------------------
 # COMMANDS

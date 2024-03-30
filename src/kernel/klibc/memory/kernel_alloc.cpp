@@ -222,7 +222,7 @@ allocated_span_t* allocateSpan() {
 		for (size_t i = 0; i < header->chunk_count / 8; i++) {
 			chunk_number = i * 8;
 			for (int j = 1; j <= 8; j++) {
-				if (!(BITLIST_BASE(header)[i] & (1 << (8 - j)))) {
+				if (!GET_BIT(BITLIST_BASE(header)[i], j)) {
 					chunk_number = (i * 8) + j;
 
 					setChunkUsed(header, chunk_number);
@@ -342,7 +342,7 @@ void* kalloc(size_t bytes) {
 		for (size_t i = 0; i < header->chunk_count / 8; i++) {
 			if (consective_chunks == 0) chunk_number = i * 8;
 			for (int j = 1; j <= 8; j++) {
-				if (!(BITLIST_BASE(header)[i] & (1 << (8 - j)))) {
+				if (!GET_BIT(BITLIST_BASE(header)[i], j)) {
 					if (consective_chunks == 0) chunk_number = (i * 8) + j;
 
 					consective_chunks++;
