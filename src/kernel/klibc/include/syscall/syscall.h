@@ -4,9 +4,12 @@
 #define SYSCALL_LOG 1
 
 #ifdef __cplusplus
+namespace Syscall {
+	void initialize();
+}
 extern "C" {
 #endif 
-
+#include <stdint.h>
 	typedef struct {
 
 	} registers_t;
@@ -16,6 +19,8 @@ extern "C" {
 		uint8_t arg_count;
 	} syscall_t;
 
+	void registerSyscall(int syscall_num, int (*f)(registers_t), uint8_t arg_count);
+	void syscall_init();
 #ifdef __cplusplus
 }
 #endif 

@@ -91,11 +91,16 @@ extern "C" {
 
 #pragma GCC diagnostic ignored "-Wunused-parameter" 
 int syscall_command(int argc, char** argv) {
-	asm volatile("int $0x42");
+	uint64_t syscall_number = UINT64_MAX;  // Set your desired syscall number here
+	if (argc > 1) {
+		syscall_number = atoi(argv[1]);
+	}
+
+	asm volatile("mov %0, %%rax\n\t"
+		"int $0x42\n\t"
+		:: "r" (syscall_number) : "%rax");
 	return 0;
 }
-
-
 
 void kernel_main(unsigned int magic, multiboot_info* mbt_info) {
 	initScreen();

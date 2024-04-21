@@ -158,6 +158,12 @@ bool add_interrupt_handler(uint8_t entry, void (*handler)(struct interrupt_frame
 	return true;
 }
 
+bool add_interrupt_handler_asm(uint8_t entry, void(*handler)(), uint8_t ist, uint8_t type_attr) {
+	if (entry <= 32) return false;
+	set_idt_entry(&idt[entry], handler, ist, type_attr);
+	return true;
+}
+
 void initIDT() {
 	puts_vga_color("Enabling Interrupts.\n", VGA_COLOR_LIGHT_CYAN, VGA_COLOR_BLACK);
 	// Create IDT entries for the first 32 interrupts

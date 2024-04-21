@@ -47,6 +47,8 @@ extern "C" {
 	}
 
 	bool add_interrupt_handler(uint8_t entry, void (*handler)(struct interrupt_frame*), uint8_t ist, uint8_t type_attr);
+	bool add_interrupt_handler_asm(uint8_t entry, void(*handler)(), uint8_t ist, uint8_t type_attr);
+
 
 	void initIDT();
 	/**
