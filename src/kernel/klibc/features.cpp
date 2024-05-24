@@ -12,7 +12,11 @@ char cpu_name[49];
 const char* Features::highest_supported_float;
 struct cpu_features* Features::features;
 
-bool Features::listFeature(const char* name, bool a) {
+// A few of these functions are marked "no-sse"
+// Modern GCC loves to unnecessarily use xmm registers as an optimization
+// This is fine after we enable sse, but we kinda cant enable it when the functions that allow us to do so are using sse
+
+bool __attribute__((target("no-sse"))) Features::listFeature(const char* name, bool a) {
 	puts_vga("        ");
 	if (a) {
 		set_colors(VGA_COLOR_LIGHT_GREEN, VGA_COLOR_BLACK);
@@ -26,7 +30,7 @@ bool Features::listFeature(const char* name, bool a) {
 	return a;
 }
 
-bool Features::listFeatureCheck(const char* name, bool a) {
+bool __attribute__((target("no-sse"))) Features::listFeatureCheck(const char* name, bool a) {
 	puts_vga("    ");
 	if (a) {
 		set_colors(VGA_COLOR_LIGHT_GREEN, VGA_COLOR_BLACK);
@@ -40,7 +44,7 @@ bool Features::listFeatureCheck(const char* name, bool a) {
 	return a;
 }
 
-void Features::checkFloatingPointSupport() {
+void __attribute__((target("no-sse"))) Features::checkFloatingPointSupport() {
 	/*
 	 * Testing for cpu features is simple:
 	 * if (features->feature == FEATURE_SUPPORTED) {
@@ -88,7 +92,7 @@ void Features::checkFloatingPointSupport() {
 
 #include <cpuid.h>
 
-void Features::loadCPUName() {
+void __attribute__((target("no-sse"))) Features::loadCPUName() {
 	memset(cpu_name, 0, 49);
 	uint32_t eax, ebx, ecx, edx;
 
@@ -120,7 +124,7 @@ void Features::loadCPUName() {
  * It will call abort() if needed features do not exist.
  * @param f struct of features that will be checked.
  */
-void Features::checkFeatures(struct cpu_features* f) {
+void __attribute__((target("no-sse"))) Features::checkFeatures(struct cpu_features* f) {
 	puts_vga_color("Checking CPU Features:\n", VGA_COLOR_PURPLE, VGA_COLOR_BLACK);
 	/* Okay imma keep it real C++ hates structs and idk why
 	 * It will NOT let me call cpuFeatures() from the class itself. At all.
@@ -196,14 +200,14 @@ extern "C" void enable_sse();
  * In theory this should enable all forms of sse, not just those two
  * It works. We dont need those fancy new features from SSE3+.
  */
-void Features::enableSSE() {
+void __attribute__((target("no-sse"))) Features::enableSSE() {
 	/* SSE2 is requried support on x86_64 systems.
 	 * FPU SHOULD be automatically enabled on x86 systems.
 	 * IDK about ARM
 	 */
 	if ((Features::highestFloat()[0] == 'S') || (Features::highestFloat()[0] == 'F') || (Features::highestFloat()[0] == 'A')) {
 		set_colors(VGA_COLOR_LIGHT_CYAN, VGA_COLOR_BLACK);
-		printf("Enabling floating point operations: %s\n", Features::highestFloat());
+		//printf("Enabling floating point operations: %s\n", Features::highestFloat());
 		enable_sse();
 		set_to_last();
 	} else {

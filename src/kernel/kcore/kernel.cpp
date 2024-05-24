@@ -95,6 +95,7 @@ void kernel_main(unsigned int magic, multiboot_info* mbt_info) {
 
 	MultibootManager::initialize(magic, mbt_info);
 
+	puts_vga_color("before sse", VGA_COLOR_RED, VGA_COLOR_YELLOW);
 	cpu_features f = cpuFeatures();
 	Features::checkFeatures(&f);
 	Features::enableFeatures();
