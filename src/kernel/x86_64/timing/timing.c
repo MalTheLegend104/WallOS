@@ -1,4 +1,4 @@
-#include <idt.h>
+#include <system/idt.h>
 #include <stdio.h>
 #include <klibc/kprint.h>
 
@@ -10,7 +10,7 @@ size_t system_execution_time;
 void sleep(size_t ms) {
 	size_t start = system_execution_time;
 	// Busy waiting probably isn't the best way to do this but oh well.
-	while ((system_execution_time - start) < ms) {}
+	while ((system_execution_time - start) < ms) { }
 	return;
 }
 

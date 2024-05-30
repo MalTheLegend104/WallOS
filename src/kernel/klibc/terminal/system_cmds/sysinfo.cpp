@@ -3,7 +3,7 @@
 #include <string.h>
 #include <stdarg.h>
 
-#include <timing.h>
+#include <system/timing.h>
 
 #include <klibc/kprint.h>
 #include <klibc/features.hpp>

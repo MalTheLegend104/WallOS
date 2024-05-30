@@ -90,7 +90,7 @@ void __attribute__((target("no-sse"))) Features::checkFloatingPointSupport() {
 	highest_supported_float = nullptr;
 }
 
-#include <cpuid.h>
+#include <system/cpuid.h>
 
 void __attribute__((target("no-sse"))) Features::loadCPUName() {
 	memset(cpu_name, 0, 49);

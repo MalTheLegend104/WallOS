@@ -2,11 +2,11 @@
 #include <stdio.h>
 #include <string.h>
 
-#include <cpuid.h>
+#include <system/cpuid.h>
 #include <panic.h>
-#include <timing.h>
+#include <system/timing.h>
 #include <multiboot.h>
-#include <idt.h>
+#include <system/idt.h>
 
 #include <klibc/kprint.h>
 #include <klibc/cpuid_calls.h>

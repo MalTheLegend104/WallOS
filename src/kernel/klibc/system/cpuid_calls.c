@@ -1,7 +1,7 @@
 #include <klibc/cpuid_calls.h>
 #include <stdlib.h>
 #include <stdint.h>
-#include <cpuid.h>
+#include <system/cpuid.h>
 #include <string.h>
 #include <stddef.h>
 

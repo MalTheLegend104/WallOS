@@ -3,7 +3,7 @@
 #include <stdio.h>
 #include <panic.h>
 #include <klibc/logger.h>
-#include <idt.h>
+#include <system/idt.h>
 #include <stdbool.h>
 #include <drivers/keyboard.h>
 #include <drivers/serial.h>
@@ -132,7 +132,7 @@ extern void enableAPIC();
 extern void enablePS2();
 extern void reEnableIRQ1();
 
-#include <timing.h>
+#include <system/timing.h>
 __attribute__((interrupt)) void system_pit(struct interrupt_frame* frame) {
 	incriment_sys_time();
 	outb(0x20, 0x20);
