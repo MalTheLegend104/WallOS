@@ -1,2 +1,3 @@
+#!/bin/bash
 cd ../
-sudo docker run --rm -it -v $PWD:/root/env wallos-buildenv
+make build

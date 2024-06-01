@@ -104,6 +104,20 @@ extern "C" {
  * 	return 0;
  * }
  */
+#include <syscall/syscall.h>
+
+#pragma GCC diagnostic ignored "-Wunused-parameter" 
+int syscall_command(int argc, char** argv) {
+	uint64_t syscall_number = UINT64_MAX;  // Set your desired syscall number here
+	if (argc > 1) {
+		syscall_number = atoi(argv[1]);
+	}
+
+	asm volatile("mov %0, %%rax\n\t"
+		"int $0x42\n\t"
+		:: "r" (syscall_number) : "%rax");
+	return 0;
+}
 
 void kernel_main(unsigned int magic, multiboot_info* mbt_info) {
 	initScreen();
@@ -147,11 +161,14 @@ void kernel_main(unsigned int magic, multiboot_info* mbt_info) {
 
 	initKernelAllocator();
 
+	Syscall::initialize();
+
 	// After we're done checking features, we need to set up our terminal.
 	// Eventually this will be a userspace program. 
 	//registerCommand((Command) { testKalloc, 0, "kalloc", 0, 0 });
 	//registerCommand((Command) { mem_alloc, 0, "mem_alloc", 0, 0 });
 	registerCommand((Command) { acpi_command, 0, "acpi", 0, 0 });
+	registerCommand((Command) { syscall_command, 0, "syscall", 0, 0 });
 	registerCommand((Command) { bootdev_command, 0, "bootdev", 0, 0 });
 	terminalMain();
 }
