@@ -6,6 +6,7 @@
 /.idea/
 /Doxyfile
 /.vscode/c_cpp_properties.json
-/dockerless/src/bochsrc.bxrc
+/scripts/src/bochsrc.bxrc
 /.idea/
 
+/src/output/

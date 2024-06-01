@@ -1,5 +1,42 @@
+# Do some general includes and definitions for the rest of my makefiles.
 MAKEFLAGS = -s
-#default things for all platforms. This includes things like LIBC, the WallOS, and compile flags.
+THIS_FILE := $(lastword $(MAKEFILE_LIST)) # useful for if the user tries to include other makefiles.
+.DEFAULT_GOAL := qemu
+
+# This is for qemu:
+ARGS ?= -m 5G
+
+# These make it much easier to change things whenever we are finally self hosted.
+WALLOS_C_COMPILER 	:= x86_64-wallos-gcc
+WALLOS_CXX_COMPILER := x86_64-wallos-g++
+WALLOS_ASSEMBLER 	:= nasm
+WALLOS_LINKER 		:= x86_64-wallos-ld
+
+# We export them to make them available to other makefiles that this one will call.
+# Currently this only applies to the ramfs, but eventually I plan on having a few built in programs.
+export WALLOS_C_COMPILER
+export WALLOS_CXX_COMPILER
+export WALLOS_ASSEMBLER
+export WALLOS_LINKER
+
+# To make builds look nicer and easier to follow, we define and export the following:
+COLOR_GREEN	  ?= \033[0;32m
+COLOR_YELLOW  ?= \033[0;93m
+COLOR_RED	  ?= \033[0;31m
+COLOR_BLUE	  ?= \033[0;34m
+COLOR_CYAN	  ?= \033[0;96m
+COLOR_MAGENTA ?= \033[0;95m
+END_COLOR	  ?= \033[0m
+
+export COLOR_GREEN
+export COLOR_YELLOW
+export COLOR_RED
+export COLOR_BLUE
+export COLOR_CYAN
+export COLOR_MAGENTA
+export END_COLOR
+
+# Default things for all platforms. This includes things like LIBC, the WallOS, and compile flags.
 DEBUG_SYMBOLS   := 
 C_FLAGS 		:= -ffreestanding -std=gnu99 -g -Wall -Wextra -Wno-format -nostdlib -lgcc -mno-red-zone -O0 -mcmodel=kernel $(DEBUG_SYMBOLS)
 CPP_FLAGS 		:= -ffreestanding -fno-rtti -g -Wall -Wextra -Wno-format -nostdlib -lgcc -mno-red-zone -O0 -mcmodel=kernel $(DEBUG_SYMBOLS)
@@ -44,17 +81,17 @@ LIBC_OBJ	  	:= $(LIBC_ASM_OBJ) $(LIBC_CPP_OBJ) $(LIBC_C_OBJ)
 $(LIBC_ASM_OBJ): build/libc/%.o : src/libc/%.asm
 	echo "Compiling libc asm   -> $(patsubst build/libc/%.o, src/libc/%.asm, $@)"
 	mkdir -p $(dir $@) && \
-	nasm -f elf64 $(patsubst build/libc/%.o, src/libc/%.asm, $@) $(NASM_FLAGS) -o $@
+	$(WALLOS_ASSEMBLER) -f elf64 $(patsubst build/libc/%.o, src/libc/%.asm, $@) $(NASM_FLAGS) -o $@
 
 $(LIBC_CPP_OBJ): build/libc/%.o : src/libc/%.cpp
 	echo "Compiling libc C++   -> $(patsubst build/libc/%.o, src/libc/%.cpp, $@)"
 	mkdir -p $(dir $@) && \
-	x86_64-elf-g++ -c $(patsubst build/libc/%.o, src/libc/%.cpp, $@) -o $@ -I $(LIBC_INCLUDE) $(CPP_FLAGS)
+	$(WALLOS_CXX_COMPILER) -c $(patsubst build/libc/%.o, src/libc/%.cpp, $@) -o $@ -I $(LIBC_INCLUDE) $(CPP_FLAGS)
 
 $(LIBC_C_OBJ): build/libc/%.o : src/libc/%.c
 	echo "Compiling libc C     -> $(patsubst build/libc/%.o, src/libc/%.c, $@)"
 	mkdir -p $(dir $@) && \
-	x86_64-elf-gcc -c $(patsubst build/libc/%.o, src/libc/%.c, $@) -o $@ -I $(LIBC_INCLUDE) $(C_FLAGS)
+	$(WALLOS_C_COMPILER) -c $(patsubst build/libc/%.o, src/libc/%.c, $@) -o $@ -I $(LIBC_INCLUDE) $(C_FLAGS)
 
 # ----------------------------------------------------
 # KLIBC
@@ -70,17 +107,17 @@ KLIBC_OBJ	  	:= $(KLIBC_ASM_OBJ) $(KLIBC_CPP_OBJ) $(KLIBC_C_OBJ)
 $(KLIBC_ASM_OBJ): build/klibc/%.o : src/kernel/klibc/%.asm
 	echo "Compiling klibc asm  -> $(patsubst build/klibc/%.o, src/kernel/klibc/%.asm, $@)"
 	mkdir -p $(dir $@) && \
-	nasm -f elf64 $(patsubst build/klibc/%.o, src/kernel/klibc/%.asm, $@) $(NASM_FLAGS) -o $@
+	$(WALLOS_ASSEMBLER) -f elf64 $(patsubst build/klibc/%.o, src/kernel/klibc/%.asm, $@) $(NASM_FLAGS) -o $@
 
 $(KLIBC_CPP_OBJ): build/klibc/%.o : src/kernel/klibc/%.cpp
 	echo "Compiling klibc C++  -> $(patsubst build/klibc/%.o, src/kernel/klibc/%.cpp, $@)"
 	mkdir -p $(dir $@) && \
-	x86_64-elf-g++ -c $(patsubst build/klibc/%.o, src/kernel/klibc/%.cpp, $@) -o $@ -I $(KLIBC_INCLUDE) -I $(LIBC_INCLUDE) $(CPP_FLAGS) -D__is_kernel_
+	$(WALLOS_CXX_COMPILER) -c $(patsubst build/klibc/%.o, src/kernel/klibc/%.cpp, $@) -o $@ -I $(KLIBC_INCLUDE) -I $(LIBC_INCLUDE) $(CPP_FLAGS) -D__is_kernel_
 
 $(KLIBC_C_OBJ): build/klibc/%.o : src/kernel/klibc/%.c
 	echo "Compiling klibc C    -> $(patsubst build/klibc/%.o, src/kernel/klibc/%.c, $@)"
 	mkdir -p $(dir $@) && \
-	x86_64-elf-gcc -c $(patsubst build/klibc/%.o, src/kernel/klibc/%.c, $@) -o $@ -I $(KLIBC_INCLUDE) -I $(LIBC_INCLUDE) $(C_FLAGS) -D__is_kernel_
+	$(WALLOS_C_COMPILER) -c $(patsubst build/klibc/%.o, src/kernel/klibc/%.c, $@) -o $@ -I $(KLIBC_INCLUDE) -I $(LIBC_INCLUDE) $(C_FLAGS) -D__is_kernel_
 
 # ----------------------------------------------------
 # KCORE
@@ -100,17 +137,17 @@ KCORE_OBJ	 	:= $(KCORE_ASM_OBJ) $(KCORE_CPP_OBJ) $(KCORE_C_OBJ)
 $(KCORE_ASM_OBJ): build/kcore/%.o : src/kernel/kcore/%.asm
 	echo "Compiling kcore asm  -> $(patsubst build/kcore/%.o, src/kernel/kcore/%.asm, $@)"
 	mkdir -p $(dir $@) && \
-	nasm -f elf64 $(patsubst build/kcore/%.o, src/kernel/kcore/%.asm, $@) $(NASM_FLAGS) -o $@
+	$(WALLOS_ASSEMBLER) -f elf64 $(patsubst build/kcore/%.o, src/kernel/kcore/%.asm, $@) $(NASM_FLAGS) -o $@
 
 $(KCORE_CPP_OBJ): build/kcore/%.o : src/kernel/kcore/%.cpp
 	echo "Compiling kcore C++  -> $(patsubst build/kcore/%.o, src/kernel/kcore/%.cpp, $@)"
 	mkdir -p $(dir $@) && \
-	x86_64-elf-g++ -D__is_kernel_ -c $(patsubst build/kcore/%.o, src/kernel/kcore/%.cpp, $@) -o $@ -I $(KCORE_INCLUDE) -I $(KLIBC_INCLUDE) -I $(LIBC_INCLUDE) $(CPP_FLAGS) -D__is_kernel_
+	$(WALLOS_CXX_COMPILER) -D__is_kernel_ -c $(patsubst build/kcore/%.o, src/kernel/kcore/%.cpp, $@) -o $@ -I $(KCORE_INCLUDE) -I $(KLIBC_INCLUDE) -I $(LIBC_INCLUDE) $(CPP_FLAGS) -D__is_kernel_
 
 $(KCORE_C_OBJ): build/kcore/%.o : src/kernel/kcore/%.c
 	echo "Compiling kcore C    -> $(patsubst build/kcore/%.o, src/kernel/kcore/%.c, $@)"
 	mkdir -p $(dir $@) && \
-	x86_64-elf-gcc -D__is_kernel_ -c $(patsubst build/kcore/%.o, src/kernel/kcore/%.c, $@) -o $@ -I $(KCORE_INCLUDE) -I $(KLIBC_INCLUDE) -I $(LIBC_INCLUDE) $(C_FLAGS) -D__is_kernel_
+	$(WALLOS_C_COMPILER) -D__is_kernel_ -c $(patsubst build/kcore/%.o, src/kernel/kcore/%.c, $@) -o $@ -I $(KCORE_INCLUDE) -I $(KLIBC_INCLUDE) -I $(LIBC_INCLUDE) $(C_FLAGS) -D__is_kernel_
 
 # Compile kernel_early in 32 bit mode. kernel_early does NOT have access to any includes.
 # $(32_KCORE_C_OBJ): build/kcore/%.o : src/kernel/kcore/%.c
@@ -138,12 +175,12 @@ x86_64_OBJ := $(x86_64_ASM_OBJ) $(x86_64_C_OBJ)
 $(x86_64_ASM_OBJ): build/x86_64/%.o : src/kernel/x86_64/%.asm
 	echo "Compiling x86_64 asm -> $<"
 	mkdir -p $(dir $@) && \
-	nasm -f elf64 $< $(NASM_FLAGS) -o $@
+	$(WALLOS_ASSEMBLER) -f elf64 $< $(NASM_FLAGS) -o $@
 
 $(x86_64_C_OBJ): build/x86_64/%.o : src/kernel/x86_64/%.c
 	echo "Compiling x86_64 C   -> $<"
 	mkdir -p $(dir $@) && \
-	x86_64-elf-gcc -c $< -o $@ -I $(x86_64_INCLUDE) -I $(KCORE_INCLUDE) -I $(KLIBC_INCLUDE) -I $(LIBC_INCLUDE) $(C_FLAGS) -D__is_kernel_
+	$(WALLOS_C_COMPILER) -c $< -o $@ -I $(x86_64_INCLUDE) -I $(KCORE_INCLUDE) -I $(KLIBC_INCLUDE) -I $(LIBC_INCLUDE) $(C_FLAGS) -D__is_kernel_
 
 $(IDT_C_OBJ): build/x86_64/%.o : src/kernel/x86_64/%.c
 	echo "Compiling IDT C      -> $<"
@@ -152,33 +189,45 @@ $(IDT_C_OBJ): build/x86_64/%.o : src/kernel/x86_64/%.c
 
 # ----------------------------------------------------
 # COMMANDS
-# ----------------------------------------------------
+# ---------------------------------------------------------
 # All the commands for building, cleaning, running, etc.
-# build-all 	-> builds for all supported architectures
+# all 	-> builds for all supported architectures
 # build 		-> builds for x86-64 (default)
-# build_arm64 	-> builds for Aarch64
+# build_arm64 	-> builds for Aarch64 <-------------------- This doesnt exist yet. It's just an example.
 # clean 		-> deletes all build files, iso's, etc. 
-# run			-> builds x86-64 iso, then runs in qemu
-# run_arm64		-> builds Aarch64 iso, then runs in qemu
-.PHONY: build-all build clean
-build-all: 
-	echo "<-----------Compiling x86_64---------->"
-	$(call build)
+# qemu			-> builds x86-64 iso, then runs in qemu
+
+.PHONY: all build clean ramfs qemu
+
+all: 
+	$(MAKE) -f $(THIS_FILE) ramfs 
+
+	echo "$(COLOR_CYAN)<--------------------------------------------------------->$(END_COLOR)"
+	echo "$(COLOR_CYAN)<-----------------Building x86_64 Kernel------------------>$(END_COLOR)"
+	echo "$(COLOR_CYAN)<--------------------------------------------------------->$(END_COLOR)"
+	$(MAKE) -f $(THIS_FILE) build 
+	echo "$(COLOR_CYAN)<--------------------------------------------------------->$(END_COLOR)"
+	echo "$(COLOR_CYAN)<-----------------Finished x86_64 Kernel------------------>$(END_COLOR)"
+	echo "$(COLOR_CYAN)<--------------------------------------------------------->$(END_COLOR)"
 
 build: $(LIBC_OBJ) $(KLIBC_OBJ) $(KCORE_OBJ) $(x86_64_OBJ) $(CRTI_OBJ) $(CRTN_OBJ) $(CRTBEGIN_OBJ) $(CRTEND_OBJ) $(IDT_C_OBJ)
 	mkdir -p dist/x86_64
 	echo "<---------------Linking--------------->"
-	x86_64-elf-ld -n -o dist/x86_64/WallOS.bin -T targets/x86_64/linker.ld font.o $(LIBC_OBJ) $(KLIBC_OBJ) $(x86_64_OBJ) $(IDT_C_OBJ) $(KCORE_OBJ)
+	$(WALLOS_LINKER) -n -o dist/x86_64/WallOS.bin -T targets/x86_64/linker.ld font.o $(LIBC_OBJ) $(KLIBC_OBJ) $(x86_64_OBJ) $(IDT_C_OBJ) $(KCORE_OBJ)
 	echo "<------------Compiling ISO------------>"
 	cp dist/x86_64/WallOS.bin targets/x86_64/iso/boot/WallOS.bin && \
 	grub-mkrescue /usr/lib/grub/i386-pc -o dist/x86_64/WallOS.iso targets/x86_64/iso
 	echo "<---------Finished  Compiling--------->"
 	
-qemu: build
+ramfs:
+	cd src/ramfs && make && cd ../../
+
+qemu: all
 	qemu-system-x86_64 -cdrom dist/x86_64/WallOS.iso -cpu max $(ARGS)
 
 clean:
-	rm -rf ./build/ && echo "Cleaned build folder"
-	rm -rf ./dist/*
-	find ./targets/ -name "*.bin" | xargs rm || echo "Cleaned targets folder."
-	echo "Finished Cleaning!"
+	rm -rf build && echo "$(COLOR_GREEN)Cleaned build folder$(END_COLOR)"
+	rm -rf dist && echo "$(COLOR_GREEN)Cleaned dist folder$(END_COLOR)"
+	rm -rf src/output/ && echo "$(COLOR_GREEN)Cleaned ramfs output folder$(END_COLOR)"
+	find ./targets/ -name "*.bin" -exec rm {} + && echo "$(COLOR_GREEN)Cleaned targets folder.$(END_COLOR)" || true
+	echo "$(COLOR_CYAN)Finished Cleaning!$(END_COLOR)"
