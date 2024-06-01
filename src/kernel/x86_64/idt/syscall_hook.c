@@ -1,5 +1,5 @@
 #include <syscall/syscall.h>
-#include <idt.h>
+#include <system/idt.h>
 #include <stdio.h>
 #include <stddef.h>
 
@@ -14,7 +14,7 @@
  * r8  -> Arg4
  * r9  -> Arg5
  * r10 -> Arg6
- * Any aditional arguements should be in r11-r15.
+ * Any additional arguments should be in r11-r15.
  * No sys calls should need more than 6 args.
  */
 

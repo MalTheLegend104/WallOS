@@ -1,12 +1,8 @@
 #ifndef ASSERT_H
 #define ASSERT_H
-//include panic h
 #include <panic.h>
-// include string h
 #include <string.h>
-// include std int h
 #include <stdint.h>
-// include  stdlib h
 #include <stdlib.h>
 #ifdef __cplusplus
 extern "C" {

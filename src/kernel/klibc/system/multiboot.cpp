@@ -12,6 +12,12 @@ multiboot_tag_mmap* MultibootManager::mmap;
 acpi_tag* MultibootManager::acpi;
 multiboot_tag_framebuffer* MultibootManager::framebuffer_tag;
 
+multiboot_tag_bootdev* bootdev;
+
+multiboot_tag_bootdev* getBootDev() {
+	return bootdev;
+}
+
 void logExists(const char* string) {
 	puts_vga("    ");
 	Logger::Checklist::blankEntry("%s tag exists.", string);
@@ -21,6 +27,8 @@ multiboot_tag_mmap internal_mmap;
 void copy_mmap(multiboot_tag_mmap* map) {
 	memcpy((void*) ((uint64_t) (&internal_mmap) - KERNEL_VIRTUAL_BASE), map, map->size);
 }
+
+
 
 // See https://www.gnu.org/software/grub/manual/multiboot2/multiboot.html#Boot-information
 void MultibootManager::loadTags() {
@@ -47,6 +55,7 @@ void MultibootManager::loadTags() {
 				break;
 			case MULTIBOOT_TAG_TYPE_BOOTDEV:
 				logExists("BOOTDEV");
+				bootdev = (multiboot_tag_bootdev*) tag;
 				break;
 			case MULTIBOOT_TAG_TYPE_MMAP:
 				puts_vga("    ");
@@ -116,7 +125,7 @@ void MultibootManager::loadTags() {
 }
 
 /**
- * @brief Initalize the multiboot manager class. At the time we load this, we don't have memory access yet, so we don't have new and delete.
+ * @brief Initializes the multiboot manager class. At the time we load this, we don't have memory access yet, so we don't have new and delete.
  * We can't make a class the normal way, and quite frankly this static class makes slightly more sense for what it is.
  *
  * @param m The magic number provided in eax on boot.

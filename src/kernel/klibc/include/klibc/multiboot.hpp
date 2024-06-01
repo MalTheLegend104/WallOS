@@ -64,4 +64,6 @@ public:
 	static bool validateAll();
 };
 
+multiboot_tag_bootdev* getBootDev();
+
 #endif

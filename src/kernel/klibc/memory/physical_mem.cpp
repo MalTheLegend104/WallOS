@@ -6,7 +6,7 @@
 #include <stdio.h>
 #include <klibc/kprint.h>
 #include <klibc/logger.h>
-#include <idt.h>
+#include <system/idt.h>
 #include <assert.h>
 
 mmap_info mem_info;

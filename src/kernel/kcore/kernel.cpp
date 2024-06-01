@@ -2,11 +2,11 @@
 #include <stdio.h>
 #include <string.h>
 
-#include <cpuid.h>
+#include <system/cpuid.h>
 #include <panic.h>
-#include <timing.h>
+#include <system/timing.h>
 #include <multiboot.h>
-#include <idt.h>
+#include <system/idt.h>
 
 #include <klibc/kprint.h>
 #include <klibc/cpuid_calls.h>
@@ -51,6 +51,23 @@ int acpi_command(int argc, char** argv) {
 	}
 	printf("\n\tOEM: %s\n", r->OEMID);
 	printf("\tAddress: 0x%x\n", r->rsdtAddress);
+	set_to_last();
+	return 0;
+}
+
+#pragma GCC diagnostic ignored "-Wunused-parameter" 
+int bootdev_command(int argc, char** argv) {
+	auto a = getBootDev();
+	printf("BIOS Drive Number: 0x%x\n", a->biosdev);
+	printf("Partition: %d (not relevant for floppy or cd-rom)\n", a->part);
+	printf("SubPart: %d (not relevant for floppy or cd-rom)\n", a->slice);
+	set_colors(VGA_COLOR_CYAN, VGA_DEFAULT_BG);
+	switch (a->biosdev) {
+		case 0x00: printf("Boot device assumed to be floppy. How did you get here...?\n"); break;
+		case 0x80: printf("Boot device assumed to be hard drive.\n"); break;
+		case 0xE0: printf("Boot device assumed to be CD-ROM (or similar).\n"); break;
+		default: printf("Boot device unknown. How did you get here...? (seriously please let me know)\n");
+	}
 	set_to_last();
 	return 0;
 }
@@ -108,7 +125,6 @@ void kernel_main(unsigned int magic, multiboot_info* mbt_info) {
 	Memory::initVirtualMemory();
 
 	MultibootManager::initialize(magic, mbt_info);
-
 	cpu_features f = cpuFeatures();
 	Features::checkFeatures(&f);
 	Features::enableFeatures();
@@ -153,5 +169,6 @@ void kernel_main(unsigned int magic, multiboot_info* mbt_info) {
 	//registerCommand((Command) { mem_alloc, 0, "mem_alloc", 0, 0 });
 	registerCommand((Command) { acpi_command, 0, "acpi", 0, 0 });
 	registerCommand((Command) { syscall_command, 0, "syscall", 0, 0 });
+	registerCommand((Command) { bootdev_command, 0, "bootdev", 0, 0 });
 	terminalMain();
 }

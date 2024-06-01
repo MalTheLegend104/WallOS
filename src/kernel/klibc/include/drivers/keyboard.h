@@ -1,6 +1,6 @@
 #ifndef KEYBOARD_HPP
 #define KEYBOARD_HPP
-#include <idt.h>
+#include <system/idt.h>
 
 #define GETS_SIZE 256
 #define HOOK_BUF_SIZE 10

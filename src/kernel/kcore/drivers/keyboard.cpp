@@ -6,7 +6,7 @@
 // ------------------------------------------------------------------------------------------------
 
 #include <drivers/keyboard.h>
-#include <idt.h>
+#include <system/idt.h>
 #include <stdio.h>
 #include <klibc/logger.h>
 #include <string.h>

@@ -1,15 +1,18 @@
 #include <klibc/cpuid_calls.h>
 #include <stdlib.h>
 #include <stdint.h>
-#include <cpuid.h>
+#include <system/cpuid.h>
 #include <string.h>
 #include <stddef.h>
 
 #include <klibc/kprint.h>
 
+// Sometimes gcc (especially newer versions) love to use xmm registers for a few of these functions.
+// We dont have sse yet when these are called, but dont want to disable them globally.
+
 #define exx uint32_t
 // shifts every element in an array to the right by 1
-void shiftRight(char* array) {
+void __attribute__((target("no-sse"))) shiftRight(char* array) {
 	int size = 33;
 	for (int i = size - 1; i > 0; i--) {
 		array[i] = array[i - 1];
@@ -18,7 +21,7 @@ void shiftRight(char* array) {
 }
 
 // Deciphers the ebx, ecx, and edx registers
-char* convertbinarytoascii(exx reg, char* buf) {
+char* __attribute__((target("no-sse"))) convertbinarytoascii(exx reg, char* buf) {
 	char regValue[33]; // 32 bits + \0
 	itoa(reg, regValue, 2);
 
@@ -51,7 +54,7 @@ char* convertbinarytoascii(exx reg, char* buf) {
  *
  * @return char* string containing the vendorID
  */
-char* vendorID() {
+char* __attribute__((target("no-sse"))) vendorID() {
 	// Call cpuid, get the return values
 	exx ax, bx, cx, dx;
 	__cpuid(0, ax, bx, cx, dx);
@@ -79,7 +82,7 @@ char* vendorID() {
  * @param array Array containing the 32 bit binary number.
  * This MUST be sized as 33 to account for the null terminator.
  */
-void padding_32(char* array) {
+void __attribute__((target("no-sse"))) padding_32(char* array) {
 	int size = strlen(array);
 	int shift = 32 - size;
 	for (int i = 32; i > 0; i--) {
@@ -95,11 +98,10 @@ void padding_32(char* array) {
  *
  * @return cpu_features struct containing the features and their values.
  */
-cpu_features cpuFeatures() {
+cpu_features __attribute__((target("no-sse"))) cpuFeatures() {
 	exx ax, bx, cx, dx;
 	__cpuid(1, ax, bx, cx, dx);
 	cpu_features features = {};
-
 	// ---------------------------------------------
 	// ECX FEATURES
 	// ---------------------------------------------
