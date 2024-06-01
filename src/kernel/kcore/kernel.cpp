@@ -58,10 +58,16 @@ int acpi_command(int argc, char** argv) {
 #pragma GCC diagnostic ignored "-Wunused-parameter" 
 int bootdev_command(int argc, char** argv) {
 	auto a = getBootDev();
+	set_colors(VGA_COLOR_LIGHT_CYAN, VGA_DEFAULT_BG);
 	printf("BIOS Drive Number: 0x%x\n", a->biosdev);
+	set_to_last();
+
+	set_colors(VGA_COLOR_CYAN, VGA_DEFAULT_BG);
 	printf("Partition: %d (not relevant for floppy or cd-rom)\n", a->part);
 	printf("SubPart: %d (not relevant for floppy or cd-rom)\n", a->slice);
-	set_colors(VGA_COLOR_CYAN, VGA_DEFAULT_BG);
+	set_to_last();
+
+	set_colors(VGA_COLOR_PINK, VGA_DEFAULT_BG);
 	switch (a->biosdev) {
 		case 0x00: printf("Boot device assumed to be floppy. How did you get here...?\n"); break;
 		case 0x80: printf("Boot device assumed to be hard drive.\n"); break;
