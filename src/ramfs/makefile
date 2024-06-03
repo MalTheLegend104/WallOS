@@ -60,7 +60,7 @@ all:
 			echo "$(COLOR_MAGENTA)Finished with $$dirname.$(END_COLOR)"; \
 		elif [ -f "$$dir/meson.build" ]; then \
 			echo "$(COLOR_GREEN)Found meson.build in $$dir. Building with Meson.$(END_COLOR)"; \
-			cd "$$dir" && meson build && cd build && ninja; \
+			cd "$$dir" && meson setup build && cd build && ninja; \
 			cd ../..; \
 			echo "$(COLOR_MAGENTA)Finished with $$dirname.$(END_COLOR)"; \
 		else \

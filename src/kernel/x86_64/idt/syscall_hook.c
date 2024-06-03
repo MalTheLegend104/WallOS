@@ -30,13 +30,39 @@ void registerSyscall(int syscall_num, int (*f)(registers_t), uint8_t arg_count) 
 	syscalls[syscall_num].arg_count = arg_count;
 }
 
-void syscall_c_hook(uint64_t syscall_num) {
-	//assert(syscall_num);
+void syscall_c_hook() {
+	uint64_t syscall_num;
+	asm volatile ("movq %%rax, %0\n\t" : "=r" (syscall_num));
 	printf("Syscall %llu called.\n", syscall_num);
+	// check proper syscall range.
+	if (syscall_num > 256) {
+		printf("Syscall %llu is out of the proper range [0,256].\n", syscall_num);
+		setReturn(-1);
+		return;
+	}
+	// make sure that syscall exists in general
 	if (syscalls[syscall_num].func == NULL) {
 		printf("Syscall %llu does not exist.\n", syscall_num);
 		setReturn(-1);
 		return;
+	}
+	// if we're here it does exist, we can call it
+	registers_t registers;
+	syscall_t current_syscall = syscalls[syscall_num];
+	switch (current_syscall.arg_count) {
+		case 6: asm volatile ("movq %%r10, %0\n\t" : "=r" (registers.r10));
+		//fallthrough
+		case 5: asm volatile ("movq %%r9, %0\n\t" : "=r" (registers.r9));
+		//fallthrough
+		case 4: asm volatile ("movq %%r8, %0\n\t" : "=r" (registers.r8));
+		//fallthrough
+		case 3: asm volatile ("movq %%rdx, %0\n\t" : "=r" (registers.rdx));
+		//fallthrough
+		case 2: asm volatile ("movq %%rsi, %0\n\t" : "=r" (registers.rsi));
+		//fallthrough
+		case 1: asm volatile ("movq %%rdi, %0\n\t" : "=r" (registers.rdi));
+		//fallthrough
+		default: break;
 	}
 }
 
