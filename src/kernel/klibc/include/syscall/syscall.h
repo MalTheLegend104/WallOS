@@ -26,21 +26,21 @@ extern "C" {
 	 * No sys calls should need more than 6 args.
 	 */
 	typedef struct {
-		rxx rax;
-		rxx rdi;
-		rxx rsi;
-		rxx rdx;
-		rxx r8;
-		rxx r9;
-		rxx r10;
-	} registers_t;
+		uint64_t rax; // syscall
+		uint64_t rdi; // arg1
+		uint64_t rsi; // arg2
+		uint64_t rdx; // arg3
+		uint64_t rcx;  // arg4
+		uint64_t r8;  // arg5
+		uint64_t r9; // arg6
+	} __attribute__((packed)) registers_t;
 
 	typedef struct {
-		int (*func)(registers_t);
+		int (*func)(registers_t*);
 		uint8_t arg_count;
 	} syscall_t;
 
-	void registerSyscall(int syscall_num, int (*f)(registers_t), uint8_t arg_count);
+	void registerSyscall(int syscall_num, int (*f)(registers_t*), uint8_t arg_count);
 	void syscall_init();
 #ifdef __cplusplus
 }

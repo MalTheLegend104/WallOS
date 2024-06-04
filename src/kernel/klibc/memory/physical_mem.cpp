@@ -192,10 +192,10 @@ void Memory::PhysicalMemInit() {
 	set_to_last();
 	set_colors(VGA_COLOR_BROWN, VGA_DEFAULT_BG);
 	for (mmap = mmap_tag->entries; (size_t) mmap < (size_t) mmap_tag + mmap_tag->size; mmap = (struct multiboot_mmap_entry*) ((size_t) mmap + (size_t) mmap_tag->entry_size)) {
+		printf("Found chunk: addr->0x%x len->0x%x\n");
 		map_chunk(mmap->addr, mmap->len, mmap->type);
 	}
 	set_to_last();
-
 	// We need to get the offset that the memory map has taken up, then mark it as not free.
 	// The first "n" number of blocks represent the memory directly behind the kernel
 	uintptr_t end_of_map = (uintptr_t) last_block - (uintptr_t) (&kernel_end);
