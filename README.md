@@ -2,6 +2,8 @@
  
 64-Bit hobby OS. Currently only supports x86-64, but hope to expand to Aarch64 and potentially other platforms. 
 
+> Disclaimer: Currently the CI/CD is broken. I recently changed how the project is built, and have yet to update the CI/CD to reflect those changes.
+
 ## Project Structure
 
 ### **The general project structure is this:**
