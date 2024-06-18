@@ -38,6 +38,10 @@ System calls will likely be held in a single header, among the likes of <Windows
 
 ## Documentation
 
+All current documentation can be found [here.](documentation/README.md)
+
+### Contributing Documentation
+
 All code that needs to be documented should be done so by following the rules of [doxygen](https://www.doxygen.nl/). It allows for JavaDoc like commenting, along with other common styles.
 > I'm a former Java dev, and heavily perfer the JavaDoc style `@tag` as opposed to the `\\tag`. If commiting, please use the JavaDoc style tag. 
 ```cpp
