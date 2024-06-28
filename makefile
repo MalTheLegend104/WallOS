@@ -47,26 +47,6 @@ LIBC_INCLUDE	:= src/libc/include
 KLIBC_INCLUDE 	:= src/kernel/klibc/include
 KCORE_INCLUDE	:= src/kernel/kcore/include
 
-CRTBEGIN_OBJ:=$(shell $(CC) $(CFLAGS) -print-file-name=crtbegin.o)
-CRTEND_OBJ:=$(shell $(CC) $(CFLAGS) -print-file-name=crtend.o)
-
-# ----------------------------------------------------
-# CRTI/CRTN (stuff required for full C++ support)
-# ----------------------------------------------------
-CRTI_SRC	:= $(shell find src/kernel -name crti.s)
-CRTI_OBJ	:= $(patsubst src/kernel/%.s, build/crt/%.o, $(CRTI_SRC))
-$(CRTI_OBJ): build/crt/%.o : src/kernel/%.s
-	echo "Compiling CRTI       -> $(patsubst build/crt/%.o, src/kernel/%.s, $@)"
-	mkdir -p $(dir $@) && \
-	as $(patsubst build/crt/%.o, src/kernel/%.s, $@) $(NASM_FLAGS) -o $@
-
-CRTN_SRC	:= $(shell find src/kernel -name crtn.s)
-CRTN_OBJ	:= $(patsubst src/kernel/%.s, build/crt/%.o, $(CRTN_SRC))
-$(CRTN_OBJ): build/crt/%.o : src/kernel/%.s
-	echo "Compiling CRTN       -> $(patsubst build/crt/%.o, src/kernel/%.s, $@)"
-	mkdir -p $(dir $@) && \
-	as $(patsubst build/crt/%.o, src/kernel/%.s, $@) $(NASM_FLAGS) -o $@
-
 # ----------------------------------------------------
 # LIBC
 # ----------------------------------------------------
@@ -210,7 +190,7 @@ all:
 	echo "$(COLOR_CYAN)<-----------------Finished x86_64 Kernel------------------>$(END_COLOR)"
 	echo "$(COLOR_CYAN)<--------------------------------------------------------->$(END_COLOR)"
 
-build: $(LIBC_OBJ) $(KLIBC_OBJ) $(KCORE_OBJ) $(x86_64_OBJ) $(CRTI_OBJ) $(CRTN_OBJ) $(CRTBEGIN_OBJ) $(CRTEND_OBJ) $(IDT_C_OBJ)
+build: $(LIBC_OBJ) $(KLIBC_OBJ) $(KCORE_OBJ) $(x86_64_OBJ) $(IDT_C_OBJ)
 	mkdir -p dist/x86_64
 	echo "<---------------Linking--------------->"
 	$(WALLOS_LINKER) -n -o dist/x86_64/WallOS.bin -T targets/x86_64/linker.ld font.o $(LIBC_OBJ) $(KLIBC_OBJ) $(x86_64_OBJ) $(IDT_C_OBJ) $(KCORE_OBJ)
