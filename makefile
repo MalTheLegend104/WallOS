@@ -46,6 +46,7 @@ LINKER_FLAGS 	:=
 LIBC_INCLUDE	:= src/libc/include
 KLIBC_INCLUDE 	:= src/kernel/klibc/include
 KCORE_INCLUDE	:= src/kernel/kcore/include
+ACPI_INCLUDE	:= src/acpi
 
 # ----------------------------------------------------
 # LIBC
@@ -72,6 +73,37 @@ $(LIBC_C_OBJ): build/libc/%.o : src/libc/%.c
 	echo "Compiling libc C     -> $(patsubst build/libc/%.o, src/libc/%.c, $@)"
 	mkdir -p $(dir $@) && \
 	$(WALLOS_C_COMPILER) -c $(patsubst build/libc/%.o, src/libc/%.c, $@) -o $@ -I $(LIBC_INCLUDE) $(C_FLAGS)
+
+# ----------------------------------------------------
+# ACPI
+# ----------------------------------------------------
+ACPI_ASM_SRC 	:= $(shell find src/acpi -name *.asm)
+ACPI_ASM_OBJ 	:= $(patsubst src/acpi/%.asm, build/acpi/%.o, $(ACPI_ASM_SRC))
+ACPI_CPP_SRC 	:= $(shell find src/acpi -name *.cpp)
+ACPI_CPP_OBJ 	:= $(patsubst src/acpi/%.cpp, build/acpi/%.o, $(ACPI_CPP_SRC))
+ACPI_C_SRC   	:= $(shell find src/acpi -name *.c)
+ACPI_C_OBJ   	:= $(patsubst src/acpi/%.c, build/acpi/%.o, $(ACPI_C_SRC))
+ACPI_OBJ	 	:= $(ACPI_ASM_OBJ) $(ACPI_CPP_OBJ) $(ACPI_C_OBJ)
+#filter out the 32 bit files
+#ACPI_C_SRC 	:= $(filter-out src/acpi/kernel_early.c, $(ACPI_C_SRC))
+# 32_ACPI_C_SRC	:= src/acpi/kernel_early.c
+# 32_ACPI_C_OBJ 	:= build/kcore/kernel_early.o
+
+$(ACPI_ASM_OBJ): build/acpi/%.o : src/acpi/%.asm
+	echo "Compiling apci asm   -> $(patsubst build/acpi/%.o, src/acpi/%.asm, $@)"
+	mkdir -p $(dir $@) && \
+	$(WALLOS_ASSEMBLER) -f elf64 $(patsubst build/acpi/%.o, src/acpi/%.asm, $@) $(NASM_FLAGS) -o $@
+
+$(ACPI_CPP_OBJ): build/acpi/%.o : src/acpi/%.cpp
+	echo "Compiling acpi C++   -> $(patsubst build/acpi/%.o, src/acpi/%.cpp, $@)"
+	mkdir -p $(dir $@) && \
+	$(WALLOS_CXX_COMPILER) -D__is_kernel_ -c $(patsubst build/acpi/%.o, src/acpi/%.cpp, $@) -o $@ -I $(ACPI_INCLUDE) -I $(KLIBC_INCLUDE) -I $(LIBC_INCLUDE) $(CPP_FLAGS)
+
+$(ACPI_C_OBJ): build/acpi/%.o : src/acpi/%.c
+	echo "Compiling acpi C     -> $(patsubst build/acpi/%.o, src/acpi/%.c, $@)"
+	mkdir -p $(dir $@) && \
+	$(WALLOS_C_COMPILER) -D__is_kernel_ -c $(patsubst build/acpi/%.o, src/acpi/%.c, $@) -o $@ -I $(ACPI_INCLUDE) -I $(KLIBC_INCLUDE) -I $(LIBC_INCLUDE) $(C_FLAGS)
+
 
 # ----------------------------------------------------
 # KLIBC
@@ -190,10 +222,10 @@ all:
 	echo "$(COLOR_CYAN)<-----------------Finished x86_64 Kernel------------------>$(END_COLOR)"
 	echo "$(COLOR_CYAN)<--------------------------------------------------------->$(END_COLOR)"
 
-build: $(LIBC_OBJ) $(KLIBC_OBJ) $(KCORE_OBJ) $(x86_64_OBJ) $(IDT_C_OBJ)
+build: $(LIBC_OBJ) $(KLIBC_OBJ) $(KCORE_OBJ) $(x86_64_OBJ) $(IDT_C_OBJ) $(ACPI_OBJ)
 	mkdir -p dist/x86_64
 	echo "<---------------Linking--------------->"
-	$(WALLOS_LINKER) -n -o dist/x86_64/WallOS.bin -T targets/x86_64/linker.ld font.o $(LIBC_OBJ) $(KLIBC_OBJ) $(x86_64_OBJ) $(IDT_C_OBJ) $(KCORE_OBJ)
+	$(WALLOS_LINKER) -n -o dist/x86_64/WallOS.bin -T targets/x86_64/linker.ld font.o $(LIBC_OBJ) $(KLIBC_OBJ) $(x86_64_OBJ) $(IDT_C_OBJ) $(ACPI_OBJ) $(KCORE_OBJ)
 	echo "<------------Compiling ISO------------>"
 	cp dist/x86_64/WallOS.bin targets/x86_64/iso/boot/WallOS.bin && \
 	grub-mkrescue /usr/lib/grub/i386-pc -o dist/x86_64/WallOS.iso targets/x86_64/iso

@@ -1,6 +1,6 @@
 # WallOS
 
-64-Bit hobby OS. Currently only supports x86-64, but hope to expand to Aarch64 and potentially other platforms. 
+64-Bit hobby OS. Currently only supports x86-64, but hope to expand to Aarch64 and potentially other platforms.
 
 ## Project Structure
 
@@ -23,14 +23,51 @@ src┐
    │      ├──boot
    │      └──<other platform specific files>
    │   
-   └──libc
-      ├──include
-      ├──string
-      ├──stdlib
-      └──<source code for other libc here>
+   ├──libc
+   │  ├──include
+   │  ├──string
+   │  ├──stdlib
+   │  └──<source code for other libc here>
+   │
+   ├──acpi
+   │  └─ Internal ACPI abstraction layer. The actual work is handled by ACPICA.
+   │
+   └──ramfs
+      ├─ <ramfs program/binary>
+      ├─ <ramfs program/binary>
+      └─ makefile
 ```
 
-#### Libc is meant to be a minimal implementation for the kernel. Userspace libc will likely be a port of [mlibc](https://github.com/managarm/mlibc).
+### Kernel
+
+#### KCore
+
+The core kernel files. This is mostly related to things like the kernel entrypoint, kernel panics, and important drivers (like serial and PS/2).
+
+#### KLibc
+
+Most of the rest of the kernel subsystems and interfaces, including memory management, syscalls, and the kernel services terminal. This will likely be renamed in the future, after userspace is established.
+
+#### x86_64
+
+This contains all x86_64 platform specific code, such as the post-bootloader booting code that sets up the environment for the kernel, as well as platform specific features such as the IDT and GDT.
+
+### Libc
+
+This is a minimal implementation of the C standard library. It has very few functions, and is implemented mostly on a "I really need this function" basis.
+There are plans to port [mlibc](https://github.com/managarm/mlibc) to WallOS eventually, but this likely wont happen before I get a proper userspace set up.
+
+### Ramfs
+
+The ramfs is documented [here.](documentation/ramfs/ramfs.md)
+
+### ACPI
+
+ACPI is essentially handled as a driver by WallOS. Instead of having it's own dedicated folder, it will likely get moved in a future release.
+The driver more so acts like an abstraction layer, along with providing the Operating System Layer for [ACPICA](https://www.intel.com/content/www/us/en/developer/topic-technology/open/acpica/overview.html).
+
+It really doesn't interact with much of the OS by itself, and is mostly a standalone module.
+In terms of structure, it sits somewhere between `klibc` and `kcore`. Whenever a robust interface for drivers is setup, this is likely to change.
 
 ### Sys Calls
 
@@ -55,12 +92,13 @@ int test(int a);
 
 ### Ordered
 
-1. Virtual/Physical Memory (paging/malloc/free/new/delete)
-2. Filesystem
+1. Filesystem
    - At the very least, want to be able to load from disk and load programs.
    - This could also just be a simple ramfs
-3. System Calls
-4. Move terminal to userspace.
+2. System Calls
+   - These are already supported, at least in a "the infrastructure exists" kind of way.
+     The ability to handle and registers handlers exists, there's just none that are implemented yet.
+3. Move terminal to userspace.
    - Scheduling and multitasking are necessary for me to do userspace apps, but I can still move the terminal to userspace.
    - This would also make developing and testing syscalls much easier.
 
@@ -88,7 +126,7 @@ If you are interested in fixing issues, adding features, or otherwise contributi
 
 ### Docker
 
-- In `/docker/`, there exist commands for setting up the dev environment for the project. Windows commands are the `*.bat` files, while the `*.sh` and files without extentions are for linux (potentially MacOS as well, this is untested).
+- In `/docker/`, there exist commands for setting up the dev environment for the project. Windows commands are the `*.bat` files, while the `*.sh` and files without extensions are for linux (potentially MacOS as well, this is untested).
     > You must have docker already installed. On windows, I highly recommend installing qemu.
 - To build, simply run the script to build for the desired architecture. `build64` and `build.bat` both build for `x86_64`. Running `qemu` or `qemu.bat` both result in `x86_64` being built and ran in a vm.
     > Other platforms have names according to their architecture. For example `build64` builds for x86_64, `buildarm64` builds for Aarch64, etc.

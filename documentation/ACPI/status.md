@@ -2,7 +2,7 @@
 
 Most of this page is courtesy of [this osedev.wiki page.](https://osdev.wiki/wiki/ACPICA)
 
-> I need to do more reading. I'm not entirely sure what ACPICA needs for basic functionality. Most of this requires the ACPI tables to be able to implement in the first place.
+> ACPICA provides a ACPI parser that allows you to get information from the tables without doing much else. it *shouldn't* rely on anything below. this is really what we care about the most right now. A lot of these are just going to be stubs, and we'll print a message and hlt when they called.
 
 ## Table of Contents
 
@@ -103,5 +103,3 @@ However you should be ok if you ignore this.
 - ACPI sometimes fires interrupt. ACPICA will take care of them. InterruptLevel is the IRQ number that ACPI will use. Handler is an internal function of ACPICA which handles interrupts. Context is the parameter to be past to the Handler. If you're lucky, your IRQ manager uses handlers of this form: `uint32_t handler(void *);` (WallOS doesn't. We'll cross this road when we get there.)
 - [ ] `ACPI_STATUS AcpiOsRemoveInterruptHandler(UINT32 InterruptNumber, ACPI_OSD_HANDLER Handler)`
   - Just UnregisterIrq (InterruptNumber). Handler is provided in case you have an IRQ manager which can have many handlers for one IRQ. This would let you know which handler on that IRQ you have to remove. (basically just unregister the interrupt. WallOS doesn't allow multiple IRQs per number.)
-
-
