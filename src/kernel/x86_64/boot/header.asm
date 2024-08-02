@@ -17,7 +17,7 @@ header_start:
 ; Framebuffer stuff
 ; Remember we're at the mercy of grub and the bios
 ; We can request (and requesting does result in VBE mode) things but the request isn't guaranteed.
-%if 0 ;we dont need this yet and im abusing nasm
+;%if 0 ;we dont need this yet and im abusing nasm
 align 8
 mb2_tag_fb_start:
 	dw 5
@@ -30,7 +30,7 @@ mb2_tag_fb_start:
 	dd 0
     dd 0
 mb2_tag_fb_end:
-%endif
+;%endif
 
 align 8
 mb2_tag_end_start:
