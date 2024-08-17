@@ -3,6 +3,9 @@ MAKEFLAGS = -s
 THIS_FILE := $(lastword $(MAKEFILE_LIST)) # useful for if the user tries to include other makefiles.
 .DEFAULT_GOAL := qemu
 
+# Other makefiles for other components
+include libs/libs.mk
+
 # This is for qemu:
 ARGS ?= -m 5G
 
@@ -213,16 +216,14 @@ $(IDT_C_OBJ): build/x86_64/%.o : src/kernel/x86_64/%.c
 
 all: 
 	$(MAKE) -f $(THIS_FILE) ramfs 
+	$(MAKE) -f $(THIS_FILE) build_libs 
+	$(MAKE) -f $(THIS_FILE) build 
 
+build: $(LIBC_OBJ) $(KLIBC_OBJ) $(KCORE_OBJ) $(x86_64_OBJ) $(IDT_C_OBJ) $(ACPI_OBJ)
 	echo "$(COLOR_CYAN)<--------------------------------------------------------->$(END_COLOR)"
 	echo "$(COLOR_CYAN)<-----------------Building x86_64 Kernel------------------>$(END_COLOR)"
 	echo "$(COLOR_CYAN)<--------------------------------------------------------->$(END_COLOR)"
-	$(MAKE) -f $(THIS_FILE) build 
-	echo "$(COLOR_CYAN)<--------------------------------------------------------->$(END_COLOR)"
-	echo "$(COLOR_CYAN)<-----------------Finished x86_64 Kernel------------------>$(END_COLOR)"
-	echo "$(COLOR_CYAN)<--------------------------------------------------------->$(END_COLOR)"
 
-build: $(LIBC_OBJ) $(KLIBC_OBJ) $(KCORE_OBJ) $(x86_64_OBJ) $(IDT_C_OBJ) $(ACPI_OBJ)
 	mkdir -p dist/x86_64
 	echo "<---------------Linking--------------->"
 	$(WALLOS_LINKER) -n -o dist/x86_64/WallOS.bin -T targets/x86_64/linker.ld font.o $(LIBC_OBJ) $(KLIBC_OBJ) $(x86_64_OBJ) $(IDT_C_OBJ) $(ACPI_OBJ) $(KCORE_OBJ)
@@ -230,9 +231,16 @@ build: $(LIBC_OBJ) $(KLIBC_OBJ) $(KCORE_OBJ) $(x86_64_OBJ) $(IDT_C_OBJ) $(ACPI_O
 	cp dist/x86_64/WallOS.bin targets/x86_64/iso/boot/WallOS.bin && \
 	grub-mkrescue /usr/lib/grub/i386-pc -o dist/x86_64/WallOS.iso targets/x86_64/iso
 	echo "<---------Finished  Compiling--------->"
+
+	echo "$(COLOR_CYAN)<--------------------------------------------------------->$(END_COLOR)"
+	echo "$(COLOR_CYAN)<-----------------Finished x86_64 Kernel------------------>$(END_COLOR)"
+	echo "$(COLOR_CYAN)<--------------------------------------------------------->$(END_COLOR)"
 	
 ramfs:
 	cd src/ramfs && make && cd ../../
+
+build_libs: libs
+	
 
 qemu: all
 	qemu-system-x86_64 -cdrom dist/x86_64/WallOS.iso -cpu max $(ARGS)
