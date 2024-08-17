@@ -2,7 +2,7 @@ MAKEFLAGS=-s
 .DEFAULT_GOAL := all
 
 # This defines all includes for all the libraries
-include libs_includes.mk
+include libs/libs_includes.mk
 
 # Compiler and Linker Settings
 WALLOS_C_COMPILER 	?= x86_64-wallos-gcc
@@ -43,6 +43,8 @@ COLOR_CYAN	  ?= \033[0;96m
 COLOR_MAGENTA ?= \033[0;95m
 END_COLOR	  ?= \033[0m
 
+.PHONY: libs
+
 # I sincerely apologize to anyone having to read this and try to figure out what it does.
 # It mostly just loops through each directoy, checks if it has a known buildsystem (make, cmake, meson) and then builds it if it does. 
 # It expects each build to be set up to output the necessary file to OUTPUT_DIR.
@@ -52,7 +54,7 @@ libs:
 	@echo "$(COLOR_CYAN)<----------------------Building LIBS---------------------->$(END_COLOR)"
 	@echo "$(COLOR_CYAN)<--------------------------------------------------------->$(END_COLOR)"
 	@mkdir -p $(OUTPUT_DIR)
-	@for dir in */; do \
+	@for dir in libs/*/; do \
 		if [ "$$dir" = "$(OUTPUT_DIR)/" ]; then \
         	continue; \
     	fi; \
@@ -64,7 +66,7 @@ libs:
 			echo "$(COLOR_MAGENTA)Finished with $$dirname.$(END_COLOR)"; \
 		elif [ -f "$$dir/makefile" ]; then \
 			echo "$(COLOR_GREEN)Found makefile in $$dir. Building with Make.$(END_COLOR)"; \
-			cd "$$dir" && make; \
+			cd "$$dir" && $(MAKE); \
 			cd ..; \
 			echo "$(COLOR_MAGENTA)Finished with $$dirname.$(END_COLOR)"; \
 		elif [ -f "$$dir/meson.build" ]; then \
@@ -82,8 +84,8 @@ libs:
 
 # Clean Target
 libs_clean:
-	@for dir in */; do \
-		if [ "$$dir" = "$(OUTPUT_DIR)/" ]; then \
+	@for dir in libs/*/; do \
+		if [ "$$dir" = "libs/$(OUTPUT_DIR)/" ]; then \
         	continue; \
     	fi; \
 		if [ -f "$$dir/CMakeLists.txt" ]; then \
@@ -102,4 +104,5 @@ libs_clean:
 			echo "$(COLOR_YELLOW)No build system found in $$dir. Nothing to clean up.$(END_COLOR)"; \
 		fi \
 	done
-	rm -rf $(OUTPUT_DIR)
+	rm -rf libs/$(OUTPUT_DIR)
+	echo "$(COLOR_GREEN)Cleaned libs output dir.$(END_COLOR)"

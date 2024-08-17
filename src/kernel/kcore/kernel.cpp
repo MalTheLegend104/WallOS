@@ -139,6 +139,7 @@ int syscall_command(int argc, char** argv) {
 void kernel_main(unsigned int magic, multiboot_info* mbt_info) {
 	initScreen();
 	init_serial();
+	printf_serial("Welcome to WallOS!");
 	Memory::initVirtualMemory();
 
 	MultibootManager::initialize(magic, mbt_info);

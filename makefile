@@ -77,36 +77,6 @@ $(LIBC_C_OBJ): build/libc/%.o : src/libc/%.c
 	mkdir -p $(dir $@) && \
 	$(WALLOS_C_COMPILER) -c $(patsubst build/libc/%.o, src/libc/%.c, $@) -o $@ -I $(LIBC_INCLUDE) $(C_FLAGS)
 
-# ----------------------------------------------------
-# ACPI
-# ----------------------------------------------------
-ACPI_ASM_SRC 	:= $(shell find src/acpi -name *.asm)
-ACPI_ASM_OBJ 	:= $(patsubst src/acpi/%.asm, build/acpi/%.o, $(ACPI_ASM_SRC))
-ACPI_CPP_SRC 	:= $(shell find src/acpi -name *.cpp)
-ACPI_CPP_OBJ 	:= $(patsubst src/acpi/%.cpp, build/acpi/%.o, $(ACPI_CPP_SRC))
-ACPI_C_SRC   	:= $(shell find src/acpi -name *.c)
-ACPI_C_OBJ   	:= $(patsubst src/acpi/%.c, build/acpi/%.o, $(ACPI_C_SRC))
-ACPI_OBJ	 	:= $(ACPI_ASM_OBJ) $(ACPI_CPP_OBJ) $(ACPI_C_OBJ)
-#filter out the 32 bit files
-#ACPI_C_SRC 	:= $(filter-out src/acpi/kernel_early.c, $(ACPI_C_SRC))
-# 32_ACPI_C_SRC	:= src/acpi/kernel_early.c
-# 32_ACPI_C_OBJ 	:= build/kcore/kernel_early.o
-
-$(ACPI_ASM_OBJ): build/acpi/%.o : src/acpi/%.asm
-	echo "Compiling apci asm   -> $(patsubst build/acpi/%.o, src/acpi/%.asm, $@)"
-	mkdir -p $(dir $@) && \
-	$(WALLOS_ASSEMBLER) -f elf64 $(patsubst build/acpi/%.o, src/acpi/%.asm, $@) $(NASM_FLAGS) -o $@
-
-$(ACPI_CPP_OBJ): build/acpi/%.o : src/acpi/%.cpp
-	echo "Compiling acpi C++   -> $(patsubst build/acpi/%.o, src/acpi/%.cpp, $@)"
-	mkdir -p $(dir $@) && \
-	$(WALLOS_CXX_COMPILER) -D__is_kernel_ -c $(patsubst build/acpi/%.o, src/acpi/%.cpp, $@) -o $@ -I $(ACPI_INCLUDE) -I $(KLIBC_INCLUDE) -I $(LIBC_INCLUDE) $(CPP_FLAGS)
-
-$(ACPI_C_OBJ): build/acpi/%.o : src/acpi/%.c
-	echo "Compiling acpi C     -> $(patsubst build/acpi/%.o, src/acpi/%.c, $@)"
-	mkdir -p $(dir $@) && \
-	$(WALLOS_C_COMPILER) -D__is_kernel_ -c $(patsubst build/acpi/%.o, src/acpi/%.c, $@) -o $@ -I $(ACPI_INCLUDE) -I $(KLIBC_INCLUDE) -I $(LIBC_INCLUDE) $(C_FLAGS)
-
 
 # ----------------------------------------------------
 # KLIBC
@@ -127,12 +97,12 @@ $(KLIBC_ASM_OBJ): build/klibc/%.o : src/kernel/klibc/%.asm
 $(KLIBC_CPP_OBJ): build/klibc/%.o : src/kernel/klibc/%.cpp
 	echo "Compiling klibc C++  -> $(patsubst build/klibc/%.o, src/kernel/klibc/%.cpp, $@)"
 	mkdir -p $(dir $@) && \
-	$(WALLOS_CXX_COMPILER) -c $(patsubst build/klibc/%.o, src/kernel/klibc/%.cpp, $@) -o $@ -I $(KLIBC_INCLUDE) -I $(LIBC_INCLUDE) $(CPP_FLAGS) -D__is_kernel_
+	$(WALLOS_CXX_COMPILER) -c $(patsubst build/klibc/%.o, src/kernel/klibc/%.cpp, $@) -o $@ -I $(KLIBC_INCLUDE) -I $(LIBC_INCLUDE) $(LIBRARY_INCLUDES) $(CPP_FLAGS) -D__is_kernel_
 
 $(KLIBC_C_OBJ): build/klibc/%.o : src/kernel/klibc/%.c
 	echo "Compiling klibc C    -> $(patsubst build/klibc/%.o, src/kernel/klibc/%.c, $@)"
 	mkdir -p $(dir $@) && \
-	$(WALLOS_C_COMPILER) -c $(patsubst build/klibc/%.o, src/kernel/klibc/%.c, $@) -o $@ -I $(KLIBC_INCLUDE) -I $(LIBC_INCLUDE) $(C_FLAGS) -D__is_kernel_
+	$(WALLOS_C_COMPILER) -c $(patsubst build/klibc/%.o, src/kernel/klibc/%.c, $@) -o $@ -I $(KLIBC_INCLUDE) -I $(LIBC_INCLUDE) $(LIBRARY_INCLUDES) $(C_FLAGS) -D__is_kernel_
 
 # ----------------------------------------------------
 # KCORE
@@ -157,12 +127,12 @@ $(KCORE_ASM_OBJ): build/kcore/%.o : src/kernel/kcore/%.asm
 $(KCORE_CPP_OBJ): build/kcore/%.o : src/kernel/kcore/%.cpp
 	echo "Compiling kcore C++  -> $(patsubst build/kcore/%.o, src/kernel/kcore/%.cpp, $@)"
 	mkdir -p $(dir $@) && \
-	$(WALLOS_CXX_COMPILER) -D__is_kernel_ -c $(patsubst build/kcore/%.o, src/kernel/kcore/%.cpp, $@) -o $@ -I $(KCORE_INCLUDE) -I $(KLIBC_INCLUDE) -I $(LIBC_INCLUDE) $(CPP_FLAGS) -D__is_kernel_
+	$(WALLOS_CXX_COMPILER) -D__is_kernel_ -c $(patsubst build/kcore/%.o, src/kernel/kcore/%.cpp, $@) -o $@ $(LIBRARY_INCLUDES) -I $(KCORE_INCLUDE) -I $(KLIBC_INCLUDE) -I $(LIBC_INCLUDE) $(CPP_FLAGS) -D__is_kernel_
 
 $(KCORE_C_OBJ): build/kcore/%.o : src/kernel/kcore/%.c
 	echo "Compiling kcore C    -> $(patsubst build/kcore/%.o, src/kernel/kcore/%.c, $@)"
 	mkdir -p $(dir $@) && \
-	$(WALLOS_C_COMPILER) -D__is_kernel_ -c $(patsubst build/kcore/%.o, src/kernel/kcore/%.c, $@) -o $@ -I $(KCORE_INCLUDE) -I $(KLIBC_INCLUDE) -I $(LIBC_INCLUDE) $(C_FLAGS) -D__is_kernel_
+	$(WALLOS_C_COMPILER) -D__is_kernel_ -c $(patsubst build/kcore/%.o, src/kernel/kcore/%.c, $@) -o $@ $(LIBRARY_INCLUDES) -I $(KCORE_INCLUDE) -I $(KLIBC_INCLUDE) -I $(LIBC_INCLUDE) $(C_FLAGS) -D__is_kernel_
 
 # Compile kernel_early in 32 bit mode. kernel_early does NOT have access to any includes.
 # $(32_KCORE_C_OBJ): build/kcore/%.o : src/kernel/kcore/%.c
@@ -195,12 +165,12 @@ $(x86_64_ASM_OBJ): build/x86_64/%.o : src/kernel/x86_64/%.asm
 $(x86_64_C_OBJ): build/x86_64/%.o : src/kernel/x86_64/%.c
 	echo "Compiling x86_64 C   -> $<"
 	mkdir -p $(dir $@) && \
-	$(WALLOS_C_COMPILER) -c $< -o $@ -I $(x86_64_INCLUDE) -I $(KCORE_INCLUDE) -I $(KLIBC_INCLUDE) -I $(LIBC_INCLUDE) $(C_FLAGS) -D__is_kernel_
+	$(WALLOS_C_COMPILER) -c $< -o $@ -I $(x86_64_INCLUDE) $(LIBRARY_INCLUDES) -I $(KCORE_INCLUDE) -I $(KLIBC_INCLUDE) -I $(LIBC_INCLUDE) $(C_FLAGS) -D__is_kernel_
 
 $(IDT_C_OBJ): build/x86_64/%.o : src/kernel/x86_64/%.c
 	echo "Compiling IDT C      -> $<"
 	mkdir -p $(dir $@) && \
-	x86_64-elf-gcc -c $< -o $@ -mgeneral-regs-only -I $(x86_64_INCLUDE) -I $(KCORE_INCLUDE) -I $(KLIBC_INCLUDE) -I $(LIBC_INCLUDE) $(C_FLAGS) -D__is_kernel_
+	x86_64-elf-gcc -c $< -o $@ -mgeneral-regs-only $(LIBRARY_INCLUDES) -I $(x86_64_INCLUDE) -I $(KCORE_INCLUDE) -I $(KLIBC_INCLUDE) -I $(LIBC_INCLUDE) $(C_FLAGS) -D__is_kernel_
 
 # ----------------------------------------------------
 # COMMANDS
@@ -215,18 +185,17 @@ $(IDT_C_OBJ): build/x86_64/%.o : src/kernel/x86_64/%.c
 .PHONY: all build clean ramfs qemu
 
 all: 
-	$(MAKE) -f $(THIS_FILE) ramfs 
-	$(MAKE) -f $(THIS_FILE) build_libs 
-	$(MAKE) -f $(THIS_FILE) build 
+	+$(MAKE) -f $(THIS_FILE) ramfs 
+	+$(MAKE) -f $(THIS_FILE) libs 
+	+$(MAKE) -f $(THIS_FILE) build 
 
-build: $(LIBC_OBJ) $(KLIBC_OBJ) $(KCORE_OBJ) $(x86_64_OBJ) $(IDT_C_OBJ) $(ACPI_OBJ)
+build: $(LIBC_OBJ) $(KLIBC_OBJ) $(KCORE_OBJ) $(x86_64_OBJ) $(IDT_C_OBJ)
 	echo "$(COLOR_CYAN)<--------------------------------------------------------->$(END_COLOR)"
 	echo "$(COLOR_CYAN)<-----------------Building x86_64 Kernel------------------>$(END_COLOR)"
 	echo "$(COLOR_CYAN)<--------------------------------------------------------->$(END_COLOR)"
-
 	mkdir -p dist/x86_64
 	echo "<---------------Linking--------------->"
-	$(WALLOS_LINKER) -n -o dist/x86_64/WallOS.bin -T targets/x86_64/linker.ld font.o $(LIBC_OBJ) $(KLIBC_OBJ) $(x86_64_OBJ) $(IDT_C_OBJ) $(ACPI_OBJ) $(KCORE_OBJ)
+	$(WALLOS_LINKER) -n -o dist/x86_64/WallOS.bin -T targets/x86_64/linker.ld font.o $(LIBC_OBJ) $(KLIBC_OBJ) $(x86_64_OBJ) $(IDT_C_OBJ) $(LIBRARY_FLAGS) $(KCORE_OBJ)
 	echo "<------------Compiling ISO------------>"
 	cp dist/x86_64/WallOS.bin targets/x86_64/iso/boot/WallOS.bin && \
 	grub-mkrescue /usr/lib/grub/i386-pc -o dist/x86_64/WallOS.iso targets/x86_64/iso
@@ -237,15 +206,12 @@ build: $(LIBC_OBJ) $(KLIBC_OBJ) $(KCORE_OBJ) $(x86_64_OBJ) $(IDT_C_OBJ) $(ACPI_O
 	echo "$(COLOR_CYAN)<--------------------------------------------------------->$(END_COLOR)"
 	
 ramfs:
-	cd src/ramfs && make && cd ../../
-
-build_libs: libs
+	cd src/ramfs && $(MAKE) && cd ../../
 	
-
 qemu: all
 	qemu-system-x86_64 -cdrom dist/x86_64/WallOS.iso -cpu max $(ARGS)
 
-clean:
+clean: libs_clean
 	rm -rf build && echo "$(COLOR_GREEN)Cleaned build folder$(END_COLOR)"
 	rm -rf dist && echo "$(COLOR_GREEN)Cleaned dist folder$(END_COLOR)"
 	rm -rf src/output/ && echo "$(COLOR_GREEN)Cleaned ramfs output folder$(END_COLOR)"
