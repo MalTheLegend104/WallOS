@@ -57,3 +57,8 @@ A list of modifications are below:
 - Added `acwallos.h` and `acwallosex.h`
 - Modified `acenv.h` to include `acwallos.h`3
 - Modified `acenvex.h` to include `acwallosex.h`
+
+2024-19-08:
+
+- Added pragma to `acpixf.h` to silence unused parameter warnings.
+- Removed `acwallosex.h` and reverted changes to `acenvex.h` as it wasn't needed.

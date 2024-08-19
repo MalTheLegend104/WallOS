@@ -6,7 +6,7 @@
 #include <stdint.h>
 #include <stddef.h>
 
-#include <klibc/multiboot.hpp>
+#include <klibc/multiboot.h>
 
 typedef struct {
 	size_t total;

@@ -12,7 +12,7 @@
 #include <klibc/cpuid_calls.h>
 #include <klibc/logger.h>
 #include <klibc/features.hpp>
-#include <klibc/multiboot.hpp>
+#include <klibc/multiboot.h>
 
 #include <drivers/keyboard.h>
 #include <drivers/serial.h>
@@ -38,6 +38,7 @@ extern "C" {
 	void __cxa_pure_virtual() { }; // needed for pure virtual functions
 }
 
+#include <acpi/acpi_init.h>
 #pragma GCC diagnostic ignored "-Wunused-parameter" 
 int acpi_command(int argc, char** argv) {
 	acpi_tag* acpi = MultibootManager::getACPI();
@@ -52,6 +53,8 @@ int acpi_command(int argc, char** argv) {
 	printf("\n\tOEM: %s\n", r->OEMID);
 	printf("\tAddress: 0x%x\n", r->rsdtAddress);
 	set_to_last();
+
+	acpi_tables();
 	return 0;
 }
 
@@ -114,7 +117,8 @@ extern "C" {
 
 #pragma GCC diagnostic ignored "-Wunused-parameter" 
 int syscall_command(int argc, char** argv) {
-	uint64_t syscall_number = UINT64_MAX;  // Set your desired syscall number here
+	uint64_t syscall_number = UINT64_MAX;
+	// We default to the 64 bit max, anything outside of 0-255 isn't valid.
 	uint64_t arg1 = 0;
 	if (argc > 1) {
 		syscall_number = atoi(argv[1]);

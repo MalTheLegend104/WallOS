@@ -2,7 +2,7 @@
 #include <panic.h>
 #include <string.h>
 #include <klibc/logger.h>
-#include <klibc/multiboot.hpp>
+#include <klibc/multiboot.h>
 #include <memory/virtual_mem.hpp>
 uint32_t MultibootManager::magic;
 multiboot_header* MultibootManager::header;
@@ -28,6 +28,10 @@ void copy_mmap(multiboot_tag_mmap* map) {
 	memcpy((void*) ((uint64_t) (&internal_mmap) - KERNEL_VIRTUAL_BASE), map, map->size);
 }
 
+void* getAcpiRoot() {
+	acpi_tag* acpi = MultibootManager::getACPI();
+	return acpi->rsdp;
+}
 
 
 // See https://www.gnu.org/software/grub/manual/multiboot2/multiboot.html#Boot-information

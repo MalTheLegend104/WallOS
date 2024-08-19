@@ -175,9 +175,6 @@
 #elif defined(_AED_EFI) || defined(_GNU_EFI) || defined(_EDK2_EFI)
 #include "acefiex.h"
 
-#elif defined(__wallos__)
-#include "acwallosex.h"
-
 #endif
 
 #if defined(__GNUC__) && !defined(__INTEL_COMPILER)

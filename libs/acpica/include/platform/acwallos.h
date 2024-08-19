@@ -11,8 +11,8 @@
 
 // Eventually this will probably be defined
 // I dont really want to make sure we support the functions it needs right now.
-// #define ACPI_USE_SYSTEM_CLIBRARY
-// #define ACPI_USE_STANDARD_HEADERS
+#define ACPI_USE_SYSTEM_CLIBRARY
+#define ACPI_USE_STANDARD_HEADERS
 
 // I have no need for a cache in WallOS yet, so I'm not implementing one only for ACPICA
 #define ACPI_USE_LOCAL_CACHE

@@ -11,8 +11,8 @@ WALLOS_ASSEMBLER 	?= nasm
 WALLOS_LINKER 		?= x86_64-wallos-ld
 
 # Flags
-WALLOS_C_FLAGS 	 ?= -ffreestanding -std=gnu99 -g -Wall -Wextra -Wno-format -nostdlib -lgcc -mno-red-zone -O0
-WALLOS_CXX_FLAGS ?= -ffreestanding -fno-rtti -g -Wall -Wextra -Wno-format -nostdlib -lgcc -mno-red-zone -O0
+WALLOS_C_FLAGS 	 ?= -ffreestanding -std=gnu99 -g -Wall -Wextra -Wno-format -nostdlib -lgcc -mno-red-zone -O0 -mcmodel=kernel
+WALLOS_CXX_FLAGS ?= -ffreestanding -fno-rtti -g -Wall -Wextra -Wno-format -nostdlib -lgcc -mno-red-zone -O0 -mcmodel=kernel
 WALLOS_ASM_FLAGS ?=
 WALLOS_LD_FLAGS  ?=
 

@@ -4,23 +4,26 @@
 #include <multiboot.h>
 #include <stdbool.h>
 
+#ifdef __cplusplus
 extern "C" {
+#endif
 	extern struct multiboot_header header_start;
 
-	struct multiboot_info {
+	typedef struct {
 		uint32_t total_size;
 		uint32_t reserved;
 		struct multiboot_tag tags[0];
-	};
-	struct RSDP_t {
+	} multiboot_info;
+
+	typedef struct {
 		char signature[8];
 		uint8_t checksum;
 		char OEMID[6];
 		uint8_t revision;
 		uint32_t rsdtAddress;
-	} __attribute__((packed));
+	} RSDP_t __attribute__((packed));
 
-	struct XSDP_t {
+	typedef struct {
 		char signature[8];
 		uint8_t checksum;
 		char OEMID[6];
@@ -31,17 +34,21 @@ extern "C" {
 		uint64_t xsdtAddress;
 		uint8_t extendedChecksum;
 		uint8_t reserved[3];
-	} __attribute__((packed));
+	} XSDP_t __attribute__((packed));
 
 	typedef union {
 		RSDP_t* rsdp;
 		XSDP_t* xsdp;
 	} acpi_tag;
+#ifdef __cplusplus
 }
+#endif
 
 /**
  * @brief Manages the multiboot information provided by grub and other Multiboot2 compliant bootloaders.
  */
+#ifdef __cplusplus
+
 class MultibootManager {
 private:
 	static uint32_t magic;
@@ -66,4 +73,14 @@ public:
 
 multiboot_tag_bootdev* getBootDev();
 
+
+extern "C" {
 #endif
+
+	void* getAcpiRoot();
+
+#ifdef __cplusplus
+}
+#endif
+
+#endif // MULTIBOOT_HPP
