@@ -18,7 +18,7 @@
 #include <drivers/serial.h>
 
 #include <memory/physical_mem.hpp>
-#include <memory/virtual_mem.hpp>
+#include <memory/virtual_mem.h>
 #include <memory/kernel_alloc.h>
 
 #include <terminal/terminal.h>
@@ -85,34 +85,34 @@ extern "C" {
 	extern uint64_t kernel_end;
 }
 
-/* Tests for kalloc and physical/virtual mem
- *  int mem_alloc(int argc, char** argv) {
- * 	uintptr_t ptr = Memory::NewKernelPage();
- * 	Logger::infof("Virtual Addr:        0x%llx\n", ptr);
- * 	Logger::infof("KERNEL_VIRTUAL_BASE: 0x%llx\n", KERNEL_VIRTUAL_BASE);
- * 	Logger::infof("Physical:            0x%llx\n", Memory::VirtToPhysBase(ptr));
- * 	Logger::infof("Kernel end:          0x%llx\n", kernel_end);
- * 	Logger::infof("Kernel mapping end:  0x%llx\n", Memory::Info::getPhysKernelEnd());
- *
- * 	return 0;
- * }
+// Tests for kalloc and physical/virtual mem
+int mem_alloc(int argc, char** argv) {
+	uintptr_t ptr = Memory::NewKernelPage();
+	Logger::infof("Virtual Addr:        0x%llx\n", ptr);
+	Logger::infof("KERNEL_VIRTUAL_BASE: 0x%llx\n", KERNEL_VIRTUAL_BASE);
+	Logger::infof("Physical:            0x%llx\n", Memory::VirtToPhysBase(ptr));
+	Logger::infof("Kernel end:          0x%llx\n", kernel_end);
+	Logger::infof("Kernel mapping end:  0x%llx\n", Memory::Info::getPhysKernelEnd());
 
- * int testKalloc(int argc, char** argv) {
- * 	char* a = (char*) kalloc(12);
- * 	printf("Kalloc 64: 0x%llx\n", a);
- * 	memset(a, 0, 64);
- * 	a[0] = 'K';
- * 	a[1] = 'A';
- * 	a[2] = 'L';
- * 	a[3] = 'L';
- * 	a[4] = 'O';
- * 	a[5] = 'C';
- * 	a[6] = '\0';
- * 	printf("%s\n", a);
- * 	//kfree(a);
- * 	return 0;
- * }
- */
+	return 0;
+}
+
+int testKalloc(int argc, char** argv) {
+	char* a = (char*) kalloc(12);
+	printf("Kalloc 64: 0x%llx\n", a);
+	memset(a, 0, 64);
+	a[0] = 'K';
+	a[1] = 'A';
+	a[2] = 'L';
+	a[3] = 'L';
+	a[4] = 'O';
+	a[5] = 'C';
+	a[6] = '\0';
+	printf("%s\n", a);
+	kfree(a);
+	return 0;
+}
+
 #include <syscall/syscall.h>
 
 #pragma GCC diagnostic ignored "-Wunused-parameter" 
@@ -143,7 +143,7 @@ int syscall_command(int argc, char** argv) {
 void kernel_main(unsigned int magic, multiboot_info* mbt_info) {
 	initScreen();
 	init_serial();
-	printf_serial("Welcome to WallOS!");
+	printf_serial("Welcome to WallOS!\r\n");
 	Memory::initVirtualMemory();
 
 	MultibootManager::initialize(magic, mbt_info);
@@ -151,10 +151,21 @@ void kernel_main(unsigned int magic, multiboot_info* mbt_info) {
 	Features::checkFeatures(&f);
 	Features::enableFeatures();
 	initIDT();
+
+	printf_serial("Kernel Mapping End: 0x%llx\r\nRSDP ADDR: 0x%llx\r\n", Memory::GetMappingEnd(), MultibootManager::getACPI()->rsdp);
+
+
 	Memory::PhysicalMemInit();
 
+	acpi_tables();
+
+	__asm volatile("cli\n\thlt");
+
+	printf_serial("Physical kernel end: 0x%llx\r\n", Memory::Info::getPhysKernelEnd());
+
+
 	/* This is all framebuffer stuff.
-	 * I'm not in too much of a rush about it, it was just a fun experiement
+	 * I'm not in too much of a rush about it, it was just a fun experiment
 	 * multiboot_tag_framebuffer* e = MultibootManager::getFramebufferTag();
 	 * pixelwidth = e->common.framebuffer_bpp;
 	 * pitch = e->common.framebuffer_pitch;
@@ -187,8 +198,8 @@ void kernel_main(unsigned int magic, multiboot_info* mbt_info) {
 
 	// After we're done checking features, we need to set up our terminal.
 	// Eventually this will be a userspace program. 
-	//registerCommand((Command) { testKalloc, 0, "kalloc", 0, 0 });
-	//registerCommand((Command) { mem_alloc, 0, "mem_alloc", 0, 0 });
+	registerCommand((Command) { testKalloc, 0, "kalloc", 0, 0 });
+	registerCommand((Command) { mem_alloc, 0, "mem_alloc", 0, 0 });
 	registerCommand((Command) { acpi_command, 0, "acpi", 0, 0 });
 	registerCommand((Command) { syscall_command, 0, "syscall", 0, 0 });
 	registerCommand((Command) { bootdev_command, 0, "bootdev", 0, 0 });

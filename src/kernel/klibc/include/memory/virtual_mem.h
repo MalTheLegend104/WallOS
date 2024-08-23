@@ -66,12 +66,17 @@
 #define PDE_OFFSET  21ULL
 #define PTE_OFFSET  12ULL
 
+#ifdef __cplusplus
+
 namespace Memory {
 	void initVirtualMemory();
 
 	uintptr_t VirtToPhysBase(uintptr_t addr);
 	void MapPreAllocMem(uintptr_t addr);
 	void mapFramebuffer(uintptr_t base_addr, size_t size);
+	uintptr_t MapKernelLocation(uintptr_t addr, size_t len);
+	uintptr_t MapSequentialKernelPages(size_t pages);
+	uintptr_t MapSequentialKernelPages(size_t pages, uintptr_t base_addr);
 
 	void reserveMemory(uintptr_t base_addr, size_t size);
 
@@ -83,5 +88,16 @@ namespace Memory {
 
 	uintptr_t GetMappingEnd();
 }
+
+extern "C" {
+#endif //__cplusplus
+
+	// C mappings for Memory Namespace. 
+	// Try to keep this minimal, most of the kernel should be C++ anyway.
+	uintptr_t mapKernelLocation(uintptr_t addr, size_t len);
+
+#ifdef __cplusplus
+}
+#endif // __cplusplus
 
 #endif //VIRTUAL_MEM_HPP

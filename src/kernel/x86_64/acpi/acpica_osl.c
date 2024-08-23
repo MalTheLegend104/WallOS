@@ -37,7 +37,7 @@ UINT64 AcpiOsGetTimer(void) {
 }
 
 ACPI_STATUS AcpiOsPhysicalTableOverride(ACPI_TABLE_HEADER* existingTable, ACPI_PHYSICAL_ADDRESS* newAddress, UINT32* newTableLength) {
-	acpica_failure(__func__);
+	//acpica_failure(__func__);
 	return 0;
 }
 
@@ -99,25 +99,30 @@ ACPI_PHYSICAL_ADDRESS AcpiOsGetRootPointer() {
 }
 
 ACPI_STATUS AcpiOsPredefinedOverride(const ACPI_PREDEFINED_NAMES* PredefinedObject, ACPI_STRING* NewValue) {
-	acpica_failure(__func__);
+	// acpica_failure(__func__);
 	*NewValue = NULL;
 	return AE_OK;
 }
 
 ACPI_STATUS AcpiOsTableOverride(ACPI_TABLE_HEADER* ExistingTable, ACPI_TABLE_HEADER** NewTable) {
-	acpica_failure(__func__);
+	// acpica_failure(__func__);
 	*NewTable = NULL;
 	return AE_OK;
 }
 
+#include <drivers/serial.h>	
+#include <memory/virtual_mem.h>
 // Memory
 void* AcpiOsMapMemory(ACPI_PHYSICAL_ADDRESS PhysicalAddress, ACPI_SIZE Length) {
-	acpica_failure(__func__);
-	return NULL;
+	if (PhysicalAddress >= KERNEL_VIRTUAL_BASE) return PhysicalAddress; // It's already mapped.
+
+	printf_serial("\r\nMAP REQUEST:\r\n\tRequest PHYS: 0x%llx\r\n\tRequest LEN:  0x%llx\r\n", PhysicalAddress, Length);
+	return mapKernelLocation(PhysicalAddress, Length);
 }
 
 void AcpiOsUnmapMemory(void* where, ACPI_SIZE length) {
-	acpica_failure(__func__);
+	// I dont really care about unmapping right now. 
+	printf_serial("UNMAP:\r\n\tMem Addr: 0x%llx\r\n\tLen: 0x%llx\r\n", where, length);
 }
 
 ACPI_STATUS AcpiOsGetPhysicalAddress(void* LogicalAddress, ACPI_PHYSICAL_ADDRESS* PhysicalAddress) {
@@ -129,7 +134,7 @@ ACPI_STATUS AcpiOsGetPhysicalAddress(void* LogicalAddress, ACPI_PHYSICAL_ADDRESS
 
 void* AcpiOsAllocate(ACPI_SIZE Size) {
 	void* ptr = kalloc(Size);
-	logger(INFO, "ACPICA called OS Allocate for size: 0x%X. Returning pointer: 0x%X\n", Size, ptr);
+	logger(INFO, "ACPICA called OS Allocate for size: 0x%llx. Returning pointer: 0x%llx\n", Size, ptr);
 
 	return ptr;
 }
@@ -191,6 +196,7 @@ void AcpiOsStall(UINT32 Microseconds) {
 #include <memory/semaphore.h>
 
 ACPI_STATUS AcpiOsCreateSemaphore(UINT32 MaxUnits, UINT32 InitialUnits, ACPI_SEMAPHORE* OutHandle) {
+	printf_serial("ACPICA requested semaphore.\r\n");
 	if (OutHandle == NULL) {
 		return AE_BAD_PARAMETER;
 	}
@@ -210,6 +216,8 @@ ACPI_STATUS AcpiOsDeleteSemaphore(ACPI_SEMAPHORE Handle) {
 }
 
 ACPI_STATUS AcpiOsWaitSemaphore(ACPI_SEMAPHORE Handle, UINT32 Units, UINT16 Timeout) {
+	// TODO: remove this after testing.
+	return AE_OK;
 	if (Handle == NULL) return AE_BAD_PARAMETER;
 
 	uint64_t time = Timeout;
@@ -231,8 +239,6 @@ ACPI_STATUS AcpiOsSignalSemaphore(ACPI_SEMAPHORE Handle, UINT32 Units) {
 
 #include <memory/spinlock.h>
 ACPI_STATUS AcpiOsCreateLock(ACPI_SPINLOCK* OutHandle) {
-	if (OutHandle == NULL) return AE_BAD_PARAMETER;
-
 	spinlock_t* spinlock = spinlock_create();
 	if (spinlock == NULL) return AE_NO_MEMORY;
 

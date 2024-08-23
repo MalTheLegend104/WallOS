@@ -21,7 +21,7 @@ extern "C" {
 		char OEMID[6];
 		uint8_t revision;
 		uint32_t rsdtAddress;
-	} RSDP_t __attribute__((packed));
+	} __attribute__((packed)) RSDP_t;
 
 	typedef struct {
 		char signature[8];
@@ -34,7 +34,7 @@ extern "C" {
 		uint64_t xsdtAddress;
 		uint8_t extendedChecksum;
 		uint8_t reserved[3];
-	} XSDP_t __attribute__((packed));
+	} __attribute__((packed)) XSDP_t;
 
 	typedef union {
 		RSDP_t* rsdp;

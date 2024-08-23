@@ -5,7 +5,7 @@
 
 #include <klibc/kprint.h>
 #include <memory/kernel_alloc.h>
-#include <memory/virtual_mem.hpp>
+#include <memory/virtual_mem.h>
 
 
 #define SET_BIT(bitlist_entry, bit)   (bitlist_entry = bitlist_entry | (1 << (8 - bit)))

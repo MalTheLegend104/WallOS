@@ -24,6 +24,7 @@ semaphore_t* semaphore_create(int64_t max_count, int64_t initial_count) {
 }
 
 semaphore_status semaphore_wait(semaphore_t* sem, uint64_t units, uint64_t timeout) {
+	if (sem == NULL) return SEMAPHORE_FAILURE;
 	if (timeout == 0) timeout = UINT64_MAX;
 
 	uint64_t time = 0;

@@ -3,7 +3,7 @@
 #include <string.h>
 #include <klibc/logger.h>
 #include <klibc/multiboot.h>
-#include <memory/virtual_mem.hpp>
+#include <memory/virtual_mem.h>
 uint32_t MultibootManager::magic;
 multiboot_header* MultibootManager::header;
 multiboot_info* MultibootManager::mbt_info;
@@ -28,11 +28,12 @@ void copy_mmap(multiboot_tag_mmap* map) {
 	memcpy((void*) ((uint64_t) (&internal_mmap) - KERNEL_VIRTUAL_BASE), map, map->size);
 }
 
-void* getAcpiRoot() {
-	acpi_tag* acpi = MultibootManager::getACPI();
-	return acpi->rsdp;
-}
 
+static RSDP_t base_rsdp;
+
+void* getAcpiRoot() {
+	return &base_rsdp;
+}
 
 // See https://www.gnu.org/software/grub/manual/multiboot2/multiboot.html#Boot-information
 void MultibootManager::loadTags() {
@@ -94,6 +95,7 @@ void MultibootManager::loadTags() {
 				break;
 			case MULTIBOOT_TAG_TYPE_ACPI_OLD:
 				acpi->rsdp = (RSDP_t*) ((multiboot_tag_old_acpi*) tag)->rsdp;
+				memcpy(&base_rsdp, acpi->rsdp, sizeof(RSDP_t));
 				logExists("ACPI_OLD");
 				break;
 			case MULTIBOOT_TAG_TYPE_ACPI_NEW:

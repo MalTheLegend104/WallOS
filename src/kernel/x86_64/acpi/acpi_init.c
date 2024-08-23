@@ -9,12 +9,21 @@ void init_failure(const char* str) {
 	panic_sa(msg, 2);
 }
 
+#define ACPI_MAX_INIT_TABLES 16
+static ACPI_TABLE_DESC TableArray[ACPI_MAX_INIT_TABLES];
+
+#include <drivers/serial.h>
+
 void acpi_tables(void) {
 	ACPI_STATUS status;
-	status = AcpiInitializeTables(NULL, 16, FALSE);
+	status = AcpiInitializeTables(TableArray, ACPI_MAX_INIT_TABLES, FALSE);
 	if (ACPI_FAILURE(status)) {
+		printf_serial("Status: %d\r\n", status);
 		init_failure("Failed to initialize tables.");
 	}
+
+	logger(INFO, "Actually loaded tables.");
+	printf_serial("Successfully loaded tables.\r\n");
 
 	// Test example header.
 	ACPI_TABLE_HEADER* table;
@@ -25,7 +34,7 @@ void acpi_tables(void) {
 	} else {
 		// Parse the FADT table
 		ACPI_TABLE_FADT* fadt = (ACPI_TABLE_FADT*) table;
-		printf("FADT pointer addr: 0x%X\n", fadt);
+		printf("FADT pointer addr: 0x%llx\n", fadt);
 	}
 }
 
@@ -53,6 +62,6 @@ void initialize_acpi(void) {
 	} else {
 		// Parse the FADT table
 		ACPI_TABLE_FADT* fadt = (ACPI_TABLE_FADT*) table;
-		printf("FADT pointer addr: 0x%X\n", fadt);
+		printf("FADT pointer addr: 0x%llx\n", fadt);
 	}
 }

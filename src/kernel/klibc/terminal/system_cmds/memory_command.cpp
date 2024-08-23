@@ -7,7 +7,7 @@
 #include <klibc/kprint.h>
 #include <klibc/logger.h>
 #include <memory/physical_mem.hpp>
-#include <memory/virtual_mem.hpp>
+#include <memory/virtual_mem.h>
 
 #include <terminal/terminal.h>
 #include <terminal/commands/systemCommands.h>
