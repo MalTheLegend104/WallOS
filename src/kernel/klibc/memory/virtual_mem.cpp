@@ -362,7 +362,7 @@ uintptr_t Memory::MapSequentialKernelPages(size_t pages) {
 		// Each entry in a pde is a 2MB page.
 		// If I ever get around to 4KB pages, each pde contains 512 pte, each of which is 4kb pages
 
-		uint64_t pde_base_index = NULL;
+		uint64_t pde_base_index = 0;
 		size_t current_streak = 0;
 
 		// If the pde entry isn't present, we need to create a new pde or load one from disk
@@ -385,7 +385,7 @@ uintptr_t Memory::MapSequentialKernelPages(size_t pages) {
 					uintptr_t base_addr = Memory::PhysicalAlloc2MBSequential(pages);
 					if (!base_addr) panic_s("Out of physical memory.");
 
-					for (int k = 0; k < pages; k++) {
+					for (size_t k = 0; k < pages; k++) {
 						set_page_frame(&(pde_t[pde_base_index + k]), base_addr + (PAGE_2MB_SIZE * k));
 						pde_t[pde_base_index + k] |= BIT_SIZE | BIT_WRITE | BIT_PRESENT;
 					}
@@ -439,7 +439,7 @@ uintptr_t Memory::MapSequentialKernelPages(size_t pages, uintptr_t phys_base_add
 		// Each entry in a pde is a 2MB page.
 		// If I ever get around to 4KB pages, each pde contains 512 pte, each of which is 4kb pages
 
-		uint64_t pde_base_index = NULL;
+		uint64_t pde_base_index = 0;
 		size_t current_streak = 0;
 
 		// If the pde entry isn't present, we need to create a new pde or load one from disk
@@ -462,10 +462,10 @@ uintptr_t Memory::MapSequentialKernelPages(size_t pages, uintptr_t phys_base_add
 					uintptr_t base_addr = phys_base_addr;
 					if (!base_addr) {
 						// panic_s("Out of physical memory.");
-						return NULL;
+						return 0;
 					}
 
-					for (int k = 0; k < pages; k++) {
+					for (size_t k = 0; k < pages; k++) {
 						set_page_frame(&(pde_t[pde_base_index + k]), base_addr + (PAGE_2MB_SIZE * k));
 						pde_t[pde_base_index + k] |= BIT_SIZE | BIT_WRITE | BIT_PRESENT;
 					}
@@ -518,19 +518,19 @@ uintptr_t Memory::MapKernelLocation(uintptr_t addr, size_t len) {
 		page_count = (final_page_addr - base_page_addr) / PAGE_2MB_SIZE;
 	}
 
-	printf_serial("\tBase Page Addr: 0x%llx\r\n\tFinal Page Addr: 0x%llx\r\n\tBase Offset: 0x%llx\r\n", base_page_addr, final_page_addr, addr_offset);
+	// printf_serial("\tBase Page Addr: 0x%llx\r\n\tFinal Page Addr: 0x%llx\r\n\tBase Offset: 0x%llx\r\n", base_page_addr, final_page_addr, addr_offset);
 
 	uintptr_t phys_base_addr = Memory::PhysicalMarkAllocated(addr, len);
 	// We're going to assume we have access to the memory at this point.
 	// The only way it returns NULL is if it's reserved or already mapped, which we're just going to assume means we have access.
 
-	printf_serial("\tPhysical Base: 0x%llx\r\n", phys_base_addr);
+	// printf_serial("\tPhysical Base: 0x%llx\r\n", phys_base_addr);
 
 	// Now that the physical allocator knows we mapped it, we can tell the virtual manager to map it to the kernel address space.
 	uintptr_t allocated_addr = Memory::MapSequentialKernelPages(page_count, phys_base_addr);
-	if (allocated_addr == NULL) return NULL;
+	if (allocated_addr == 0) return allocated_addr;
 
-	printf_serial("\tAllocated Virtual: 0x%llx\r\n", allocated_addr + addr_offset);
+	// printf_serial("\tAllocated Virtual: 0x%llx\r\n", allocated_addr + addr_offset);
 
 	return (allocated_addr + addr_offset);
 }

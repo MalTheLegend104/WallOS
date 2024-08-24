@@ -27,10 +27,10 @@ char* strncpy(char* dest, const char* src, size_t n) {
 		return dest;
 	}
 
-	for (int i = 0; i < n; i++) {
+	for (size_t i = 0; i < n; i++) {
 		dest[i] = src[i];
 		if (src[i] == '\0') {
-			for (int j = i; j < n; j++) {
+			for (size_t j = i; j < n; j++) {
 				dest[j] = '\0';
 			}
 			break;

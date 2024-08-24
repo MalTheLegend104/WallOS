@@ -1,6 +1,8 @@
 #include <panic.h>
 #include <acpi.h>
 
+
+
 #include <actypes.h>
 
 #include <stdio.h>
@@ -9,6 +11,8 @@
 #include <stdarg.h>
 
 #include <klibc/logger.h>
+#include <drivers/serial.h>	
+#include <memory/virtual_mem.h>
 
 #pragma GCC diagnostic ignored "-Wunused-parameter" 
 
@@ -37,7 +41,7 @@ UINT64 AcpiOsGetTimer(void) {
 }
 
 ACPI_STATUS AcpiOsPhysicalTableOverride(ACPI_TABLE_HEADER* existingTable, ACPI_PHYSICAL_ADDRESS* newAddress, UINT32* newTableLength) {
-	//acpica_failure(__func__);
+	*newAddress = 0;
 	return 0;
 }
 
@@ -71,15 +75,20 @@ void AcpiOsWaitEventsComplete(void) {
 }
 
 void AcpiOsVprintf(const char* format, va_list args) {
+	set_colors(VGA_COLOR_GREEN, VGA_DEFAULT_BG);
 	vprintf(format, args);
+	set_to_last();
+	//vprintf_serial(format, args);
 }
 
 void AcpiOsPrintf(const char* format, ...) {
+	set_colors(VGA_COLOR_GREEN, VGA_DEFAULT_BG);
 	va_list arg;
 	va_start(arg, format);
 	vprintf(format, arg);
-	//ret = temp(format, arg);
+	//vprintf_serial(format, arg);
 	va_end(arg);
+	set_to_last();
 }
 
 ACPI_STATUS AcpiOsInitialize() {
@@ -95,7 +104,7 @@ ACPI_STATUS AcpiOsTerminate() {
 
 #include <klibc/multiboot.h>
 ACPI_PHYSICAL_ADDRESS AcpiOsGetRootPointer() {
-	return getAcpiRoot();
+	return (uintptr_t) getAcpiRoot();
 }
 
 ACPI_STATUS AcpiOsPredefinedOverride(const ACPI_PREDEFINED_NAMES* PredefinedObject, ACPI_STRING* NewValue) {
@@ -110,19 +119,17 @@ ACPI_STATUS AcpiOsTableOverride(ACPI_TABLE_HEADER* ExistingTable, ACPI_TABLE_HEA
 	return AE_OK;
 }
 
-#include <drivers/serial.h>	
-#include <memory/virtual_mem.h>
 // Memory
 void* AcpiOsMapMemory(ACPI_PHYSICAL_ADDRESS PhysicalAddress, ACPI_SIZE Length) {
-	if (PhysicalAddress >= KERNEL_VIRTUAL_BASE) return PhysicalAddress; // It's already mapped.
+	if (PhysicalAddress >= KERNEL_VIRTUAL_BASE) return (void*) PhysicalAddress; // It's already mapped.
 
-	printf_serial("\r\nMAP REQUEST:\r\n\tRequest PHYS: 0x%llx\r\n\tRequest LEN:  0x%llx\r\n", PhysicalAddress, Length);
-	return mapKernelLocation(PhysicalAddress, Length);
+	// printf_serial("\r\nMAP REQUEST:\r\n\tRequest PHYS: 0x%llx\r\n\tRequest LEN:  0x%llx\r\n", PhysicalAddress, Length);
+	return (void*) mapKernelLocation(PhysicalAddress, Length);
 }
 
 void AcpiOsUnmapMemory(void* where, ACPI_SIZE length) {
 	// I dont really care about unmapping right now. 
-	printf_serial("UNMAP:\r\n\tMem Addr: 0x%llx\r\n\tLen: 0x%llx\r\n", where, length);
+	// printf_serial("UNMAP:\r\n\tMem Addr: 0x%llx\r\n\tLen: 0x%llx\r\n", where, length);
 }
 
 ACPI_STATUS AcpiOsGetPhysicalAddress(void* LogicalAddress, ACPI_PHYSICAL_ADDRESS* PhysicalAddress) {
@@ -156,7 +163,7 @@ BOOLEAN AcpiOsWritable(void* Memory, ACPI_SIZE Length) {
 
 // Multithreading
 ACPI_THREAD_ID AcpiOsGetThreadId() {
-	logger(WARN, "ACPICA requested thread ID.\n");
+	printf_serial("[WARN] ACPICA requested ThreadID.\r\n");
 	return 1;
 }
 

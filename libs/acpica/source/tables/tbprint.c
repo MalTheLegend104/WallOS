@@ -264,7 +264,7 @@ AcpiTbPrintTableHeader(
             Header)->OemId, ACPI_OEM_ID_SIZE);
         AcpiTbFixString(LocalHeader.OemId, ACPI_OEM_ID_SIZE);
 
-        ACPI_INFO(("RSDP 0x%X%X %X (v%d %s)",
+        ACPI_INFO(("RSDP 0x%8.8X%8.8X %06X (v%.2d %-6.6s)",
             ACPI_FORMAT_UINT64(Address),
             (ACPI_CAST_PTR(ACPI_TABLE_RSDP, Header)->Revision > 0) ?
             ACPI_CAST_PTR(ACPI_TABLE_RSDP, Header)->Length : 20,
@@ -276,8 +276,8 @@ AcpiTbPrintTableHeader(
         AcpiTbCleanupTableHeader(&LocalHeader, Header);
 
         ACPI_INFO((
-            "%s 0x%X%X"
-            " %X (v%d %s %s %X %s %X)",
+            "%-4.4s 0x%8.8X%8.8X"
+            " %06X (v%.2d %-6.6s %-8.8s %08X %-4.4s %08X)",
             LocalHeader.Signature, ACPI_FORMAT_UINT64(Address),
             LocalHeader.Length, LocalHeader.Revision, LocalHeader.OemId,
             LocalHeader.OemTableId, LocalHeader.OemRevision,

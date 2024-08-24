@@ -22,8 +22,9 @@ void acpi_tables(void) {
 		init_failure("Failed to initialize tables.");
 	}
 
-	logger(INFO, "Actually loaded tables.");
+	set_colors(VGA_COLOR_GREEN, VGA_DEFAULT_BG);
 	printf_serial("Successfully loaded tables.\r\n");
+	set_to_last();
 
 	// Test example header.
 	ACPI_TABLE_HEADER* table;

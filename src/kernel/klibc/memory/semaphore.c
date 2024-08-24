@@ -7,7 +7,7 @@
 
 #include <system/timing.h>
 
-semaphore_t* semaphore_create(int64_t max_count, int64_t initial_count) {
+semaphore_t* semaphore_create(uint64_t max_count, uint64_t initial_count) {
 	if (initial_count > max_count) {
 		return NULL;  // Initial count cannot be greater than the max count
 	}
@@ -31,7 +31,7 @@ semaphore_status semaphore_wait(semaphore_t* sem, uint64_t units, uint64_t timeo
 
 	while (true) {
 		if (time >= timeout) return SEMAPHORE_TIMEOUT;
-		int32_t old_count = __atomic_load_n(&(sem->count), __ATOMIC_RELAXED);
+		uint64_t old_count = __atomic_load_n(&(sem->count), __ATOMIC_RELAXED);
 
 		// If the current count is greater than 0, try to decrement it
 		if (old_count > 0) {
@@ -50,7 +50,7 @@ semaphore_status semaphore_wait(semaphore_t* sem, uint64_t units, uint64_t timeo
 
 semaphore_status semaphore_signal(semaphore_t* sem, uint64_t units) {
 	while (true) {
-		int32_t old_count = __atomic_load_n(&(sem->count), __ATOMIC_RELAXED);
+		uint64_t old_count = __atomic_load_n(&(sem->count), __ATOMIC_RELAXED);
 
 		// Ensure we don't exceed the max count
 		if (old_count < sem->max_count) {

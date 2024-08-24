@@ -140,6 +140,108 @@ int syscall_command(int argc, char** argv) {
 	return ret;
 }
 
+void run_tests_builtin() {
+	int ret;
+	// Signed decimal integer
+	ret = printf("Signed Decimal: %d\n", -123);
+
+	// Unsigned decimal integer
+	ret = printf("Unsigned Decimal: %u\n", 123U);
+
+	// Unsigned octal
+	ret = printf("Unsigned Octal: %o\n", 123U);
+
+	// Unsigned hexadecimal (lowercase)
+	ret = printf("Unsigned Hex (lowercase): %x\n", 123U);
+
+	// Unsigned hexadecimal (uppercase)
+	ret = printf("Unsigned Hex (uppercase): %X\n", 123U);
+
+	// Decimal floating point (lowercase)
+	ret = printf("Float (lowercase): %f\n", 123.456);
+
+	// Decimal floating point (uppercase)
+	ret = printf("Float (uppercase): %F\n", 123.456);
+
+	// Scientific notation (lowercase)
+	ret = printf("Scientific (lowercase): %e\n", 123.456);
+
+	// Scientific notation (uppercase)
+	ret = printf("Scientific (uppercase): %E\n", 123.456);
+
+	// Shortest representation of floating point (lowercase)
+	ret = printf("Shortest Float (lowercase): %g\n", 123.456);
+
+	// Shortest representation of floating point (uppercase)
+	ret = printf("Shortest Float (uppercase): %G\n", 123.456);
+
+	// Hexadecimal floating point (lowercase)
+	ret = printf("Hexadecimal Float (lowercase): %a\n", 123.456);
+
+	// Hexadecimal floating point (uppercase)
+	ret = printf("Hexadecimal Float (uppercase): %A\n", 123.456);
+
+	// Character
+	ret = printf("Character: %c\n", 'A');
+
+	// String
+	ret = printf("String: %s\n", "Hello, World!");
+
+	// Pointer
+	int x = 42;
+	ret = printf("Pointer: %p\n", (void*) &x);
+
+//	// Number of characters written so far
+//	int chars_written;
+//	ret = printf("Number of Chars: %n", &chars_written);
+//	ret = printf("%d\n", chars_written);
+
+	ret = printf("Precision: \"%.5d\"\n", 123);
+
+	ret = printf("Width:     \"%5d\"\n", 123);
+
+	// Width and precision
+	ret = printf("Width and Precision: \"%10.2f\"\n", 123.456);
+
+	// Left-justified with width
+	ret = printf("Left-justified: \"%-10d\"\n", 123);
+
+	// Zero-padded with width
+	ret = printf("Zero-padded: \"%010d\"\n", 123);
+
+	// Plus sign for positive numbers
+	ret = printf("Plus sign: %+d\n", 123);
+
+	// Space for positive numbers
+	ret = printf("Space sign: % d\n", 123);
+
+	// Alternate form for octal
+	ret = printf("Alternate Octal: %#o\n", 123U);
+
+	// Alternate form for hexadecimal
+	ret = printf("Alternate Hex: %#X\n", 123U);
+
+	// Alternate form for floating point
+	ret = printf("Alternate Float: %#g\n", 123.0);
+
+	// Length modifiers
+	ret = printf("Short: %hd\n", (short) 123);
+
+	ret = printf("Long: %ld\n", (long) 123);
+
+	ret = printf("Long Long: %lld\n", (long long) 123);
+
+	ret = printf("Char: %hhd\n", (char) 123);
+
+	ret = printf("Intmax: %jd\n", (intmax_t) 123);
+
+	ret = printf("Size_t: %zd\n", (size_t) 123);
+
+	ret = printf("Ptrdiff_t: %td\n", (ptrdiff_t) 123);
+
+	ret = printf("Long Float: %Lf\n", (long double) 123.456);
+}
+
 void kernel_main(unsigned int magic, multiboot_info* mbt_info) {
 	initScreen();
 	init_serial();
@@ -157,9 +259,11 @@ void kernel_main(unsigned int magic, multiboot_info* mbt_info) {
 
 	Memory::PhysicalMemInit();
 
-	acpi_tables();
 
+	acpi_tables();
 	__asm volatile("cli\n\thlt");
+	run_tests_builtin();
+
 
 	printf_serial("Physical kernel end: 0x%llx\r\n", Memory::Info::getPhysKernelEnd());
 

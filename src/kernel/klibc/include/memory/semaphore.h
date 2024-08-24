@@ -8,8 +8,8 @@ extern "C" {
 #endif
 
 	typedef struct {
-		int64_t count;
-		int64_t max_count;
+		uint64_t count;
+		uint64_t max_count;
 	} semaphore_t;
 
 	typedef enum {
@@ -19,7 +19,7 @@ extern "C" {
 		SEMAPHORE_FAILURE,
 	} semaphore_status;
 
-	semaphore_t* semaphore_create(int64_t max_count, int64_t initial_count);
+	semaphore_t* semaphore_create(uint64_t max_count, uint64_t initial_count);
 	void semaphore_destroy(semaphore_t* sem);
 
 	semaphore_status semaphore_wait(semaphore_t* sem, uint64_t units, uint64_t timeout);

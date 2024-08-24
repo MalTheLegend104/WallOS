@@ -121,12 +121,12 @@ int time_command(int argc, char** argv) {
 			if (strcmp(argv[i], "--test-accuracy") == 0 || strcmp(argv[i], "-ta") == 0) {
 				// No arg
 				if (i + 1 >= argc) {
-					logger(ERROR, "Expected argument after %s.\n", argv[i]);
+					logger(ERROR, "Expected argument after %02d.\n", argv[i]);
 					return 0;
 				}
 				// Next arg isn't an int.
 				if (!is_int(argv[i + 1])) {
-					logger(ERROR, "Unexpected argument after %s: %s\n", argv[i], argv[i + 1]);
+					logger(ERROR, "Unexpected argument after %02d: %02d\n", argv[i], argv[i + 1]);
 					return 0;
 				}
 				int a = atoi(argv[i + 1]);
@@ -217,42 +217,30 @@ int time_command(int argc, char** argv) {
 
 	read_cmos_date(&month, &day, &year);
 	read_cmos_time(&hours, &minutes, &seconds);
-	char h[3];
-	char m[3];
-	char s[3];
-	char d[3];
-	char mo[3];
-	char y[5];
 	set_colors(VGA_COLOR_LIGHT_CYAN, VGA_DEFAULT_BG);
 	switch (current_time_format) {
 		case HOURS_12:
 			if (hours > 12) {
 				hours -= 12;
-				printf("%s:%s:%s PM ", format_int(h, 3, hours), format_int(m, 3, minutes), format_int(s, 3, seconds));
+				printf("%02d:%02d:%02d PM ", hours, minutes, seconds);
 			} else {
-				printf("%s:%s:%s AM ", format_int(h, 3, hours), format_int(m, 3, minutes), format_int(s, 3, seconds));
+				printf("%02d:%02d:%02d AM ", hours, minutes, seconds);
 			}
 			break;
 		default: // 24 Hour Clock
-			printf("%s:%s:%s ", format_int(h, 3, hours), format_int(m, 3, minutes), format_int(s, 3, seconds));
+			printf("%02d:%02d:%02d ", hours, minutes, seconds);
 			break;
 	}
 
 	switch (current_date_format) {
 		case DD_MM_YYYY:
-			printf("%s/%s/%s\n",
-				format_int(d, 3, day), format_int(mo, 3, month), format_int(y, 5, year)
-			);
+			printf("%02d/%02d/%02d\n", day, month, year);
 			break;
 		case MM_DD_YYYY:
-			printf("%s/%s/%s\n",
-				format_int(mo, 3, month), format_int(d, 3, day), format_int(y, 5, year)
-			);
+			printf("%02d/%02d/%02d\n", day, month, year);
 			break;
 		default: // YYYY-MM-DD
-			printf("%s-%s-%s\n",
-				format_int(y, 5, year), format_int(mo, 3, month), format_int(d, 3, day)
-			);
+			printf("%02d-%02d-%02d\n", day, month, year);
 			break;
 	}
 

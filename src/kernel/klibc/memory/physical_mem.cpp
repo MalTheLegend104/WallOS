@@ -239,7 +239,8 @@ uintptr_t Memory::PhysicalAlloc2MB() {
 uintptr_t Memory::PhysicalAlloc2MBSequential(size_t page_count) {
 	Block* base_block = NULL;
 	Block* last_block = NULL;
-	int current_streak = 0;
+	size_t current_streak = 0;
+
 	// First attempt, we check if last_allocated_block.next_block is free
 	if (last_allocated_block != NULL && last_allocated_block->next_block != NULL) {
 		base_block = last_block = last_allocated_block->next_block;
@@ -249,7 +250,7 @@ uintptr_t Memory::PhysicalAlloc2MBSequential(size_t page_count) {
 			last_allocated_block->free = false;
 			return (last_allocated_block->pointer);
 		} else {
-			for (int i = 0; i < page_count; i++) {
+			for (size_t i = 0; i < page_count; i++) {
 				if (last_block->next_block->free) {
 					last_block = last_block->next_block;
 					current_streak++;
@@ -280,7 +281,7 @@ uintptr_t Memory::PhysicalAlloc2MBSequential(size_t page_count) {
 				last_allocated_block->free = false;
 				return (last_allocated_block->pointer);
 			} else {
-				for (int i = 0; i < page_count; i++) {
+				for (size_t i = 0; i < page_count; i++) {
 					if (last_block->next_block->free) {
 						last_block = last_block->next_block;
 						current_streak++;
@@ -317,7 +318,7 @@ uintptr_t Memory::PhysicalAlloc2MBSequential(size_t page_count) {
 uintptr_t Memory::PhysicalMarkAllocated(uintptr_t addr, size_t len) {
 	uintptr_t base_page_addr = addr & ~0x1FFFFF; // Clear the lower bytes of the addr to get the base page pointer
 	uintptr_t final_page_addr = (addr + len) & ~0x1FFFFF; // Get the final base page pointer
-	int page_count = 1;
+	size_t page_count = 1;
 
 	// If the base and final are not the same, we need to set more than one page as used.
 	if (final_page_addr != base_page_addr) {
@@ -340,7 +341,7 @@ uintptr_t Memory::PhysicalMarkAllocated(uintptr_t addr, size_t len) {
 		current = current->next_block;
 	}
 
-	if (pages_marked == 0) return NULL;
+	if (pages_marked == 0) return 0;
 
 	return base_page_addr;
 }
