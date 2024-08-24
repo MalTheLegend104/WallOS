@@ -7,6 +7,7 @@ extern "C" {
 
 	void initialize_acpi(void);
 	void acpi_tables(void);
+	int acpi_command(int argc, char** argv);
 #ifdef __cplusplus
 }
 #endif

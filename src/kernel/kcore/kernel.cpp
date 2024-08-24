@@ -2,11 +2,13 @@
 #include <stdio.h>
 #include <string.h>
 
-#include <system/cpuid.h>
 #include <panic.h>
-#include <system/timing.h>
 #include <multiboot.h>
-#include <system/idt.h>
+
+#include <acpi/acpi_init.h>
+
+#include <drivers/keyboard.h>
+#include <drivers/serial.h>
 
 #include <klibc/kprint.h>
 #include <klibc/cpuid_calls.h>
@@ -14,12 +16,13 @@
 #include <klibc/features.hpp>
 #include <klibc/multiboot.h>
 
-#include <drivers/keyboard.h>
-#include <drivers/serial.h>
-
 #include <memory/physical_mem.hpp>
 #include <memory/virtual_mem.h>
 #include <memory/kernel_alloc.h>
+
+#include <system/idt.h>
+#include <system/cpuid.h>
+#include <system/timing.h>
 
 #include <terminal/terminal.h>
 
@@ -36,26 +39,6 @@
 extern "C" {
 	void kernel_main(unsigned int magic, multiboot_info* mbt_info);
 	void __cxa_pure_virtual() { }; // needed for pure virtual functions
-}
-
-#include <acpi/acpi_init.h>
-#pragma GCC diagnostic ignored "-Wunused-parameter" 
-int acpi_command(int argc, char** argv) {
-	acpi_tag* acpi = MultibootManager::getACPI();
-	RSDP_t* r = acpi->rsdp;
-	puts_vga_color("ACPI INFO:\n", VGA_COLOR_PINK, VGA_DEFAULT_BG);
-	set_colors(VGA_COLOR_PURPLE, VGA_DEFAULT_BG);
-	printf("\tSignature: ");
-	// The signature is not null terminated, but is guaranteed to be 8 characters long
-	for (int i = 0; i < 8; i++) {
-		putc_vga(r->signature[i]);
-	}
-	printf("\n\tOEM: %s\n", r->OEMID);
-	printf("\tAddress: 0x%x\n", r->rsdtAddress);
-	set_to_last();
-
-	acpi_tables();
-	return 0;
 }
 
 #pragma GCC diagnostic ignored "-Wunused-parameter" 
@@ -140,108 +123,6 @@ int syscall_command(int argc, char** argv) {
 	return ret;
 }
 
-void run_tests_builtin() {
-	int ret;
-	// Signed decimal integer
-	ret = printf("Signed Decimal: %d\n", -123);
-
-	// Unsigned decimal integer
-	ret = printf("Unsigned Decimal: %u\n", 123U);
-
-	// Unsigned octal
-	ret = printf("Unsigned Octal: %o\n", 123U);
-
-	// Unsigned hexadecimal (lowercase)
-	ret = printf("Unsigned Hex (lowercase): %x\n", 123U);
-
-	// Unsigned hexadecimal (uppercase)
-	ret = printf("Unsigned Hex (uppercase): %X\n", 123U);
-
-	// Decimal floating point (lowercase)
-	ret = printf("Float (lowercase): %f\n", 123.456);
-
-	// Decimal floating point (uppercase)
-	ret = printf("Float (uppercase): %F\n", 123.456);
-
-	// Scientific notation (lowercase)
-	ret = printf("Scientific (lowercase): %e\n", 123.456);
-
-	// Scientific notation (uppercase)
-	ret = printf("Scientific (uppercase): %E\n", 123.456);
-
-	// Shortest representation of floating point (lowercase)
-	ret = printf("Shortest Float (lowercase): %g\n", 123.456);
-
-	// Shortest representation of floating point (uppercase)
-	ret = printf("Shortest Float (uppercase): %G\n", 123.456);
-
-	// Hexadecimal floating point (lowercase)
-	ret = printf("Hexadecimal Float (lowercase): %a\n", 123.456);
-
-	// Hexadecimal floating point (uppercase)
-	ret = printf("Hexadecimal Float (uppercase): %A\n", 123.456);
-
-	// Character
-	ret = printf("Character: %c\n", 'A');
-
-	// String
-	ret = printf("String: %s\n", "Hello, World!");
-
-	// Pointer
-	int x = 42;
-	ret = printf("Pointer: %p\n", (void*) &x);
-
-//	// Number of characters written so far
-//	int chars_written;
-//	ret = printf("Number of Chars: %n", &chars_written);
-//	ret = printf("%d\n", chars_written);
-
-	ret = printf("Precision: \"%.5d\"\n", 123);
-
-	ret = printf("Width:     \"%5d\"\n", 123);
-
-	// Width and precision
-	ret = printf("Width and Precision: \"%10.2f\"\n", 123.456);
-
-	// Left-justified with width
-	ret = printf("Left-justified: \"%-10d\"\n", 123);
-
-	// Zero-padded with width
-	ret = printf("Zero-padded: \"%010d\"\n", 123);
-
-	// Plus sign for positive numbers
-	ret = printf("Plus sign: %+d\n", 123);
-
-	// Space for positive numbers
-	ret = printf("Space sign: % d\n", 123);
-
-	// Alternate form for octal
-	ret = printf("Alternate Octal: %#o\n", 123U);
-
-	// Alternate form for hexadecimal
-	ret = printf("Alternate Hex: %#X\n", 123U);
-
-	// Alternate form for floating point
-	ret = printf("Alternate Float: %#g\n", 123.0);
-
-	// Length modifiers
-	ret = printf("Short: %hd\n", (short) 123);
-
-	ret = printf("Long: %ld\n", (long) 123);
-
-	ret = printf("Long Long: %lld\n", (long long) 123);
-
-	ret = printf("Char: %hhd\n", (char) 123);
-
-	ret = printf("Intmax: %jd\n", (intmax_t) 123);
-
-	ret = printf("Size_t: %zd\n", (size_t) 123);
-
-	ret = printf("Ptrdiff_t: %td\n", (ptrdiff_t) 123);
-
-	ret = printf("Long Float: %Lf\n", (long double) 123.456);
-}
-
 void kernel_main(unsigned int magic, multiboot_info* mbt_info) {
 	initScreen();
 	init_serial();
@@ -305,5 +186,7 @@ void kernel_main(unsigned int magic, multiboot_info* mbt_info) {
 	registerCommand((Command) { acpi_command, 0, "acpi", 0, 0 });
 	registerCommand((Command) { syscall_command, 0, "syscall", 0, 0 });
 	registerCommand((Command) { bootdev_command, 0, "bootdev", 0, 0 });
+
+	__asm __volatile("\tcli\n\thlt");
 	terminalMain();
 }

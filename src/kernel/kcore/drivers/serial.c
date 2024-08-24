@@ -100,21 +100,21 @@ int print_string_serial(char* str, size_t precision, bool precision_specified, s
 	if (!left_justify) {
 		if (field_width && len < field_width) {
 			for (size_t i = 0; i < field_width - len; i++) {
-				os_putchar(' ');
+				write_serial(' ');
 			}
 		}
 	}
 
 	if (!precision_specified) {
 		while (*str != '\0') {
-			os_putchar(*str);
+			write_serial(*str);
 			str++;
 			amount++;
 		}
 	} else {
 		for (size_t i = 0; i < precision; i++) {
 			if (*str == '\0') break;
-			os_putchar(*str);
+			write_serial(*str);
 			str++;
 			amount++;
 		}
@@ -122,7 +122,7 @@ int print_string_serial(char* str, size_t precision, bool precision_specified, s
 
 	if (left_justify && field_width && amount < field_width) {
 		for (size_t i = amount; i < field_width; i++) {
-			os_putchar(' ');
+			write_serial(' ');
 		}
 	}
 
@@ -150,7 +150,6 @@ int print_wstring_serial(wchar_t* str, size_t precision, bool precision_specifie
 }
 
 size_t print_signed_int_serial(intmax_t value, base_type base, size_t precision, size_t field_width, size_t padding, bool left_justified, bool prepend_space, bool prepend_sign) {
-	printf("Value: %lld\n\tPre: %lld\tFW: %lld\tPad: %lld\tLeft: %lld\t\n", value, precision, field_width, padding, left_justified);
 	size_t written = 0;
 
 	if (precision > 19) precision = 19;
@@ -434,8 +433,6 @@ int vprintf_serial(const char* __restrict format, va_list list) {
 								// We have Regular and Long Double here.
 								// We just pretend long double doesn't exist.
 							default: {
-									printf("PS: %u - %llu\n", precision_specified, precision);
-
 									written += print_signed_int_serial((intmax_t) va_arg(list, int), BASE_DECIMAL, precision, field_width, padding, left_justified, prepend_space, prepend_sign);
 									break;
 								}
@@ -548,8 +545,6 @@ int vprintf_serial(const char* __restrict format, va_list list) {
 								}
 							default: break;
 						}
-
-						//printf("Value: %Lf", value);
 
 						written += print_float_serial(value, type, precision, field_width, padding, capital, alternate_form, left_justified);
 
@@ -758,13 +753,11 @@ int vprintf_serial(const char* __restrict format, va_list list) {
 					// Precision
 				case '.': {
 						current++;
-						printf("Current: %c", *current);
 
 						if (*current == '\0') break;
 
 						// If not one of these, it's supposed to be taken as 0
 						if (*current != '*' && *current != '-' && !(*current >= '0' && *current <= '9')) {
-							printf("- %c", *current);
 							precision = 0;
 							precision_specified = true;
 							current++;
@@ -781,9 +774,7 @@ int vprintf_serial(const char* __restrict format, va_list list) {
 						bool negative = false;
 						// The standard tells us to skip any negative precision.
 						while (*current == '-' || (*current >= '0' && *current <= '9')) {
-							printf("- %c", *current);
 							if (*current == '-') {
-								printf("- N:%u", negative);
 								negative = true;
 								precision = 0;
 							}
@@ -793,7 +784,6 @@ int vprintf_serial(const char* __restrict format, va_list list) {
 									current++;
 									continue;
 								}
-								printf("- PB:%u (%c)", precision_buf_index, *current);
 								precision_buf[precision_buf_index] = *current;
 								precision_buf[precision_buf_index + 1] = '\0';
 								precision_buf_index++;
@@ -805,7 +795,6 @@ int vprintf_serial(const char* __restrict format, va_list list) {
 							precision = (size_t) strtol(precision_buf, NULL, 10);
 							memset(precision_buf, 0, 3);
 						}
-						printf("- %u\n", precision);
 						precision_specified = true;
 						check_current = true;
 						break;
