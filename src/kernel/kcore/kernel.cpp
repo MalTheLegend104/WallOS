@@ -261,8 +261,6 @@ void kernel_main(unsigned int magic, multiboot_info* mbt_info) {
 
 
 	acpi_tables();
-	__asm volatile("cli\n\thlt");
-	run_tests_builtin();
 
 
 	printf_serial("Physical kernel end: 0x%llx\r\n", Memory::Info::getPhysKernelEnd());

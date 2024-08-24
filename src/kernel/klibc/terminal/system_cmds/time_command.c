@@ -237,10 +237,10 @@ int time_command(int argc, char** argv) {
 			printf("%02d/%02d/%02d\n", day, month, year);
 			break;
 		case MM_DD_YYYY:
-			printf("%02d/%02d/%02d\n", day, month, year);
+			printf("%02d/%02d/%02d\n", month, day, year);
 			break;
 		default: // YYYY-MM-DD
-			printf("%02d-%02d-%02d\n", day, month, year);
+			printf("%02d-%02d-%02d\n", year, month, day);
 			break;
 	}
 
