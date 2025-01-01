@@ -173,7 +173,7 @@ $(x86_64_C_OBJ): build/x86_64/%.o : src/kernel/x86_64/%.c
 $(IDT_C_OBJ): build/x86_64/%.o : src/kernel/x86_64/%.c
 	echo "Compiling IDT C      -> $<"
 	mkdir -p $(dir $@) && \
-	x86_64-elf-gcc -c $< -o $@ -mgeneral-regs-only $(LIBRARY_INCLUDES) -I $(x86_64_INCLUDE) -I $(KCORE_INCLUDE) -I $(KLIBC_INCLUDE) -I $(LIBC_INCLUDE) $(C_FLAGS) -D__is_kernel_
+	$(WALLOS_C_COMPILER) -c $< -o $@ -mgeneral-regs-only -I $(x86_64_INCLUDE) $(LIBRARY_INCLUDES) -I $(x86_64_INCLUDE) -I $(KCORE_INCLUDE) -I $(KLIBC_INCLUDE) -I $(LIBC_INCLUDE) $(C_FLAGS) -D__is_kernel_
 
 # ----------------------------------------------------
 # COMMANDS
