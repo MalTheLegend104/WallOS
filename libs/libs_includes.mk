@@ -3,7 +3,7 @@
 # $(CURDIR) is the location of where make is invoked (back a folder from this one.)
 # This means we have to include the "libs" folder even though we're already in it.
 
-ACPICA_INCLUDE_DIR  = -I"$(CURDIR)/libs/ACPICA/include"
+ACPICA_INCLUDE_DIR  = -I"$(CURDIR)/libs/acpica/include"
 ACPICA_LIB 			= -lacpica
 
 # APOLLO_INCLUDE_DIR  = -I"$(CURDIR)/libs/apollo/include"
