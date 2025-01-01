@@ -322,7 +322,15 @@ void kfree(void* ptr) {
 	}
 }
 
+#include <drivers/serial.h>
 void* kalloc(size_t bytes) {
+	if (bytes > PAGE_2MB_SIZE) {
+		// For stupidly large objects, we're just going to allocate consecutive blocks and return the base pointer.
+		// This cannot be freed properly. This will be properly handled later.
+		// The only object larger than 2MB that we allocate is the framebuffer right now, which is never freed anyway.
+		return (void*) Memory::MapSequentialKernelPages(((int) (bytes / PAGE_2MB_SIZE)) + 1);
+	}
+
 	size_t object_size = 2;
 	if (bytes % 8 == 0) object_size = 8;
 	else if (bytes % 4 == 0) object_size = 4;

@@ -10,6 +10,9 @@ extern "C" {
 	double         floor(double arg);
 	float          floorf(float arg);
 	long double    floorl(long double arg);
+	double 		   cos(double theta);
+	double 		   sin(double theta);
+	int 		   abs(int i);
 
 #ifdef __cplusplus
 }

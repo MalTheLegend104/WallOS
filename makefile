@@ -7,7 +7,10 @@ THIS_FILE := $(lastword $(MAKEFILE_LIST)) # useful for if the user tries to incl
 include libs/libs.mk
 
 # This is for qemu:
-ARGS ?= -m 5G
+ARGS ?= -m 5G -M hpet=on 
+# To add more devices, simply put them at any index 0-4, excluding 2.
+# Qemu mounts the cd drive at index 2 (secondary master drive)
+
 
 # These make it much easier to change things whenever we are finally self hosted.
 WALLOS_C_COMPILER 	:= x86_64-wallos-gcc
@@ -195,7 +198,7 @@ build: $(LIBC_OBJ) $(KLIBC_OBJ) $(KCORE_OBJ) $(x86_64_OBJ) $(IDT_C_OBJ)
 	echo "$(COLOR_CYAN)<--------------------------------------------------------->$(END_COLOR)"
 	mkdir -p dist/x86_64
 	echo "<---------------Linking--------------->"
-	$(WALLOS_LINKER) -n -o dist/x86_64/WallOS.bin -T targets/x86_64/linker.ld font.o $(LIBC_OBJ) $(KLIBC_OBJ) $(x86_64_OBJ) $(IDT_C_OBJ) $(LIBRARY_FLAGS) $(KCORE_OBJ)
+	$(WALLOS_LINKER) -n -o dist/x86_64/WallOS.bin -T targets/x86_64/linker.ld font.o $(LIBC_OBJ) $(KLIBC_OBJ) $(x86_64_OBJ) $(IDT_C_OBJ) $(KCORE_OBJ) $(LIBRARY_FLAGS)
 	echo "<------------Compiling ISO------------>"
 	cp dist/x86_64/WallOS.bin targets/x86_64/iso/boot/WallOS.bin && \
 	grub-mkrescue /usr/lib/grub/i386-pc -o dist/x86_64/WallOS.iso targets/x86_64/iso
@@ -209,7 +212,7 @@ ramfs:
 	cd src/ramfs && $(MAKE) && cd ../../
 	
 qemu: all
-	qemu-system-x86_64 -cdrom dist/x86_64/WallOS.iso -cpu max $(ARGS)
+	qemu-system-x86_64 -cdrom dist/x86_64/WallOS.iso  -cpu max $(ARGS)
 
 clean: libs_clean
 	rm -rf build && echo "$(COLOR_GREEN)Cleaned build folder$(END_COLOR)"

@@ -493,8 +493,8 @@ int vprintf(const char* restrict format, va_list list) {
 						}
 						break;
 					}
-					// All of these have the same unsigned base type.
-					// We just change a few values to the pass to print_unsigned_int
+				// All of these have the same unsigned base type.
+				// We just change a few values to the pass to print_unsigned_int
 				case 'u': // fallthrough
 				case 'o': // fallthrough
 				case 'x': // fallthrough
@@ -533,8 +533,8 @@ int vprintf(const char* restrict format, va_list list) {
 									written += print_unsigned_int(va_arg(list, uintmax_t), base, precision, field_width, padding, capital, alternate_form, left_justified);
 									break;
 								}
-								// I legit dont think I can even get a signed size_t to be platform independent.
-								// I'm just going to pass it through as signed and see what happens.
+							// I legit dont think I can even get a signed size_t to be platform independent.
+							// I'm just going to pass it through as signed and see what happens.
 							case TYPE_SIZE_T: {
 									written += print_unsigned_int((uintmax_t) va_arg(list, size_t), base, precision, field_width, padding, capital, alternate_form, left_justified);
 									break;

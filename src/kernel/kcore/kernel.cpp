@@ -123,6 +123,159 @@ int syscall_command(int argc, char** argv) {
 	return ret;
 }
 
+// Apollo is the name of a framebuffer library im working on.
+// It's private right now and this was a test to make sure that it worked in a freestanding environment
+// This code will be useful, so it's getting pushed to main. 
+// The actual framebuffer implementation will later be on a different branch.
+#ifdef APOLLO_TEST
+#include <apollo.h>
+#include <fonts/apollo_12x18.h>
+#include <drivers/framebuffer.h>
+
+coordinate_pair current = { 0, 0 };
+
+// void putc_apollo(const unsigned char c) {
+// 	if (c == '\0') return;
+// 	apollo_print_char()
+// }
+
+void pixel_serial(apollo_pixel_type type) {
+	switch (type) {
+		case APOLLO_PIXEL_TYPE_UNKNOWN:
+			printf_serial("Unknown Pixel Type");
+			break;
+		case APOLLO_PIXEL_TYPE_RGB32:
+			printf_serial("RGB 32-bit");
+			break;
+		case APOLLO_PIXEL_TYPE_RGBA32:
+			printf_serial("RGBA 32-bit");
+			break;
+		case APOLLO_PIXEL_TYPE_BGR32:
+			printf_serial("BGR 32-bit");
+			break;
+		case APOLLO_PIXEL_TYPE_BGRA32:
+			printf_serial("BGRA 32-bit");
+			break;
+		case APOLLO_PIXEL_TYPE_RGB16_565:
+			printf_serial("RGB 16-bit (5-6-5)");
+			break;
+		case APOLLO_PIXEL_TYPE_RGB16_555:
+			printf_serial("RGB 16-bit (5-5-5)");
+			break;
+		case APOLLO_PIXEL_TYPE_BGR16_565:
+			printf_serial("BGR 16-bit (5-6-5)");
+			break;
+		case APOLLO_PIXEL_TYPE_BGR16_555:
+			printf_serial("BGR 16-bit (5-5-5)");
+			break;
+		case APOLLO_PIXEL_TYPE_RGB24:
+			printf_serial("RGB 24-bit");
+			break;
+		case APOLLO_PIXEL_TYPE_BGR24:
+			printf_serial("BGR 24-bit");
+			break;
+		default:
+			printf_serial("Invalid Pixel Type");
+			break;
+	}
+}
+
+void framebuffer() {
+	multiboot_tag_framebuffer* e = MultibootManager::getFramebufferTag();
+
+	// Memory::mapFramebuffer((uintptr_t) fb_base, e->common.framebuffer_height * e->common.framebuffer_pitch);
+
+	if (e->common.framebuffer_type == 1) {
+		// TODO: actually get the pixel type.
+		framebuffer_info_t fb_info;
+		framebuffer_t fb;
+		print_fb_info();
+
+		apollo_get_info(&fb_info);
+
+		printf_serial("here\r\n");
+		printf_serial("Framebuffer Info:\r\n");
+		printf_serial("\tWidth: %i\r\n", fb_info.width);
+		printf_serial("\tHeight: %i\r\n", fb_info.height);
+		printf_serial("\tPitch: %i\r\n", fb_info.pitch);
+		printf_serial("\tPixel Width: %i\r\n\t", fb_info.pixel_width);
+		pixel_serial(fb_info.type);
+		printf_serial("\r\n");
+
+		printf_serial("Framebuffer total length: %llu bytes.\r\n", fb_info.height * fb_info.width * fb_info.pixel_width);
+
+		//fb.buffer = (uint8_t*) kalloc(fb_info.height * fb_info.width * fb_info.pixel_width);
+		fb.buffer = (uint8_t*) e->common.framebuffer_addr;
+
+		printf_serial("Double buffer location: %p\r\n", fb.buffer);
+
+		fb.info = &fb_info;
+
+		//apollo_color_t fg = { 0, 0xff, 0xff, 0xff, APOLLO_PIXEL_TYPE_ARGB8888 };
+		apollo_color_t fg = { 0, 0x1f, 0, 0x1f, APOLLO_PIXEL_TYPE_RGB16_565 };
+		apollo_color_t bg = { 0, 0, 0, 0, APOLLO_PIXEL_TYPE_RGBA32 };
+		apollo_font_color_t c = { fg, bg };
+
+		//apollo_print_char(&fb, &apollo_8x8, 'a', (coordinate_pair) { 0, 0 }, c);
+
+		uint8_t a[] = {
+			0x0A, 0xdb, 0xdb, 0xbb, 0x20, 0x20, 0x20, 0x20, 0xdb, 0xdb,
+			0xbb, 0x20, 0xdb, 0xdb, 0xdb, 0xdb, 0xdb, 0xbb, 0x20, 0xdb,
+			0xdb, 0xbb, 0x20, 0x20, 0x20, 0x20, 0x20, 0xdb, 0xdb, 0xbb,
+			0x20, 0x20, 0x20, 0x20, 0x20, 0x20, 0xdb, 0xdb, 0xdb, 0xdb,
+			0xdb, 0xdb, 0xbb, 0x20, 0xdb, 0xdb, 0xdb, 0xdb, 0xdb, 0xdb,
+			0xdb, 0xbb, 0x0a, 0xdb, 0xdb, 0xba, 0x20, 0x20, 0x20, 0x20,
+			0xdb, 0xdb, 0xba, 0xdb, 0xdb, 0xc9, 0xcd, 0xcd, 0xdb, 0xdb,
+			0xbb, 0xdb, 0xdb, 0xba, 0x20, 0x20, 0x20, 0x20, 0x20, 0xdb,
+			0xdb, 0xba, 0x20, 0x20, 0x20, 0x20, 0x20, 0xdb, 0xdb, 0xc9,
+			0xcd, 0xcd, 0xcd, 0xdb, 0xdb, 0xbb, 0xdb, 0xdb, 0xc9, 0xcd,
+			0xcd, 0xcd, 0xcd, 0xbc, 0x0a, 0xdb, 0xdb, 0xba, 0x20, 0xdb,
+			0xbb, 0x20, 0xdb, 0xdb, 0xba, 0xdb, 0xdb, 0xdb, 0xdb, 0xdb,
+			0xdb, 0xdb, 0xba, 0xdb, 0xdb, 0xba, 0x20, 0x20, 0x20, 0x20,
+			0x20, 0xdb, 0xdb, 0xba, 0x20, 0x20, 0x20, 0x20, 0x20, 0xdb,
+			0xdb, 0xba, 0x20, 0x20, 0x20, 0xdb, 0xdb, 0xba, 0xdb, 0xdb,
+			0xdb, 0xdb, 0xdb, 0xdb, 0xdb, 0xbb, 0x0a, 0xdb, 0xdb, 0xba,
+			0xdb, 0xdb, 0xdb, 0xbb, 0xdb, 0xdb, 0xba, 0xdb, 0xdb, 0xc9,
+			0xcd, 0xcd, 0xdb, 0xdb, 0xba, 0xdb, 0xdb, 0xba, 0x20, 0x20,
+			0x20, 0x20, 0x20, 0xdb, 0xdb, 0xba, 0x20, 0x20, 0x20, 0x20,
+			0x20, 0xdb, 0xdb, 0xba, 0x20, 0x20, 0x20, 0xdb, 0xdb, 0xba,
+			0xc8, 0xcd, 0xcd, 0xcd, 0xcd, 0xdb, 0xdb, 0xba, 0x0a, 0xc8,
+			0xdb, 0xdb, 0xdb, 0xc9, 0xdb, 0xdb, 0xdb, 0xc9, 0xbc, 0xdb,
+			0xdb, 0xba, 0x20, 0x20, 0xdb, 0xdb, 0xba, 0xdb, 0xdb, 0xdb,
+			0xdb, 0xdb, 0xdb, 0xdb, 0xbb, 0xdb, 0xdb, 0xdb, 0xdb, 0xdb,
+			0xdb, 0xdb, 0xbb, 0xc8, 0xdb, 0xdb, 0xdb, 0xdb, 0xdb, 0xdb,
+			0xc9, 0xbc, 0xdb, 0xdb, 0xdb, 0xdb, 0xdb, 0xdb, 0xdb, 0xba,
+			0x0a, 0x20, 0xc8, 0xcd, 0xcd, 0xbc, 0xc8, 0xcd, 0xcd, 0xbc,
+			0x20, 0xc8, 0xcd, 0xbc, 0x20, 0x20, 0xc8, 0xcd, 0xbc, 0xc8,
+			0xcd, 0xcd, 0xcd, 0xcd, 0xcd, 0xcd, 0xbc, 0xc8, 0xcd, 0xcd,
+			0xcd, 0xcd, 0xcd, 0xcd, 0xbc, 0x20, 0xc8, 0xcd, 0xcd, 0xcd,
+			0xcd, 0xcd, 0xbc, 0x20, 0xc8, 0xcd, 0xcd, 0xcd, 0xcd, 0xcd,
+			0xcd, 0xbc, 0x0a, '\0'
+		};
+
+		apollo_print_string(&fb, &apollo_12x18, (const char*) a, (coordinate_pair) { 0, 0 }, c, true, true);
+		coordinate_pair pair[] = {
+			{0, 0},
+			{100, 100},
+			{100, 150}
+		};
+
+		//apollo_draw_triangle(&fb, pair, fg);
+		//apollo_fill_buffer(&fb, fg);
+		apollo_draw_buffer(&fb);
+
+		//__asm __volatile("cli\n\thlt");
+
+	} else {
+		printf_serial("FRAMEBUFFER TYPE: %d -> UNKNOWN, LEADS TO PANIC.\r\n", e->common.framebuffer_type);
+		panic_s("Framebuffer of wrong type.");
+	}
+
+}
+#endif // APOLLO_TEST
+
+#include <drivers/sata/pio.h>
+
 void kernel_main(unsigned int magic, multiboot_info* mbt_info) {
 	initScreen();
 	init_serial();
@@ -137,15 +290,15 @@ void kernel_main(unsigned int magic, multiboot_info* mbt_info) {
 
 	printf_serial("Kernel Mapping End: 0x%llx\r\nRSDP ADDR: 0x%llx\r\n", Memory::GetMappingEnd(), MultibootManager::getACPI()->rsdp);
 
+	multiboot_tag_framebuffer* e = MultibootManager::getFramebufferTag();
+	Memory::mapFramebuffer((uintptr_t) e->common.framebuffer_addr, e->common.framebuffer_height * e->common.framebuffer_pitch);
+//	framebuffer_init();
 
 	Memory::PhysicalMemInit();
 
-
 	acpi_tables();
 
-
 	printf_serial("Physical kernel end: 0x%llx\r\n", Memory::Info::getPhysKernelEnd());
-
 
 	/* This is all framebuffer stuff.
 	 * I'm not in too much of a rush about it, it was just a fun experiment
@@ -170,12 +323,16 @@ void kernel_main(unsigned int magic, multiboot_info* mbt_info) {
 	 * print_logo_ssfn();
 	 */
 
+	detect_ide_drives();
+
 	// Things that need interrupts here (like keyboard, mouse, etc.)
 	// Everything that needs an IRQ should be done after the PIT as it messes with the mask
 	pit_init(1000);
 	keyboard_init();
 
 	initKernelAllocator();
+
+	//framebuffer();
 
 	Syscall::initialize();
 
@@ -186,7 +343,7 @@ void kernel_main(unsigned int magic, multiboot_info* mbt_info) {
 	registerCommand((Command) { acpi_command, 0, "acpi", 0, 0 });
 	registerCommand((Command) { syscall_command, 0, "syscall", 0, 0 });
 	registerCommand((Command) { bootdev_command, 0, "bootdev", 0, 0 });
+	registerCommand((Command) { get_drive_info, 0, "drive", 0, 0 });
 
-	__asm __volatile("\tcli\n\thlt");
 	terminalMain();
 }

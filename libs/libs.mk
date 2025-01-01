@@ -55,23 +55,23 @@ libs:
 	@echo "$(COLOR_CYAN)<--------------------------------------------------------->$(END_COLOR)"
 	@mkdir -p $(OUTPUT_DIR)
 	@for dir in libs/*/; do \
-		if [ "$$dir" = "$(OUTPUT_DIR)/" ]; then \
+		if [ "$$dir" = "libs/$(OUTPUT_DIR)/" ]; then \
         	continue; \
     	fi; \
 		dirname=$${dir%/}; \
 		if [ -f "$$dir/CMakeLists.txt" ]; then \
 			echo "$(COLOR_GREEN)Found CMake in $$dir. Building with CMake.$(END_COLOR)"; \
-			cd "$$dir" && mkdir -p build && cmake -B build . && cmake --build build; \
+			cd "$(CURDIR)/$$dir" && mkdir -p build && cmake -B build . && cmake --build build; \
             cd ..; \
 			echo "$(COLOR_MAGENTA)Finished with $$dirname.$(END_COLOR)"; \
-		elif [ -f "$$dir/makefile" ]; then \
+		elif [ -f "$(CURDIR)/$$dirname/makefile" ]; then \
 			echo "$(COLOR_GREEN)Found makefile in $$dir. Building with Make.$(END_COLOR)"; \
-			cd "$$dir" && $(MAKE); \
+			cd "$(CURDIR)/$$dir" && $(MAKE); \
 			cd ..; \
 			echo "$(COLOR_MAGENTA)Finished with $$dirname.$(END_COLOR)"; \
 		elif [ -f "$$dir/meson.build" ]; then \
 			echo "$(COLOR_GREEN)Found meson.build in $$dir. Building with Meson.$(END_COLOR)"; \
-			cd "$$dir" && meson setup build && cd build && ninja; \
+			cd "$(CURDIR)/$$dir" && meson setup build && cd build && ninja; \
 			cd ../..; \
 			echo "$(COLOR_MAGENTA)Finished with $$dirname.$(END_COLOR)"; \
 		else \

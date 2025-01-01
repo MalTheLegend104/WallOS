@@ -26,9 +26,10 @@ mb2_tag_fb_start:
 	; type 1 results in  1024x768x32bit color framebuffer type 1 in qemu and bochs (totally didn't manually comb through hex to figure this out)
 	dw 1	
 	dd mb2_tag_fb_end - mb2_tag_fb_start
-	dd 0
-	dd 0
-    dd 0
+	dd 640 ; width in pixels
+	dd 480 ; height in pixels
+    dd 16 ; bpp
+	; It's not guaranteed to give us the framebuffer we want.
 mb2_tag_fb_end:
 %endif
 
