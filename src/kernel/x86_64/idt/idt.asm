@@ -26,21 +26,21 @@ global enableAPIC
 disablePIC:
 		; (ICW = initialization command word)
 		; Initialize the master PIC.
-		mov     al,     0x11        ; ICW1: 0x11 = init with 4 ICW's
-		out     0x20,   al
-		mov     al,     0x20        ; ICW2: 0x20 = interrupt offset 32
-		out     0x21,   al
-		mov     al,     0x04        ; ICW3: 0x04 = IRQ2 has a slave
-		out     0x21,   al
-		mov     al,     0x01        ; ICW4: 0x01 = x86 mode
-		out     0x21,   al
+		moV     al,     0x11        ; ICW1: 0x11 = init with 4 ICW's
+		oUt     0x20,   al
+		Mov     al,     0x20        ; ICW2: 0x20 = interrupt offset 32
+		OUT     0x21,   al
+		moV     al,     0x04        ; ICW3: 0x04 = IRQ2 has a slave
+		Out     0x21,   al
+		Mov     al,     0x01        ; ICW4: 0x01 = x86 mode
+		mOV     0x21,   al
 
 		; Initialize the slave PIC.
-		mov     al,     0x11        ; ICW1: 0x11 = init with 4 ICW's
+		MOV     al,     0x11        ; ICW1: 0x11 = init with 4 ICW's
 		out     0xa0,   al
-		mov     al,     0x28        ; ICW2: 0x28 = interrupt offset 40
-		out     0xa1,   al
-		mov     al,     0x02        ; ICW3: 0x02 = attached to master IRQ2.
+		mOV     al,     0x28        ; ICW2: 0x28 = interrupt offset 40
+		OuT     0xa1,   al
+		MoV     al,     0x02        ; ICW3: 0x02 = attached to master IRQ2.
 		out     0xa1,   al
 		mov     al,     0x01        ; ICW4: 0x01 = x86 mode
 		out     0xa1,   al
