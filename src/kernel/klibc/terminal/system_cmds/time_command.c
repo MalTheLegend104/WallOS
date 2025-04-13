@@ -27,13 +27,12 @@ bool is_int(const char* str) {
 		return false;
 	}
 
-	// Check each character of the string.
+	// Check each character of the string to make sure it's base 10.
 	while (*str != '\0') {
 		if (*str < '0' || *str > '9') {
-			// If the character is not a digit (0-9), the string is not a base 10 integer.
 			return false;
 		}
-		str++; // Move to the next character in the string.
+		str++;
 	}
 
 	// If all characters are valid digits, the string is a base 10 integer.
@@ -51,27 +50,28 @@ void read_cmos_time(uint8_t* hours, uint8_t* minutes, uint8_t* seconds) {
 	// Wait for any previous update in progress to complete
 	uint8_t prev_status;
 	do {
-		outb(0x70, 0x0A);
-		prev_status = inb(0x71);
+		outb(CMOS_OUT_PORT, CMOS_STATUS_A);
+		prev_status = inb(CMOS_IN_PORT);
 	} while (prev_status & 0x80);
 
 	// Read the time from CMOS registers
-	outb(0x70, 0x04); // CMOS register index 0x04 stores the current hour
-	*hours = inb(0x71);
+	outb(CMOS_OUT_PORT, CMOS_HOURS);
+	*hours = inb(CMOS_IN_PORT);
 
-	outb(0x70, 0x02); // CMOS register index 0x02 stores the current minutes
-	*minutes = inb(0x71);
+	outb(CMOS_OUT_PORT, CMOS_MINUTES);
+	*minutes = inb(CMOS_IN_PORT);
 
-	outb(0x70, 0x00); // CMOS register index 0x00 stores the current seconds
-	*seconds = inb(0x71);
+	outb(CMOS_OUT_PORT, CMOS_SECONDS);
+	*seconds = inb(CMOS_IN_PORT);
+
+	// Enable interrupts again
+	// This is here to minimize time spent without interrupts.
+	asm volatile("sti");
 
 	// Convert BCD to binary
 	*hours = bcd_to_binary(*hours);
 	*minutes = bcd_to_binary(*minutes);
 	*seconds = bcd_to_binary(*seconds);
-
-	// Enable interrupts again
-	asm volatile("sti");
 }
 
 // Function to read the current date from CMOS
@@ -83,22 +83,25 @@ void read_cmos_date(uint8_t* day, uint8_t* month, uint16_t* year) {
 	// Wait for any previous update in progress to complete
 	uint8_t prev_status;
 	do {
-		outb(0x70, 0x0A);
-		prev_status = inb(0x71);
+		outb(CMOS_OUT_PORT, CMOS_STATUS_A);
+		prev_status = inb(CMOS_IN_PORT);
 	} while (prev_status & 0x80);
 
 	// Read the date from CMOS registers
-	outb(0x70, 0x07); // CMOS register index 0x07 stores the current day of the month
-	*day = inb(0x71);
+	outb(CMOS_OUT_PORT, CMOS_DAY);
+	*day = inb(CMOS_IN_PORT);
 
-	outb(0x70, 0x08); // CMOS register index 0x08 stores the current month
-	*month = inb(0x71);
+	outb(CMOS_OUT_PORT, CMOS_MONTH);
+	*month = inb(CMOS_IN_PORT);
 
-	outb(0x70, 0x09); // CMOS register index 0x09 stores the current year (last two digits)
-	uint8_t low_year = inb(0x71);
+	outb(CMOS_OUT_PORT, CMOS_YEAR); // CMOS register index 0x09 stores the current year (last two digits)
+	uint8_t low_year = inb(CMOS_IN_PORT);
 
-	outb(0x70, 0x32); // CMOS register index 0x32 stores the current century
-	uint8_t century = inb(0x71);
+	outb(CMOS_OUT_PORT, CMOS_CENTURY);
+	uint8_t century = inb(CMOS_IN_PORT);
+
+	// Enable interrupts again
+	asm volatile("sti");
 
 	// Convert BCD to binary
 	*day = bcd_to_binary(*day);
@@ -110,9 +113,6 @@ void read_cmos_date(uint8_t* day, uint8_t* month, uint16_t* year) {
 
 	// Combine the century and the year digits to get the full year
 	*year = (uint16_t) (current_century + low_year);
-
-	// Enable interrupts again
-	asm volatile("sti");
 }
 
 int time_command(int argc, char** argv) {
@@ -215,7 +215,7 @@ int time_command(int argc, char** argv) {
 	uint8_t hours, minutes, seconds, day, month;
 	uint16_t year;
 
-	read_cmos_date(&month, &day, &year);
+	read_cmos_date(&day, &month, &year);
 	read_cmos_time(&hours, &minutes, &seconds);
 	set_colors(VGA_COLOR_LIGHT_CYAN, VGA_DEFAULT_BG);
 	switch (current_time_format) {

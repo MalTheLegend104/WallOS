@@ -11,7 +11,7 @@
 #include <memory/virtual_mem.h>
 
 #include <terminal/terminal.h>
-#include <terminal/commands/systemCommands.h>
+#include <terminal/commands/system_commands.h>
 
 extern "C" {
 	extern uint64_t kernel_end;

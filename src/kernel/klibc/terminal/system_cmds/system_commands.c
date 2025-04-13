@@ -1,5 +1,5 @@
 #include <terminal/terminal.h>
-#include <terminal/commands/systemCommands.h>
+#include <terminal/commands/system_commands.h>
 #include <stdio.h>
 #include <klibc/kprint.h>
 #include <stdlib.h>
