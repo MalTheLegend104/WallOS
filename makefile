@@ -8,9 +8,11 @@ include libs/libs.mk
 
 # This is for qemu:
 ARGS ?= -m 5G -M hpet=on 
-# To add more devices, simply put them at any index 0-4, excluding 2.
+# To add more devices, simply put them at any index 0-3, excluding 2.
 # Qemu mounts the cd drive at index 2 (secondary master drive)
-
+ARGS += -drive file=hda.img,if=ide,media=disk,index=0 \
+		-drive file=hda2.img,if=ide,media=disk,index=1 \
+		-drive file=hda3.img,if=ide,media=disk,index=3
 
 # These make it much easier to change things whenever we are finally self hosted.
 WALLOS_C_COMPILER 	:= x86_64-wallos-gcc
