@@ -766,6 +766,7 @@ int vprintf(const char* restrict format, va_list list) {
 						if (!invalid) {
 							padding = (int) strtol(padding_buf, NULL, 10);
 							memset(padding_buf, 0, 3);
+							padding_index = 0;
 						}
 
 						check_current = true;
@@ -802,6 +803,7 @@ int vprintf(const char* restrict format, va_list list) {
 
 						field_width = (int) strtol(field_width_buf, NULL, 10);
 						memset(field_width_buf, 0, 3);
+						field_width_index = 0;
 
 						check_current = true;
 						break;
@@ -850,6 +852,7 @@ int vprintf(const char* restrict format, va_list list) {
 						if (!negative && !param) {
 							precision = (int) strtol(precision_buf, NULL, 10);
 							memset(precision_buf, 0, 3);
+							precision_buf_index = 0;
 						}
 
 						precision_specified = true;
