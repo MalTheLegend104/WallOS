@@ -7,8 +7,8 @@ debug=false
 
 strip_debug() {
 	cd ../dist/x86_64
-	x86_64-elf-objcopy --only-keep-debug WallOS.bin WallOS.sym
-	x86_64-elf-objcopy --strip-debug WallOS.bin
+	x86_64-wallos-objcopy --only-keep-debug WallOS.bin WallOS.sym
+	x86_64-wallos-objcopy --strip-debug WallOS.bin
 	cd ../../scripts
 }
 
@@ -27,7 +27,7 @@ run_default () {
 
 run_with_debug () {
 	cd ../
-	make build DEBUG_SYMBOLS="-g"
+	make all DEBUG_SYMBOLS="-g" -j $(nproc)
 	cd scripts
 	strip_debug
 	echo -e "<------------Running QEMU------------->"
@@ -44,7 +44,7 @@ run_native () {
 
 run_native_db () {
 	cd ../
-	make build DEBUG_SYMBOLS="-g"
+	make all DEBUG_SYMBOLS="-g" -j $(nproc)
 	cd scripts
 	strip_debug
 	echo -e "<------------Running QEMU------------->"

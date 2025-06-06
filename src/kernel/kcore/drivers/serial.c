@@ -64,7 +64,6 @@ void write_string_serial(char* str) {
 // it outputs to. im too lazy rn.
 // ------------------------------------------------------------------------------------------------
 // ------------------------------------------------------------------------------------------------
-
 #include <stdio.h>
 #include <stdarg.h>
 #include <stdbool.h>
@@ -149,6 +148,111 @@ int print_wstring_serial(wchar_t* str, size_t precision, bool precision_specifie
 	return amount;
 }
 
+size_t int_to_string_serial(intmax_t value, int base, char* buf, size_t buflen) {
+	if (buflen == 0 || buflen == 1) return 0;
+	if (base < 0 || base > 36) return 0;
+
+	int negative = 0;
+	size_t index = 0;
+
+	char temp[24];
+
+	if (value == 0) {
+		buf[0] = '0';
+		buf[1] = '\0';
+		return 1;
+	}
+
+	bool int_min = value == INTMAX_MIN;
+
+	// INTMAX_MIN is really annoying. It's hard to work with, so we're using a janky workaround.
+	// We're going to take away 1, convert it like normal, then decrease the final result by 1.
+	// This *should* work in all bases, but printf_serial only does base 10 for signed ints.
+	if (int_min) {
+		value += 1;
+	}
+
+	if (value < 0 && base == 10) {
+		value = -value;
+		negative = 1;
+	}
+
+	const char digits[] = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+
+	while (value != 0 && index < (buflen - (1 + negative))) {
+		temp[index] = digits[value % base];
+		index++;
+		value /= base;
+	}
+
+	// Correct the last digit on int min
+	if (int_min) {
+		if (index == 0 || temp[0] == digits[base - 1]) {
+			return 0; // This should never happen, I just want to be sure.
+		}
+		temp[0] += 1;
+	}
+
+	if (negative) {
+		if (index >= buflen) return 0; // This should never happen, I just want to be sure.
+		temp[index] = '-';
+		index++;
+	}
+
+	for (size_t j = 0; j < index; ++j) {
+		buf[j] = temp[index - j - 1];
+	}
+	buf[index] = '\0';
+
+	return index;
+}
+
+size_t uint_to_string_serial(uintmax_t value, int base, char* buf, size_t buflen, bool capital) {
+	if (buflen == 0 || buflen == 1) return 0;
+	if (base < 2 || base > 36) return 0;
+
+	size_t index = 0;
+	char temp[24];
+
+	if (value == 0) {
+		if (buflen < 2) return 0;
+		buf[0] = '0';
+		buf[1] = '\0';
+		return 1;
+	}
+
+	const char* digits;
+
+	if (!capital) {
+		digits = "0123456789abcdefghijklmnopqrstuvwxyz";
+	} else {
+		digits = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+	}
+
+	// Convert the number to the specified base
+	while (value != 0 && index < (buflen - 1)) {
+		temp[index++] = digits[value % base];
+		value /= base;
+	}
+
+	// This should never happen. I still want to check.
+	if (index >= buflen) return 0;
+
+	// Reverse the string and copy it to the buffer
+	for (size_t j = 0; j < index; ++j) {
+		buf[j] = temp[index - j - 1];
+	}
+	buf[index] = '\0';
+
+	return index;
+}
+
+void shift_right_serial(char* buf, size_t buflen) {
+	for (size_t i = buflen - 1; i > 0; i--) {
+		buf[i] = buf[i - 1];
+	}
+}
+
 size_t print_signed_int_serial(intmax_t value, base_type base, size_t precision, size_t field_width, size_t padding, bool left_justified, bool prepend_space, bool prepend_sign) {
 	size_t written = 0;
 
@@ -168,9 +272,9 @@ size_t print_signed_int_serial(intmax_t value, base_type base, size_t precision,
 
 	size_t length = 0;
 	if ((prepend_space || prepend_sign) && value > 0) {
-		length += int_to_string(value, base, buf + 1, 20);
+		length += int_to_string_serial(value, base, buf + 1, 20);
 	} else {
-		length += int_to_string(value, base, buf, 21);
+		length += int_to_string_serial(value, base, buf, 21);
 	}
 
 	// We now have the value in buf. We need to worry about padding and stuff now.
@@ -180,7 +284,7 @@ size_t print_signed_int_serial(intmax_t value, base_type base, size_t precision,
 	// If length is greater than precision, we dont care.
 	if (length < precision) {
 		for (size_t i = length; i < precision; i++) {
-			shift_right(buf, sizeof(buf));
+			shift_right_serial(buf, sizeof(buf));
 			buf[0] = '0';
 			length++;
 		}
@@ -196,7 +300,7 @@ size_t print_signed_int_serial(intmax_t value, base_type base, size_t precision,
 			buf[padding] = '\0';
 		} else {
 			for (size_t i = length; i < padding; i++) {
-				shift_right(buf, sizeof(buf));
+				shift_right_serial(buf, sizeof(buf));
 				buf[0] = '0';
 				length++;
 			}
@@ -234,14 +338,14 @@ size_t print_unsigned_int_serial(uintmax_t value, base_type base, size_t precisi
 		}
 		written += 2;
 
-		length += uint_to_string(value, base, buf + 2, sizeof(buf) - 2, captial);
+		length += uint_to_string_serial(value, base, buf + 2, sizeof(buf) - 2, captial);
 	} else if (alternate && base == BASE_OCTAL) {
 		buf[0] = '0';
 		written += 2;
 
-		length += uint_to_string(value, base, buf + 1, sizeof(buf) - 1, captial);
+		length += uint_to_string_serial(value, base, buf + 1, sizeof(buf) - 1, captial);
 	} else {
-		length += uint_to_string(value, base, buf, sizeof(buf), captial);
+		length += uint_to_string_serial(value, base, buf, sizeof(buf), captial);
 	}
 
 	// We now have the value in buf. We need to worry about padding and stuff now.
@@ -251,7 +355,7 @@ size_t print_unsigned_int_serial(uintmax_t value, base_type base, size_t precisi
 	// If length is greater than precision, we dont care.
 	if (length < precision) {
 		for (size_t i = length; i < precision; i++) {
-			shift_right(buf, sizeof(buf));
+			shift_right_serial(buf, sizeof(buf));
 			buf[0] = '0';
 			length++;
 		}
@@ -267,7 +371,7 @@ size_t print_unsigned_int_serial(uintmax_t value, base_type base, size_t precisi
 			buf[padding] = '\0';
 		} else {
 			for (size_t i = length; i < padding; i++) {
-				shift_right(buf, sizeof(buf));
+				shift_right_serial(buf, sizeof(buf));
 				buf[0] = '0';
 				length++;
 			}
@@ -289,7 +393,7 @@ typedef enum {
 // https://www.exploringbinary.com/quick-and-dirty-floating-point-to-decimal-conversion/
 // I modified it to use "value" instead of fp, and added checks for NAN and INFINITY
 // Most of the rest of it is the same.
-// This printf is really only for internal kernel (and serial) purposes, so I don't really care about floats.
+// This printf_serial is really only for internal kernel (and serial) purposes, so I don't really care about floats.
 // I wanted something small that would output something that was in the ballpark of a double's value.
 #pragma GCC diagnostic ignored "-Wunused-parameter"
 int print_float_serial(long double value, float_type base, size_t precision, size_t field_width, size_t padding, bool captial, bool alternate, bool left_justified) {
@@ -331,14 +435,18 @@ int print_float_serial(long double value, float_type base, size_t precision, siz
 
 	conversion[charCount] = '\0'; //String terminator
 	print_string_serial(conversion, 0, false, field_width, left_justified);
+
 end:
 	return charCount;
 }
 
-extern float_type calculate_float_shortest(long double value);
+float_type calculate_float_shortest_serial(long double value) {
+
+	return 0;
+}
 
 /* Writes the results to the output stream stdout. */
-int printf_serial(const char* __restrict format, ...) {
+int printf_serial(const char* restrict format, ...) {
 	va_list arg;
 	int ret;
 	va_start(arg, format);
@@ -347,7 +455,7 @@ int printf_serial(const char* __restrict format, ...) {
 	return ret;
 }
 
-int vprintf_serial(const char* __restrict format, va_list list) {
+int vprintf_serial(const char* restrict format, va_list list) {
 	const char* current = format;
 	size_t written = 0;
 
@@ -439,8 +547,8 @@ int vprintf_serial(const char* __restrict format, va_list list) {
 						}
 						break;
 					}
-					// All of these have the same unsigned base type.
-					// We just change a few values to the pass to print_unsigned_int_serial
+				// All of these have the same unsigned base type.
+				// We just change a few values to the pass to print_unsigned_int_serial
 				case 'u': // fallthrough
 				case 'o': // fallthrough
 				case 'x': // fallthrough
@@ -479,8 +587,8 @@ int vprintf_serial(const char* __restrict format, va_list list) {
 									written += print_unsigned_int_serial(va_arg(list, uintmax_t), base, precision, field_width, padding, capital, alternate_form, left_justified);
 									break;
 								}
-								// I legit dont think I can even get a signed size_t to be platform independent.
-								// I'm just going to pass it through as signed and see what happens.
+							// I legit dont think I can even get a signed size_t to be platform independent.
+							// I'm just going to pass it through as signed and see what happens.
 							case TYPE_SIZE_T: {
 									written += print_unsigned_int_serial((uintmax_t) va_arg(list, size_t), base, precision, field_width, padding, capital, alternate_form, left_justified);
 									break;
@@ -541,10 +649,12 @@ int vprintf_serial(const char* __restrict format, va_list list) {
 
 							case 'g': capital = true; // fallthrough
 							case 'G': {
-									type = calculate_float_shortest(value);
+									type = calculate_float_shortest_serial(value);
 								}
 							default: break;
 						}
+
+						//printf_serial("Value: %Lf", value);
 
 						written += print_float_serial(value, type, precision, field_width, padding, capital, alternate_form, left_justified);
 
@@ -710,6 +820,7 @@ int vprintf_serial(const char* __restrict format, va_list list) {
 						if (!invalid) {
 							padding = (int) strtol(padding_buf, NULL, 10);
 							memset(padding_buf, 0, 3);
+							padding_index = 0;
 						}
 
 						check_current = true;
@@ -746,6 +857,7 @@ int vprintf_serial(const char* __restrict format, va_list list) {
 
 						field_width = (int) strtol(field_width_buf, NULL, 10);
 						memset(field_width_buf, 0, 3);
+						field_width_index = 0;
 
 						check_current = true;
 						break;
@@ -792,9 +904,11 @@ int vprintf_serial(const char* __restrict format, va_list list) {
 						}
 
 						if (!negative && !param) {
-							precision = (size_t) strtol(precision_buf, NULL, 10);
+							precision = (int) strtol(precision_buf, NULL, 10);
 							memset(precision_buf, 0, 3);
+							precision_buf_index = 0;
 						}
+
 						precision_specified = true;
 						check_current = true;
 						break;

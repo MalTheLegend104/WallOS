@@ -45,9 +45,9 @@ export COLOR_MAGENTA
 export END_COLOR
 
 # Default things for all platforms. This includes things like LIBC, the WallOS, and compile flags.
-DEBUG_SYMBOLS   := 
-C_FLAGS 		:= -ffreestanding -std=gnu99 -g -Wall -Wextra -Wno-format -nostdlib -lgcc -mno-red-zone -O0 -mcmodel=kernel $(DEBUG_SYMBOLS)
-CPP_FLAGS 		:= -ffreestanding -std=c++11 -fno-rtti -g -Wall -Wextra -Wno-format -nostdlib -lgcc -mno-red-zone -O0 -mcmodel=kernel $(DEBUG_SYMBOLS)
+DEBUG_SYMBOLS   :=
+C_FLAGS 		:= -ffreestanding -std=gnu99 -Wall -Wextra -Wno-format -nostdlib -lgcc -mno-red-zone -O0 -mcmodel=kernel $(DEBUG_SYMBOLS)
+CPP_FLAGS 		:= -ffreestanding -std=c++11 -fno-rtti -Wall -Wextra -Wno-format -nostdlib -lgcc -mno-red-zone -O0 -mcmodel=kernel $(DEBUG_SYMBOLS)
 NASM_FLAGS 		:= $(DEBUG_SYMBOLS)
 LINKER_FLAGS 	:=
 

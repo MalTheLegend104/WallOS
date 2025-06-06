@@ -1,8 +1,6 @@
 #include <panic.h>
 #include <acpi.h>
 
-
-
 #include <actypes.h>
 
 #include <stdio.h>
@@ -75,20 +73,37 @@ void AcpiOsWaitEventsComplete(void) {
 }
 
 void AcpiOsVprintf(const char* format, va_list args) {
+	// We want to copy the contents from vprintf to the serial console.
+	// We have to copy the va_list
+	// This caused me many hours of pain only for me to realize using the va_list clobbers it.
+	va_list args_copy;
+	va_copy(args_copy, args);
+
 	set_colors(VGA_COLOR_GREEN, VGA_DEFAULT_BG);
 	vprintf(format, args);
 	set_to_last();
-	//vprintf_serial(format, args);
+
+	printf_serial("\r\n");
+	vprintf_serial(format, args_copy);
+
+	va_end(args_copy);
 }
 
 void AcpiOsPrintf(const char* format, ...) {
-	set_colors(VGA_COLOR_GREEN, VGA_DEFAULT_BG);
 	va_list arg;
+	va_list arg_copy;
+
 	va_start(arg, format);
+	va_copy(arg_copy, arg);
+
+	set_colors(VGA_COLOR_GREEN, VGA_DEFAULT_BG);
 	vprintf(format, arg);
-	//vprintf_serial(format, arg);
-	va_end(arg);
 	set_to_last();
+	printf_serial("\r\n");
+	vprintf_serial(format, arg_copy);
+
+	va_end(arg_copy);
+	va_end(arg);
 }
 
 ACPI_STATUS AcpiOsInitialize() {
@@ -141,13 +156,13 @@ ACPI_STATUS AcpiOsGetPhysicalAddress(void* LogicalAddress, ACPI_PHYSICAL_ADDRESS
 
 void* AcpiOsAllocate(ACPI_SIZE Size) {
 	void* ptr = kalloc(Size);
-	logger(INFO, "ACPICA called OS Allocate for size: 0x%llx. Returning pointer: 0x%llx\n", Size, ptr);
+	//logger(INFO, "ACPICA called OS Allocate for size: 0x%llx. Returning pointer: 0x%llx\n", Size, ptr);
 
 	return ptr;
 }
 
 void AcpiOsFree(void* Memory) {
-	printf("ACPICA called OS Free.\n");
+	//printf("ACPICA called OS Free.\n");
 	kfree(Memory);
 }
 
@@ -163,7 +178,8 @@ BOOLEAN AcpiOsWritable(void* Memory, ACPI_SIZE Length) {
 
 // Multithreading
 ACPI_THREAD_ID AcpiOsGetThreadId() {
-	printf_serial("[WARN] ACPICA requested ThreadID.\r\n");
+	// This just made me mad so it's commented
+	//printf_serial("[WARN] ACPICA requested ThreadID.\r\n");
 	return 1;
 }
 
@@ -203,7 +219,7 @@ void AcpiOsStall(UINT32 Microseconds) {
 #include <memory/semaphore.h>
 
 ACPI_STATUS AcpiOsCreateSemaphore(UINT32 MaxUnits, UINT32 InitialUnits, ACPI_SEMAPHORE* OutHandle) {
-	printf_serial("ACPICA requested semaphore.\r\n");
+	//printf_serial("ACPICA requested semaphore.\r\n");
 	if (OutHandle == NULL) {
 		return AE_BAD_PARAMETER;
 	}
@@ -224,7 +240,7 @@ ACPI_STATUS AcpiOsDeleteSemaphore(ACPI_SEMAPHORE Handle) {
 
 ACPI_STATUS AcpiOsWaitSemaphore(ACPI_SEMAPHORE Handle, UINT32 Units, UINT16 Timeout) {
 	// TODO: remove this after testing.
-	return AE_OK;
+	//return AE_OK;
 	if (Handle == NULL) return AE_BAD_PARAMETER;
 
 	uint64_t time = Timeout;

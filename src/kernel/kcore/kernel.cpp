@@ -336,6 +336,8 @@ void kernel_main(unsigned int magic, multiboot_info* mbt_info) {
 
 	Syscall::initialize();
 
+	initialize_acpi();
+
 	// After we're done checking features, we need to set up our terminal.
 	// Eventually this will be a userspace program. 
 	registerCommand((Command) { testKalloc, 0, "kalloc", 0, 0 });

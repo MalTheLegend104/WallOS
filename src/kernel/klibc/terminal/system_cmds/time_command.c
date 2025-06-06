@@ -218,18 +218,16 @@ int time_command(int argc, char** argv) {
 	read_cmos_date(&day, &month, &year);
 	read_cmos_time(&hours, &minutes, &seconds);
 	set_colors(VGA_COLOR_LIGHT_CYAN, VGA_DEFAULT_BG);
-	switch (current_time_format) {
-		case HOURS_12:
-			if (hours > 12) {
-				hours -= 12;
-				printf("%02d:%02d:%02d PM ", hours, minutes, seconds);
-			} else {
-				printf("%02d:%02d:%02d AM ", hours, minutes, seconds);
-			}
-			break;
-		default: // 24 Hour Clock
-			printf("%02d:%02d:%02d ", hours, minutes, seconds);
-			break;
+
+	if (current_time_format == HOURS_12) {
+		if (hours > 12) {
+			hours -= 12;
+			printf("%02d:%02d:%02d PM ", hours, minutes, seconds);
+		} else {
+			printf("%02d:%02d:%02d AM ", hours, minutes, seconds);
+		}
+	} else {
+		printf("%02d:%02d:%02d ", hours, minutes, seconds);
 	}
 
 	switch (current_date_format) {
