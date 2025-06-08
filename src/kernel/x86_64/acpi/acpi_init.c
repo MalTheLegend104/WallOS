@@ -29,6 +29,71 @@ void walk_acpi_namespace(void) {
 	}
 }
 
+void print_acpi_device_info(const char* path) {
+	// ACPICA allows us to get a device by its string handle
+	ACPI_HANDLE handle;
+	ACPI_STATUS status = AcpiGetHandle(NULL, (char*)path, &handle);
+	if (ACPI_FAILURE(status)) {
+		printf("ACPI path not found: %s\n", AcpiFormatException(status));
+		return;
+	}
+
+	printf("Device: %s\n", path);
+
+	// Print _HID
+	ACPI_OBJECT hidObj;
+	ACPI_BUFFER hidBuf = { sizeof(ACPI_OBJECT), &hidObj };
+	status = AcpiEvaluateObject(handle, "_HID", NULL, &hidBuf);
+	if (ACPI_SUCCESS(status)) {
+		if (hidObj.Type == ACPI_TYPE_STRING)
+			printf("  _HID: %s\n", hidObj.String.Pointer);
+		else if (hidObj.Type == ACPI_TYPE_INTEGER)
+			printf("  _HID: 0x%llX\n", hidObj.Integer.Value);
+	}
+
+	// Print _CID
+	ACPI_OBJECT cidObj;
+	ACPI_BUFFER cidBuf = { sizeof(ACPI_OBJECT), &cidObj };
+	status = AcpiEvaluateObject(handle, "_CID", NULL, &cidBuf);
+	if (ACPI_SUCCESS(status)) {
+		if (cidObj.Type == ACPI_TYPE_STRING)
+			printf("  _CID: %s\n", cidObj.String.Pointer);
+		else if (cidObj.Type == ACPI_TYPE_INTEGER)
+			printf("  _CID: 0x%llX\n", cidObj.Integer.Value);
+	}
+
+	// Print _ADR
+	ACPI_OBJECT adrObj;
+	ACPI_BUFFER adrBuf = { sizeof(ACPI_OBJECT), &adrObj };
+	status = AcpiEvaluateObject(handle, "_ADR", NULL, &adrBuf);
+	if (ACPI_SUCCESS(status) && adrObj.Type == ACPI_TYPE_INTEGER) {
+		printf("  _ADR: 0x%016llX\n", adrObj.Integer.Value);
+	}
+
+	// Print _STA
+	ACPI_OBJECT staObj;
+	ACPI_BUFFER staBuf = { sizeof(ACPI_OBJECT), &staObj };
+	status = AcpiEvaluateObject(handle, "_STA", NULL, &staBuf);
+	if (ACPI_SUCCESS(status) && staObj.Type == ACPI_TYPE_INTEGER) {
+		UINT64 sta = staObj.Integer.Value;
+		printf("  _STA: 0x%02llX (", sta);
+		if (sta & 0x01) printf("Present ");
+		if (sta & 0x02) printf("Enabled ");
+		if (sta & 0x04) printf("ShowInUI ");
+		if (sta & 0x08) printf("Functional ");
+		if (sta & 0x10) printf("BatteryPresent ");
+		printf(")\n");
+	}
+
+	// Print _CRS (not decoded, just length and raw buffer)
+	ACPI_BUFFER crsBuf = { ACPI_ALLOCATE_BUFFER, NULL };
+	status = AcpiGetCurrentResources(handle, &crsBuf);
+	if (ACPI_SUCCESS(status)) {
+		printf("  _CRS: Resource Buffer Size: %lu bytes\n", crsBuf.Length);
+		AcpiOsFree(crsBuf.Pointer);
+	}
+}
+
 void print_hpet() {
 	ACPI_TABLE_HEADER* table;
 	const ACPI_STATUS status = AcpiGetTable(ACPI_SIG_HPET, 1, &table);
@@ -149,6 +214,12 @@ int acpi_command(int argc, char** argv) {
 			list_acpi_tables();
 		else if (strcmp(argv[1], "walk") == 0)
 			walk_acpi_namespace();
+		else if (strcmp(argv[1], "info") == 0 && argc > 2)
+			print_acpi_device_info(argv[2]);
+		else
+			printf("Unknown or incomplete ACPI command.\n");
+	} else {
+		printf("Command requires arguments, I'm too lazy to add the help entry.");
 	}
 
 	return 0;

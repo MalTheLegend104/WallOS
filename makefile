@@ -7,7 +7,7 @@ THIS_FILE := $(lastword $(MAKEFILE_LIST)) # useful for if the user tries to incl
 include libs/libs.mk
 
 # This is for qemu:
-ARGS ?= -m 5G -M hpet=on 
+ARGS ?= -m 5G -M hpet=on -machine pc -cpu max
 # To add more devices, simply put them at any index 0-3, excluding 2.
 # Qemu mounts the cd drive at index 2 (secondary master drive)
 ARGS += -drive file=hda.img,if=ide,media=disk,index=0 \

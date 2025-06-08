@@ -323,8 +323,8 @@ void kernel_main(unsigned int magic, multiboot_info* mbt_info) {
 	 * print_logo_ssfn();
 	 */
 
+	// panic_s("GOT BEFORE IDE DRIVES?????");
 	detect_ide_drives();
-
 	// Things that need interrupts here (like keyboard, mouse, etc.)
 	// Everything that needs an IRQ should be done after the PIT as it messes with the mask
 	pit_init(1000);
