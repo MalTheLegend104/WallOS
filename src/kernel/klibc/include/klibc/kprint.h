@@ -71,6 +71,10 @@ extern "C" {
 		__asm volatile ("inw %1, %0" : "=a"(ret) : "Nd"(port));
 		return ret;
 	}
+
+	static inline void outw(uint16_t port, uint16_t val) {
+		__asm volatile ("outw %0, %1" : : "a"(val), "Nd"(port));
+	}
 #ifdef __is_kernel_
 	void pink_screen(const char* error);
 	void pink_screen_sa(const char** error, uint8_t length);

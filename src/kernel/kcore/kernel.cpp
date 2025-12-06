@@ -43,7 +43,7 @@ extern "C" {
 
 #pragma GCC diagnostic ignored "-Wunused-parameter" 
 int bootdev_command(int argc, char** argv) {
-	auto a = getBootDev();
+	const auto a = getBootDev();
 	set_colors(VGA_COLOR_LIGHT_CYAN, VGA_DEFAULT_BG);
 	printf("BIOS Drive Number: 0x%x\n", a->biosdev);
 	set_to_last();
@@ -70,7 +70,7 @@ extern "C" {
 
 // Tests for kalloc and physical/virtual mem
 int mem_alloc(int argc, char** argv) {
-	uintptr_t ptr = Memory::NewKernelPage();
+	const uintptr_t ptr = Memory::NewKernelPage();
 	Logger::infof("Virtual Addr:        0x%llx\n", ptr);
 	Logger::infof("KERNEL_VIRTUAL_BASE: 0x%llx\n", KERNEL_VIRTUAL_BASE);
 	Logger::infof("Physical:            0x%llx\n", Memory::VirtToPhysBase(ptr));
@@ -346,6 +346,6 @@ void kernel_main(unsigned int magic, multiboot_info* mbt_info) {
 	registerCommand((Command) { syscall_command, 0, "syscall", 0, 0 });
 	registerCommand((Command) { bootdev_command, 0, "bootdev", 0, 0 });
 	registerCommand((Command) { get_drive_info, 0, "drive", 0, 0 });
-
+	registerCommand((Command) {sata_test_cmd, 0, "sata-test", 0, 0});
 	terminalMain();
 }

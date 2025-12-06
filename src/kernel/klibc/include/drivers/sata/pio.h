@@ -475,7 +475,15 @@ extern "C" {
 
 	void detect_ide_drives();
 	int get_drive_info(int argc, char** argv);
+	int sata_test_cmd(int argc, char** argv);
+	bool sata_pio_read28(int drive_number, uint32_t lba, uint8_t sector_count, void* buffer);
+	bool sata_pio_write28(int drive_number, uint32_t lba, uint8_t sector_count, const void* buffer);
 
+	void dump_hex(const uint8_t* data, int count);
+	void test_read_sector(int drive, uint32_t lba);
+	void test_write_sector(int drive, uint32_t lba);
+	void test_mbr_dump(int drive);
+	void test_lba_walk(int drive);
 #ifdef __cplusplus
 }
 #endif

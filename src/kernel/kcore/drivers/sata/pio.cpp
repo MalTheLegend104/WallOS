@@ -3,6 +3,7 @@
 #include <klibc/kprint.h>
 #include <stdio.h>
 #include <stdbool.h>
+#include <string.h>
 
 #define PRIMARY_FIRST    0
 #define PRIMARY_SECOND	 1
@@ -142,7 +143,7 @@ bool identify(int drive_number) {
 	}
 
 	// Continue polling until ERR is set or DRQ is set
-	while (((status = inb(command_register)) & (0x40 | 0x01)) == 0);
+	while (((status = inb(command_register)) & (0x40 | 0x01)) == 0) {}
 
 	if (status & 0x01) return false; // It failed to give the command, we just ignore it.
 
@@ -183,7 +184,7 @@ void detect_ide_drives() {
 	}
 }
 
-int get_capacity_bytes(sata_device_identify* device) {
+int get_capacity_bytes(const sata_device_identify* device) {
 	uint64_t sectors = device->user_addressable_sectors;  // Assume 28-bit by default
 
 	// If 48-bit LBA is supported, use the 48-bit sector count
@@ -195,7 +196,7 @@ int get_capacity_bytes(sata_device_identify* device) {
 	return (sectors * 512);
 }
 
-int get_capacity_mb(sata_device_identify* device) {
+int get_capacity_mb(const sata_device_identify* device) {
 	return (get_capacity_bytes(device) / 1024 / 1024);
 }
 
@@ -239,9 +240,187 @@ void print_sata_device_info(drive_info_t* info) {
 	printf("Max Capacity: %d MB - (%d bytes)\n", get_capacity_mb(device), get_capacity_bytes(device));
 }
 
-#include <string.h>
+static void ata_wait_bsy(const uint16_t command_register) {
+	uint8_t status;
+	do {
+		status = inb(command_register);
+	} while (status & 0x80); // BSY
+}
 
-int get_drive_info(int argc, char** argv) {
+static void ata_wait_drq(const uint16_t command_register) {
+	uint8_t status;
+	do {
+		status = inb(command_register);
+	} while (!(status & 0x08)); // DRQ
+}
+
+static bool resolve_drive_registers(
+    const int drive_number,
+    uint16_t& data_register,
+    uint16_t& sector_count,
+    uint16_t& lba_low,
+    uint16_t& lba_mid,
+    uint16_t& lba_high,
+    uint16_t& drive_register,
+    uint16_t& command_register
+) {
+    switch (drive_number) {
+        case PRIMARY_FIRST:
+            data_register     = PRIMARY_DATA_REGISTER;
+            sector_count      = PRIMARY_SECTOR_COUNT;
+            lba_low           = PRIMARY_LBA_LOW;
+            lba_mid           = PRIMARY_LBA_MID;
+            lba_high          = PRIMARY_LBA_HIGH;
+            drive_register    = PRIMARY_DRIVE_REGISTER;
+            command_register  = PRIMARY_COMMAND_REGISTER;
+            return true;
+
+        case PRIMARY_SECOND:
+            data_register     = PRIMARY_DATA_REGISTER;
+            sector_count      = PRIMARY_SECTOR_COUNT;
+            lba_low           = PRIMARY_LBA_LOW;
+            lba_mid           = PRIMARY_LBA_MID;
+            lba_high          = PRIMARY_LBA_HIGH;
+            drive_register    = PRIMARY_DRIVE_REGISTER;
+            command_register  = PRIMARY_COMMAND_REGISTER;
+            return true;
+
+        case SECONDARY_FIRST:
+            data_register     = SECONDARY_DATA_REGISTER;
+            sector_count      = SECONDARY_SECTOR_COUNT;
+            lba_low           = SECONDARY_LBA_LOW;
+            lba_mid           = SECONDARY_LBA_MID;
+            lba_high          = SECONDARY_LBA_HIGH;
+            drive_register    = SECONDARY_DRIVE_REGISTER;
+            command_register  = SECONDARY_COMMAND_REGISTER;
+            return true;
+
+        case SECONDARY_SECOND:
+            data_register     = SECONDARY_DATA_REGISTER;
+            sector_count      = SECONDARY_SECTOR_COUNT;
+            lba_low           = SECONDARY_LBA_LOW;
+            lba_mid           = SECONDARY_LBA_MID;
+            lba_high          = SECONDARY_LBA_HIGH;
+            drive_register    = SECONDARY_DRIVE_REGISTER;
+            command_register  = SECONDARY_COMMAND_REGISTER;
+            return true;
+
+        default:
+            return false;
+    }
+}
+
+bool sata_pio_read28(const int drive_number, const uint32_t lba, const uint8_t sector_count, void* buffer) {
+	uint16_t data_reg, sec_count, lba_low, lba_mid, lba_high, drv_reg, cmd_reg;
+
+	if (!resolve_drive_registers(drive_number, data_reg, sec_count,
+								 lba_low, lba_mid, lba_high,
+								 drv_reg, cmd_reg))
+		return false;
+
+	// Determine master/slave based on drive number
+	uint8_t drive_select = (drive_number == 0 || drive_number == 2) ? 0xE0 : 0xF0;
+	drive_select |= (lba >> 24) & 0x0F;
+
+	outb(drv_reg, drive_select);
+	io_wait();
+
+	outb(sec_count, sector_count);
+	outb(lba_low,  (uint8_t)(lba      ));
+	outb(lba_mid,  (uint8_t)(lba >>  8));
+	outb(lba_high, (uint8_t)(lba >> 16));
+
+	outb(cmd_reg, COMMAND_READ_SECTOR);
+	io_wait();
+
+	uint16_t* buf16 = (uint16_t*) buffer;
+
+	for (int s = 0; s < sector_count; s++) {
+		ata_wait_bsy(cmd_reg);
+		ata_wait_drq(cmd_reg);
+
+		for (int i = 0; i < 256; i++) {
+			buf16[i] = inw(data_reg);
+		}
+
+		buf16 += 256;
+	}
+
+	return true;
+}
+
+bool sata_pio_write28(const int drive_number, const uint32_t lba, const uint8_t sector_count, const void* buffer) {
+	uint16_t data_reg, sec_count, lba_low, lba_mid, lba_high, drv_reg, cmd_reg;
+
+	if (!resolve_drive_registers(drive_number, data_reg, sec_count,
+								 lba_low, lba_mid, lba_high,
+								 drv_reg, cmd_reg))
+		return false;
+
+	uint8_t drive_select = (drive_number == 0 || drive_number == 2) ? 0xE0 : 0xF0;
+	drive_select |= (lba >> 24) & 0x0F;
+
+	outb(drv_reg, drive_select);
+	io_wait();
+
+	outb(sec_count, sector_count);
+	outb(lba_low,  (uint8_t)(lba      ));
+	outb(lba_mid,  (uint8_t)(lba >>  8));
+	outb(lba_high, (uint8_t)(lba >> 16));
+
+	outb(cmd_reg, COMMAND_WRITE_SECTOR);
+	io_wait();
+
+	const uint16_t* buf16 = (const uint16_t*) buffer;
+
+	for (int s = 0; s < sector_count; s++) {
+		ata_wait_bsy(cmd_reg);
+		ata_wait_drq(cmd_reg);
+
+		for (int i = 0; i < 256; i++) {
+			outw(data_reg, buf16[i]);
+		}
+
+		buf16 += 256;
+	}
+
+	// Flush cache
+	outb(cmd_reg, COMMAND_FLUSH_CACHE);
+	ata_wait_bsy(cmd_reg);
+
+	return true;
+}
+
+int sata_test_cmd(int argc, char** argv) {
+	if (argc < 2) {
+		printf("Usage: sata-test <drive>\n");
+		return 0;
+	}
+
+	int drive = argv[1][0] - '0';
+	if (drive < 0 || drive > 3) {
+		printf("Invalid drive number.\n");
+		return 0;
+	}
+
+	if (!drive_zero.exists && drive == 0) { printf("Drive0 not present.\n"); return 0; }
+	if (!drive_one.exists  && drive == 1) { printf("Drive1 not present.\n"); return 0; }
+	if (!drive_two.exists  && drive == 2) { printf("Drive2 not present.\n"); return 0; }
+	if (!drive_three.exists&& drive == 3) { printf("Drive3 not present.\n"); return 0; }
+
+	printf("Running ATA PIO test suite on drive %d...\n", drive);
+
+	test_read_sector(drive, 0);      // Read MBR
+	test_mbr_dump(drive);            // Dump MBR
+	test_lba_walk(drive);            // Walk first 16 LBAs
+	test_write_sector(drive, 100);   // Safe test write at LBA100
+	test_read_sector(drive, 100);    // Re-read for sanity
+
+	printf("\nAll tests completed.\n");
+	return 0;
+}
+
+int get_drive_info(const int argc, char** argv) {
 	if (argc > 1) {
 		if (strcmp(argv[1], "0") == 0) print_sata_device_info(&drive_zero);
 		else if (strcmp(argv[1], "1") == 0) print_sata_device_info(&drive_one);
