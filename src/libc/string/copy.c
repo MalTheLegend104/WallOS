@@ -15,9 +15,12 @@ char* strcpy(char* dest, const char* src) {
 	}
 
 	int index = 0;
+
+	// Copy character by character, including the null terminator
 	do {
 		dest[index] = src[index];
-	} while (src[index] != '\0');
+		index++;
+	} while (src[index - 1] != '\0');
 
 	return dest;
 }

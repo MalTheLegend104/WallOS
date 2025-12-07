@@ -21,3 +21,24 @@ char* strchr(const char* str, int ch) {
 
 	return NULL;
 }
+
+char* strrchr(const char* s, int c) {
+	const unsigned char* p = (const unsigned char*) s;
+	unsigned char ch = (unsigned char) c;
+
+	const char* last = NULL;
+
+	while (*p) {
+		if (*p == ch) {
+			last = (const char*) p;
+		}
+		p++;
+	}
+
+	// Check terminating null if c == '\0'
+	if (ch == '\0') {
+		return (char*) p;
+	}
+
+	return (char*) last;
+}

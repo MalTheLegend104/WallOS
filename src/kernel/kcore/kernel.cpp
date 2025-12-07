@@ -294,6 +294,19 @@ void kernel_main(unsigned int magic, multiboot_info* mbt_info) {
 	Memory::mapFramebuffer((uintptr_t) e->common.framebuffer_addr, e->common.framebuffer_height * e->common.framebuffer_pitch);
 //	framebuffer_init();
 
+	// We get initrd from grub via a multiboot module tag.
+	// We *should* be reserving this memory so it doesn't get allocated to something else.
+	// the physical allocator is a horrible mess from past me
+	// I'm taking my win with the regular filesystem and leaving this for now.
+	multiboot_tag_module* module_tag = MultibootManager::getModuleTag();
+	printf_serial("    MODULE tag exists. Module command line: %s\r\n", module_tag->cmdline);
+	printf_serial("    Module start: 0x%X, end: 0x%X\r\n", module_tag->mod_start, module_tag->mod_end);
+	printf_serial("    Module Type: %d\r\n", module_tag->type);
+	printf_serial("    Module Size: %d bytes\r\n", module_tag->size);
+	printf_serial("    Module Physical Size: %d bytes\r\n", module_tag->mod_end - module_tag->mod_start);
+
+	//Memory::reserveMemory(module_tag->mod_start, module_tag->mod_end - module_tag->mod_start);
+
 	Memory::PhysicalMemInit();
 
 	acpi_tables();

@@ -56,7 +56,6 @@ libs:
 	@echo "$(COLOR_CYAN)<--------------------------------------------------------->$(END_COLOR)"
 	@echo "$(COLOR_CYAN)<----------------------Building LIBS---------------------->$(END_COLOR)"
 	@echo "$(COLOR_CYAN)<--------------------------------------------------------->$(END_COLOR)"
-	@mkdir -p $(OUTPUT_DIR)
 	@for dir in libs/*/; do \
 		if [ "$$dir" = "libs/$(OUTPUT_DIR)/" ]; then \
         	continue; \

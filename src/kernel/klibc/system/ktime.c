@@ -1,5 +1,23 @@
 #include <system/ktime.h>
+#include <stdio.h>
 #include <cpu_io.h>
+
+void print_fattime(uint32_t fdate, uint32_t ftime) {
+	// fdate: bits 9-15 (Year-1980), 5-8 (Month), 0-4 (Day)
+	// ftime: bits 11-15 (Hour), 5-10 (Minute), 0-4 (Second/2)
+
+	// Extract fields
+	uint16_t year = (uint16_t) ((fdate >> 9) + 1980);
+	uint8_t month = (uint8_t) ((fdate >> 5) & 0x0F);
+	uint8_t day = (uint8_t) (fdate & 0x1F);
+	uint8_t hour = (uint8_t) ((ftime >> 11) & 0x1F);
+	uint8_t minute = (uint8_t) ((ftime >> 5) & 0x3F);
+	uint8_t second = (uint8_t) ((ftime & 0x1F) * 2);
+
+	// Use padding with '0' if your printf supports it (e.g., %02u)
+	// If not, use conditional printing. Assuming standard printf for now.
+	printf("%04u-%02u-%02u %02u:%02u:%02u", year, month, day, hour, minute, second);
+}
 
 static uint8_t bcd_to_binary(uint8_t bcd_value) {
 	return ((bcd_value / 16) * 10) + (bcd_value % 16);

@@ -1,10 +1,23 @@
 #include <drivers/sata/pio.h>
+#include <drivers/serial.h>
 #include <terminal/commands/system_commands.h>
 #include <string.h>
 #include <stdio.h>
 #include <ff.h>
 
-// --- FatFs Global Objects ---
+#include <system/ktime.h>
+#include <klibc/kprint.h>
+
+// Color Definitions
+#define COLOR_DIR      VGA_COLOR_LIGHT_CYAN
+#define COLOR_FILE     VGA_COLOR_LIGHT_GREEN
+#define COLOR_METADATA VGA_COLOR_LIGHT_GREY
+#define COLOR_ERROR    VGA_COLOR_RED
+#define COLOR_DEFAULT  VGA_DEFAULT_FG
+#define COLOR_BRANCH   VGA_COLOR_DARK_GREY
+#define COLOR_SIZE     VGA_COLOR_LIGHT_GREY
+
+// FatFs Global Objects
 FATFS fs_objects[FF_VOLUMES]; // Array of FATFS structures for each drive (0-3)
 bool drive_mounted[FF_VOLUMES] = { false };
 
@@ -21,106 +34,205 @@ static void print_file_size(FSIZE_t size) {
 	}
 }
 
+// ------------------------------------------------------------------------------------------------
+// ------------------------------------------------------------------------------------------------
+// Drive ls Command Implementation
+// ------------------------------------------------------------------------------------------------
+// ------------------------------------------------------------------------------------------------
+
+// Output Flags (Bitmask)
+#define LS_FLAG_NONE    0x00
+#define LS_FLAG_ATTRIB  0x01 // Enable attributes ([D], [-])
+#define LS_FLAG_SIZE    0x02 // Enable file size (<DIR>, 10KB)
+#define LS_FLAG_TIME    0x04 // Enable modification date/time
+#define LS_FLAG_DEFAULT (LS_FLAG_SIZE | LS_FLAG_ATTRIB) // Default behavior
+
+static uint8_t parse_ls_flags_string(const char* flag_str) {
+	uint8_t flags = LS_FLAG_NONE;
+
+	// Start at index 1 to skip the leading '-'
+	for (int i = 1; flag_str[i] != '\0'; i++) {
+		switch (flag_str[i]) {
+			case 'a': // Attributes
+				flags |= LS_FLAG_ATTRIB;
+				break;
+			case 's': // Size
+				flags |= LS_FLAG_SIZE;
+				break;
+			case 't': // Time
+				flags |= LS_FLAG_TIME;
+				break;
+			case 'l': // Long format (same as -ast)
+				flags |= (LS_FLAG_ATTRIB | LS_FLAG_SIZE | LS_FLAG_TIME);
+				break;
+			default:
+				// Optionally print an error for unknown flag
+				printf("Warning: Unknown flag '-%c' ignored.\n", flag_str[i]);
+				break;
+		}
+	}
+	return flags;
+}
+
 int drive_ls_cmd(int argc, char** argv) {
+	uint8_t flags = LS_FLAG_NONE;
+	const char* path = NULL;
+	bool path_set = false;
+
+	// Check for minimum arguments
 	if (argc < 2) {
-		printf("Usage: drive ls <path>\n");
-		printf("Example: drive ls 0:/ \n");
+		printf("Usage: drive ls <path> [flags]\n");
+		printf("Example: drive ls 0:/ -lst\n");
+		printf("Example: drive ls -t 0:/ -a\n");
 		return 0;
 	}
+
+	// Default to the basic flags if no flags are explicitly provided
+	flags = LS_FLAG_DEFAULT;
+
+	// Parse all arguments (starting from argv[1], which is the first argument after "ls")
+	for (int i = 1; i < argc; i++) {
+		const char* arg = argv[i];
+
+		if (arg[0] == '-') {
+			// Found a flag string (e.g., "-lst" or "-a")
+			flags |= parse_ls_flags_string(arg);
+		} else if (!path_set) {
+			// Found the path argument
+			path = arg;
+			path_set = true;
+		} else {
+			// Found a second non-flag argument
+			printf("Warning: Too many non-flag arguments provided. Ignoring '%s'.\n", arg);
+		}
+	}
+
+	// Final validation
+	if (!path_set) {
+		printf("Error: No directory path provided.\n");
+		return 0;
+	}
+
+	// Rest of the execution logic (same as before)
 
 	FRESULT res;
-	DIR dir;         // Directory object
-	FILINFO fno;     // File Information structure
-	const char* path = argv[1];
+	DIR dir;
+	FILINFO fno;
 
+	set_colors(VGA_COLOR_WHITE, VGA_DEFAULT_BG);
 	printf("Listing directory: %s\n", path);
 	printf("----------------------------------------\n");
+	set_to_last();
 
-	// 1. Open the directory
 	res = f_opendir(&dir, path);
 	if (res != FR_OK) {
+		set_colors(COLOR_ERROR, VGA_DEFAULT_BG);
 		printf("Error opening directory. FatFs code: %d\n", res);
+		set_to_last();
 		return 0;
 	}
 
-	// 2. Read directory contents loop
 	while (1) {
 		res = f_readdir(&dir, &fno);
 
-		// Check for error or end of directory (null filename)
 		if (res != FR_OK || fno.fname[0] == 0) break;
-
-		// Skip the current ('.') and parent ('..') entries
 		if (strcmp(fno.fname, ".") == 0 || strcmp(fno.fname, "..") == 0) continue;
 
-		// --- Print Entry Info ---
+		vga_color item_color = (fno.fattrib & AM_DIR) ? COLOR_DIR : COLOR_FILE;
 
-		// Print attributes
-		printf("%s", (fno.fattrib & AM_DIR) ? "[D] " : "[-] ");
-
-		// Print size
-		if (!(fno.fattrib & AM_DIR)) {
-			print_file_size(fno.fsize);
-			printf("\t\t");
-		} else {
-			printf("<DIR>\t\t");
+		// Print Attribute
+		if (flags & LS_FLAG_ATTRIB) {
+			set_colors(COLOR_METADATA, VGA_DEFAULT_BG);
+			printf("%s", (fno.fattrib & AM_DIR) ? "[D] " : "[-] ");
+			set_to_last();
 		}
 
-		// Print time (Optional but recommended)
-		// If you want to print time, use fno.ftime and fno.fdate here.
+		// Print Size
+		if (flags & LS_FLAG_SIZE) {
+			set_colors(COLOR_METADATA, VGA_DEFAULT_BG);
+			if (!(fno.fattrib & AM_DIR)) {
+				print_file_size(fno.fsize);
+				printf("\t");
+			} else {
+				printf("<DIR>\t");
+			}
+			set_to_last();
+		}
 
-		// Print filename
+		// Print Time
+		if (flags & LS_FLAG_TIME) {
+			set_colors(COLOR_METADATA, VGA_DEFAULT_BG);
+			print_fattime(fno.fdate, fno.ftime);
+			printf("\t");
+			set_to_last();
+		}
+
+		// Print Filename
+		set_colors(item_color, VGA_DEFAULT_BG);
 		printf("%s\n", fno.fname);
+		set_to_last();
 	}
 
-	// 3. Close the directory
 	f_closedir(&dir);
 	printf("----------------------------------------\n");
 
 	return 0;
 }
 
+// ------------------------------------------------------------------------------------------------
+// ------------------------------------------------------------------------------------------------
+// Drive Tree Command Implementation
+// ------------------------------------------------------------------------------------------------
+// ------------------------------------------------------------------------------------------------
+
 #define MAX_PATH_LEN 256
+
+#define INDENT_BRANCH  "\xC3\xC4\xC4 "  // ├──  T-junction for non-last items
+#define INDENT_LAST    "\xC0\xC4\xC4 "  // └──  Corner for the last item
+#define INDENT_CONT    "\xB3   "            // │    Vertical line continuing
+#define INDENT_SPACE   "    "               // Blank space for continuation
 
 /**
  * @brief Prints the contents of a directory and its subdirectories recursively.
  * * @param path The current directory path (e.g., "0:/SYSTEM").
  * @param depth The current recursion depth (used for indentation).
  */
-static void print_tree_recursive(char* path, int depth) {
+static void print_tree_recursive(char* path, const char* indent_prefix) {
 	FRESULT res;
 	DIR dir;
 	FILINFO fno;
 
-	// Buffer to hold the path for the next recursive call
 	char next_path[MAX_PATH_LEN];
+	char current_path_copy[MAX_PATH_LEN];
 
-	// --- Print current directory path representation ---
-	for (int i = 0; i < depth; i++) {
-		printf("|   ");
-	}
-	// We print the path only for the directories we are entering
-	if (depth > 0) {
-		// Find the last segment of the path to print (e.g., just "SYSTEM" not "0:/SYSTEM")
-		char* name_start = strrchr(path, '/');
-		if (name_start == NULL) name_start = path; // Handle root
-		else name_start++; // Skip the last slash
+	// Setup and Open Directory
 
-		printf("|-- [DIR] %s\n", name_start);
-	} else {
-		printf("|-- [ROOT] %s\n", path);
-	}
-
-
-	// 1. Open the current directory
-	res = f_opendir(&dir, path);
+	strcpy(current_path_copy, path);
+	res = f_opendir(&dir, current_path_copy);
 	if (res != FR_OK) {
-		for (int i = 0; i < depth + 1; i++) printf("|   ");
-		printf("|-- READ ERROR (%d)\n", res);
+		set_colors(VGA_COLOR_RED, VGA_DEFAULT_BG);
+		printf("%s└── READ ERROR (%d)\n", indent_prefix, res);
+		set_to_last();
 		return;
 	}
 
-	// 2. Read directory contents loop
+	// First Pass: Count the total number of items to identify the 'last' one
+	int total_entries = 0;
+	while (1) {
+		res = f_readdir(&dir, &fno);
+		if (res != FR_OK || fno.fname[0] == 0) break;
+		if (strcmp(fno.fname, ".") != 0 && strcmp(fno.fname, "..") != 0) {
+			total_entries++;
+		}
+	}
+
+	// Rewind directory pointer to the start
+	f_rewinddir(&dir);
+
+	// Second Pass: Print and Recurse
+
+	int entry_count = 0;
+
 	while (1) {
 		res = f_readdir(&dir, &fno);
 
@@ -129,35 +241,57 @@ static void print_tree_recursive(char* path, int depth) {
 		// Skip current ('.') and parent ('..') entries
 		if (strcmp(fno.fname, ".") == 0 || strcmp(fno.fname, "..") == 0) continue;
 
-		// --- Recursive Call or Print File ---
+		entry_count++;
 
-		// Construct the full path for the next level: "current_path/new_entry"
+		// Determine if this is the last entry in the current directory
+		bool is_last = (entry_count == total_entries);
+
+		// Set the appropriate branch string (├── or └──)
+		const char* branch_prefix = is_last ? INDENT_LAST : INDENT_BRANCH;
+
+		// Determine the prefix for the next recursive call's indentation
+		// If it's the last item, the continuation line is just space.
+		// Otherwise, it's the vertical line.
+		const char* next_indent_segment = is_last ? INDENT_SPACE : INDENT_CONT;
+
+		// Build the new indentation prefix for the next level
+		char next_indent_prefix[MAX_PATH_LEN];
+		strcpy(next_indent_prefix, indent_prefix);
+		strcat(next_indent_prefix, next_indent_segment);
+
+		// Print Current Entry 
+		set_colors(COLOR_BRANCH, VGA_DEFAULT_BG);
+		printf("%s%s", indent_prefix, branch_prefix);
+		set_to_last();
+
+		// Path Construction for Next Level (same logic as before)
 		strcpy(next_path, path);
-
-		// Check if a separator is needed (only needed if path isn't just "0:")
-		if (path[strlen(path) - 1] != '/') {
+		if (path[strlen(path) - 1] != ':' && path[strlen(path) - 1] != '/') {
 			strcat(next_path, "/");
 		}
 		strcat(next_path, fno.fname);
 
-		// Boundary check (optional, but good practice)
-		if (strlen(next_path) >= MAX_PATH_LEN) {
-			printf("\nPath too long: %s\n", next_path);
-			continue;
-		}
-
+		// Output and Recurse
 		if (fno.fattrib & AM_DIR) {
-			// Recursive call for subdirectory
-			print_tree_recursive(next_path, depth + 1);
+			// Directory: Print the name, then recurse
+			set_colors(COLOR_DIR, VGA_DEFAULT_BG);
+			printf("%s\n", fno.fname);
+			set_to_last();
+			print_tree_recursive(next_path, next_indent_prefix);
 		} else {
-			// Print file entry (at this depth)
-			for (int i = 0; i < depth + 1; i++) {
-				printf("|   ");
-			}
-			printf("|-- %s\n", fno.fname);
-		}
+			// File: Print name and size
+			set_colors(COLOR_FILE, VGA_DEFAULT_BG);
+			printf("%s", fno.fname);
+			set_to_last();
 
-	} // End while
+			// Print size metadata in a separate color
+			set_colors(COLOR_SIZE, VGA_DEFAULT_BG);
+			printf(" (");
+			print_file_size(fno.fsize);
+			printf(")\n");
+			set_to_last();
+		}
+	}
 
 	f_closedir(&dir);
 }
@@ -165,11 +299,10 @@ static void print_tree_recursive(char* path, int depth) {
 int drive_tree_cmd(int argc, char** argv) {
 	if (argc < 2) {
 		printf("Usage: drive tree <path>\n");
-		printf("Example: drive tree 0:/ \n");
+		printf("Example: drive tree 1:/ \n");
 		return 0;
 	}
 
-	// Copy the path argument to a mutable buffer since the recursive function needs a modifiable string (char*) for path manipulation.
 	char mutable_path[MAX_PATH_LEN];
 	strncpy(mutable_path, argv[1], MAX_PATH_LEN - 1);
 	mutable_path[MAX_PATH_LEN - 1] = '\0';
@@ -177,12 +310,24 @@ int drive_tree_cmd(int argc, char** argv) {
 	printf("Starting file tree for %s\n", mutable_path);
 	printf("========================================\n");
 
-	// The initial call starts at depth 0
-	print_tree_recursive(mutable_path, 0);
+	// Print the root node explicitly
+	set_colors(COLOR_BRANCH, VGA_DEFAULT_BG);
+	printf("[ROOT] %s\n", mutable_path);
+	set_to_last();
+
+	// Initial call: Start recursion from the root path with an empty indent prefix.
+	// We pass the root path again, and the root itself will handle the rest.
+	print_tree_recursive(mutable_path, "");
 
 	printf("========================================\n");
 	return 0;
 }
+
+// ------------------------------------------------------------------------------------------------
+// ------------------------------------------------------------------------------------------------
+// Drive Mount Implementation
+// ------------------------------------------------------------------------------------------------
+// ------------------------------------------------------------------------------------------------
 
 void construct_drive_path(int pdrv, char* path_buffer) {
 	// FatFs paths require the format "D:" where D is the drive number (0-3).
@@ -266,6 +411,12 @@ int drive_unmount_cmd(int argc, char** argv) {
 	return 0;
 }
 
+
+// ------------------------------------------------------------------------------------------------
+// ------------------------------------------------------------------------------------------------
+// Drive Cat Command Implementation
+// ------------------------------------------------------------------------------------------------
+// ------------------------------------------------------------------------------------------------
 #define CAT_BUFFER_SIZE 512
 
 int drive_cat_cmd(int argc, char** argv) {
@@ -293,6 +444,7 @@ int drive_cat_cmd(int argc, char** argv) {
 		else if (res == FR_NOT_READY) printf("   Error: Drive not mounted or ready.\n");
 		return 0;
 	}
+	printf("\n--- Start of file ---\n");
 
 	// 2. Read and display the content loop
 	do {
@@ -315,10 +467,16 @@ int drive_cat_cmd(int argc, char** argv) {
 	// 3. Close the file
 	f_close(&fil);
 
-	printf("\n--- End of file ---\n");
+	printf("\n---  End of file  ---\n");
 	return 0;
 }
 
+
+// ------------------------------------------------------------------------------------------------
+// ------------------------------------------------------------------------------------------------
+// Main Drive Command Implementation
+// ------------------------------------------------------------------------------------------------
+// ------------------------------------------------------------------------------------------------
 int drive_command(int argc, char** argv) {
 	if (argc < 2 || (argc > 1 && strcmp(argv[1], "help") == 0)) {
 		printf("I'm too lazy to add the help menu to this right now.\n");

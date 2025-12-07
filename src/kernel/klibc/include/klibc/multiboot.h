@@ -57,12 +57,14 @@ private:
 	static multiboot_tag_mmap* mmap;
 	static acpi_tag* acpi;
 	static multiboot_tag_framebuffer* framebuffer_tag;
+	static multiboot_tag_module* module_tag;
 	static void loadTags();
 public:
 	static multiboot_tag_mmap* getMMap() { return mmap; }
 	static multiboot_tag_framebuffer* getFramebufferTag() { return framebuffer_tag; }
 	static multiboot_info* getMultibootInfo() { return mbt_info; }
 	static multiboot_header* getMultibootHeader() { return header; }
+	static multiboot_tag_module* getModuleTag() { return module_tag; }
 	static acpi_tag* getACPI() { return acpi; }
 	static void initialize(uint32_t m, multiboot_info* info);
 	static bool validateHeader();

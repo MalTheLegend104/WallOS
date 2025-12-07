@@ -21,6 +21,7 @@ extern "C" {
 	char* strcat_c(char* string, char c, size_t size);
 
 	char* strchr(const char* str, int ch);
+	char* strrchr(const char* s, int c);
 
 	void* memcpy(void*, const void*, size_t);
 	int memcmp(const void* s1, const void* s2, size_t n);

@@ -5,6 +5,7 @@ THIS_FILE := $(lastword $(MAKEFILE_LIST)) # useful for if the user tries to incl
 
 # Other makefiles for other components
 include libs/libs.mk
+include src/initrd/initrd.mk
 
 # This is for qemu:
 ARGS ?= -m 5G -M hpet=on -machine pc -cpu max
@@ -21,7 +22,6 @@ WALLOS_ASSEMBLER 	:= nasm
 WALLOS_LINKER 		:= x86_64-wallos-ld
 
 # We export them to make them available to other makefiles that this one will call.
-# Currently this only applies to the ramfs, but eventually I plan on having a few built in programs.
 export WALLOS_C_COMPILER
 export WALLOS_CXX_COMPILER
 export WALLOS_ASSEMBLER
@@ -192,10 +192,10 @@ $(IDT_C_OBJ): build/x86_64/%.o : src/kernel/x86_64/%.c
 # clean 		-> deletes all build files, iso's, etc. 
 # qemu			-> builds x86-64 iso, then runs in qemu
 
-.PHONY: all build clean ramfs qemu
+.PHONY: all build clean qemu
 
 all: 
-	+$(MAKE) -f $(THIS_FILE) ramfs 
+	+$(MAKE) -f $(THIS_FILE) initrd 
 	+$(MAKE) -f $(THIS_FILE) libs 
 	+$(MAKE) -f $(THIS_FILE) build 
 
@@ -215,15 +215,11 @@ build: $(LIBC_OBJ) $(KLIBC_OBJ) $(KCORE_OBJ) $(x86_64_OBJ) $(IDT_C_OBJ)
 	echo "$(COLOR_CYAN)<-----------------Finished x86_64 Kernel------------------>$(END_COLOR)"
 	echo "$(COLOR_CYAN)<--------------------------------------------------------->$(END_COLOR)"
 	
-ramfs:
-	cd src/ramfs && $(MAKE) && cd ../../
-	
 qemu: all
 	qemu-system-x86_64 -cdrom dist/x86_64/WallOS.iso  -cpu max $(ARGS)
 
-clean: libs_clean
+clean: libs_clean initrd_clean
 	rm -rf build && echo "$(COLOR_GREEN)Cleaned build folder$(END_COLOR)"
 	rm -rf dist && echo "$(COLOR_GREEN)Cleaned dist folder$(END_COLOR)"
-	rm -rf src/output/ && echo "$(COLOR_GREEN)Cleaned ramfs output folder$(END_COLOR)"
 	find ./targets/ -name "*.bin" -exec rm {} + && echo "$(COLOR_GREEN)Cleaned targets folder.$(END_COLOR)" || true
 	echo "$(COLOR_CYAN)Finished Cleaning!$(END_COLOR)"

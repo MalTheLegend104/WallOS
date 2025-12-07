@@ -1,12 +1,14 @@
 #include <stdio.h>
 #include <panic.h>
 #include <string.h>
+#include <drivers/serial.h>
 #include <klibc/logger.h>
 #include <klibc/multiboot.h>
 #include <memory/virtual_mem.h>
 uint32_t MultibootManager::magic;
 multiboot_header* MultibootManager::header;
 multiboot_info* MultibootManager::mbt_info;
+multiboot_tag_module* MultibootManager::module_tag;
 // See https://www.gnu.org/software/grub/manual/multiboot2/multiboot.html#Memory-map
 multiboot_tag_mmap* MultibootManager::mmap;
 acpi_tag* MultibootManager::acpi;
@@ -19,6 +21,7 @@ multiboot_tag_bootdev* getBootDev() {
 }
 
 void logExists(const char* string) {
+	printf_serial("    %s tag exists.\r\n", string);
 	puts_vga("    ");
 	Logger::Checklist::blankEntry("%s tag exists.", string);
 }
@@ -53,6 +56,7 @@ void MultibootManager::loadTags() {
 				logExists("BOOT_LOADER_NAME");
 				break;
 			case MULTIBOOT_TAG_TYPE_MODULE:
+				module_tag = (multiboot_tag_module*) tag;
 				logExists("MODULE");
 				break;
 			case MULTIBOOT_TAG_TYPE_BASIC_MEMINFO:
@@ -122,6 +126,7 @@ void MultibootManager::loadTags() {
 				break;
 			default:
 				// Ignore unrecognized tag types
+				printf_serial("    Unrecognized tag type: %d\r\n", tag->type);
 				break;
 		}
 
@@ -138,6 +143,7 @@ void MultibootManager::loadTags() {
  * @param info The pointer provided in ebx on boot.
  */
 void MultibootManager::initialize(uint32_t m, multiboot_info* info) {
+	printf_serial("Initializing Multiboot Manager...\r\n");
 	puts_vga_color("\nChecking Multiboot Configuration:\n", VGA_COLOR_PURPLE, VGA_COLOR_BLACK);
 	magic = m;
 	mbt_info = info;
@@ -176,10 +182,12 @@ bool MultibootManager::validateHeader() {
  */
 bool MultibootManager::validateMagic() {
 	if (magic == 0x36d76289) {
+		printf_serial("Magic number is valid: 0x%X\r\n", magic);
 		puts_vga("    ");
 		Logger::Checklist::checkEntry("Magic number is valid: %d", magic);
 		return true;
 	} else {
+		printf_serial("Magic number is NOT valid: 0x%X\r\n", magic);
 		puts_vga("    ");
 		Logger::Checklist::noCheckEntry("Magic number is NOT valid: %d", magic);
 		return false;
@@ -195,10 +203,12 @@ bool MultibootManager::validateMagic() {
  */
 bool MultibootManager::validateInfo() {
 	if (mbt_info != NULL) {
+		printf_serial("Multiboot info exists: 0x%X\r\n", (uint64_t) mbt_info);
 		puts_vga("    ");
 		Logger::Checklist::checkEntry("Multiboot info exists: %d", mbt_info);
 		return true;
 	} else {
+		printf_serial("Multiboot info is NULL.\r\n");
 		puts_vga("    ");
 		Logger::Checklist::noCheckEntry("Multiboot info is NULL");
 		return false;
@@ -217,6 +227,7 @@ bool MultibootManager::validateAll() {
 	if (!validateInfo()) return false;
 	puts_vga("\n");
 	puts_vga_color("Checking multiboot_info:\n", VGA_COLOR_PURPLE, VGA_COLOR_BLACK);
+	printf_serial("Loading multiboot tags...\r\n");
 	loadTags();
 	return true;
 }

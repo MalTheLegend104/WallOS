@@ -22,6 +22,8 @@ extern "C" {
 #define CMOS_STATUS_B 0x0B
 
 
+	void print_fattime(uint32_t fdate, uint32_t ftime);
+
 	uint32_t get_system_msdos_time();
 	void read_cmos_time(uint8_t* hours, uint8_t* minutes, uint8_t* seconds);
 	void read_cmos_date(uint8_t* day, uint8_t* month, uint16_t* year);
