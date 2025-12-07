@@ -20,6 +20,8 @@ extern "C" {
 	char* strcat(char* s1, const char* s2);
 	char* strcat_c(char* string, char c, size_t size);
 
+	char* strchr(const char* str, int ch);
+
 	void* memcpy(void*, const void*, size_t);
 	int memcmp(const void* s1, const void* s2, size_t n);
 

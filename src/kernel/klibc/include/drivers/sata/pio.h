@@ -56,6 +56,7 @@ extern "C" {
 #endif 
 
 #include <stdint.h>
+#include <stdbool.h>
 	/* This struct is a lot.
 	 * Most of these values will go unused, but they are nice to have.
 	 * This is adapted from here:
@@ -472,8 +473,19 @@ extern "C" {
 		uint16_t check_sum : 8;
 	} __attribute__((packed)) sata_device_identify;
 
+	typedef struct {
+		sata_device_identify identify;
+		bool exists;
+		bool atapi;
+	} drive_info_t;
+
+
+	// This isn't really meant to be used outside of pio.cpp
+	// It's here for FatFs for now.
+	bool identify(int drive_number);
 
 	void detect_ide_drives();
+	int get_capacity_bytes(const sata_device_identify* device);
 	int get_drive_info(int argc, char** argv);
 	int sata_test_cmd(int argc, char** argv);
 	bool sata_pio_read28(int drive_number, uint32_t lba, uint8_t sector_count, void* buffer);

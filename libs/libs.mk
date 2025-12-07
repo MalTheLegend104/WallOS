@@ -9,6 +9,9 @@ WALLOS_C_COMPILER 	?= x86_64-wallos-gcc
 WALLOS_CXX_COMPILER	?= x86_64-wallos-g++
 WALLOS_ASSEMBLER 	?= nasm
 WALLOS_LINKER 		?= x86_64-wallos-ld
+AR ?= x86_64-wallos-ar
+ARFLAGS = rcs
+
 
 # Flags
 WALLOS_C_FLAGS 	 ?= -ffreestanding -std=gnu99 -g -Wall -Wextra -Wno-format -nostdlib -lgcc -mno-red-zone -O0 -mcmodel=kernel

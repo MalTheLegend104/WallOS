@@ -7,6 +7,8 @@
 
 #include <drivers/serial.h>
 #include <klibc/kprint.h>
+#include <cpu_io.h>
+
 #define PORT 0x3f8          // COM1
 
 int init_serial() {
@@ -751,7 +753,7 @@ int vprintf_serial(const char* restrict format, va_list list) {
 								}
 						}
 						break;
-					}
+			}
 #endif // WALLOS_ENABLE_PRINTF_N
 				// ------------------------------------------------------------------------------------------------
 				// Flags
@@ -979,8 +981,8 @@ int vprintf_serial(const char* restrict format, va_list list) {
 						written++;
 						break;
 					}
-			}
-		} else {
+		}
+	} else {
 			write_serial(*current);
 			written++;
 		}
@@ -998,7 +1000,7 @@ int vprintf_serial(const char* restrict format, va_list list) {
 			padding = 0;
 			current++;
 		}
-	}
+}
 
 	return (int) written;
 }

@@ -1,6 +1,7 @@
 #include <drivers/sata/pio.h>
 #include <drivers/serial.h>
 #include <klibc/kprint.h>
+#include <cpu_io.h>
 #include <stdio.h>
 #include <stdbool.h>
 #include <string.h>
@@ -9,12 +10,6 @@
 #define PRIMARY_SECOND	 1
 #define SECONDARY_FIRST  2
 #define SECONDARY_SECOND 3
-
-typedef struct {
-	sata_device_identify identify;
-	bool exists;
-	bool atapi;
-} drive_info_t;
 
 drive_info_t drive_zero{};
 drive_info_t drive_one{};
@@ -143,7 +138,7 @@ bool identify(int drive_number) {
 	}
 
 	// Continue polling until ERR is set or DRQ is set
-	while (((status = inb(command_register)) & (0x40 | 0x01)) == 0) {}
+	while (((status = inb(command_register)) & (0x40 | 0x01)) == 0) { }
 
 	if (status & 0x01) return false; // It failed to give the command, we just ignore it.
 
@@ -254,68 +249,74 @@ static void ata_wait_drq(const uint16_t command_register) {
 	} while (!(status & 0x08)); // DRQ
 }
 
+/* This is kinda ugly, but it's the easiest way I could think of to do this. */
 static bool resolve_drive_registers(
-    const int drive_number,
-    uint16_t& data_register,
-    uint16_t& sector_count,
-    uint16_t& lba_low,
-    uint16_t& lba_mid,
-    uint16_t& lba_high,
-    uint16_t& drive_register,
-    uint16_t& command_register
+	const int drive_number,
+	uint16_t& data_register,
+	uint16_t& sector_count,
+	uint16_t& lba_low,
+	uint16_t& lba_mid,
+	uint16_t& lba_high,
+	uint16_t& drive_register,
+	uint16_t& command_register
 ) {
-    switch (drive_number) {
-        case PRIMARY_FIRST:
-            data_register     = PRIMARY_DATA_REGISTER;
-            sector_count      = PRIMARY_SECTOR_COUNT;
-            lba_low           = PRIMARY_LBA_LOW;
-            lba_mid           = PRIMARY_LBA_MID;
-            lba_high          = PRIMARY_LBA_HIGH;
-            drive_register    = PRIMARY_DRIVE_REGISTER;
-            command_register  = PRIMARY_COMMAND_REGISTER;
-            return true;
+	switch (drive_number) {
+		case PRIMARY_FIRST:
+			data_register = PRIMARY_DATA_REGISTER;
+			sector_count = PRIMARY_SECTOR_COUNT;
+			lba_low = PRIMARY_LBA_LOW;
+			lba_mid = PRIMARY_LBA_MID;
+			lba_high = PRIMARY_LBA_HIGH;
+			drive_register = PRIMARY_DRIVE_REGISTER;
+			command_register = PRIMARY_COMMAND_REGISTER;
+			return true;
 
-        case PRIMARY_SECOND:
-            data_register     = PRIMARY_DATA_REGISTER;
-            sector_count      = PRIMARY_SECTOR_COUNT;
-            lba_low           = PRIMARY_LBA_LOW;
-            lba_mid           = PRIMARY_LBA_MID;
-            lba_high          = PRIMARY_LBA_HIGH;
-            drive_register    = PRIMARY_DRIVE_REGISTER;
-            command_register  = PRIMARY_COMMAND_REGISTER;
-            return true;
+		case PRIMARY_SECOND:
+			data_register = PRIMARY_DATA_REGISTER;
+			sector_count = PRIMARY_SECTOR_COUNT;
+			lba_low = PRIMARY_LBA_LOW;
+			lba_mid = PRIMARY_LBA_MID;
+			lba_high = PRIMARY_LBA_HIGH;
+			drive_register = PRIMARY_DRIVE_REGISTER;
+			command_register = PRIMARY_COMMAND_REGISTER;
+			return true;
 
-        case SECONDARY_FIRST:
-            data_register     = SECONDARY_DATA_REGISTER;
-            sector_count      = SECONDARY_SECTOR_COUNT;
-            lba_low           = SECONDARY_LBA_LOW;
-            lba_mid           = SECONDARY_LBA_MID;
-            lba_high          = SECONDARY_LBA_HIGH;
-            drive_register    = SECONDARY_DRIVE_REGISTER;
-            command_register  = SECONDARY_COMMAND_REGISTER;
-            return true;
+		case SECONDARY_FIRST:
+			data_register = SECONDARY_DATA_REGISTER;
+			sector_count = SECONDARY_SECTOR_COUNT;
+			lba_low = SECONDARY_LBA_LOW;
+			lba_mid = SECONDARY_LBA_MID;
+			lba_high = SECONDARY_LBA_HIGH;
+			drive_register = SECONDARY_DRIVE_REGISTER;
+			command_register = SECONDARY_COMMAND_REGISTER;
+			return true;
 
-        case SECONDARY_SECOND:
-            data_register     = SECONDARY_DATA_REGISTER;
-            sector_count      = SECONDARY_SECTOR_COUNT;
-            lba_low           = SECONDARY_LBA_LOW;
-            lba_mid           = SECONDARY_LBA_MID;
-            lba_high          = SECONDARY_LBA_HIGH;
-            drive_register    = SECONDARY_DRIVE_REGISTER;
-            command_register  = SECONDARY_COMMAND_REGISTER;
-            return true;
+		case SECONDARY_SECOND:
+			data_register = SECONDARY_DATA_REGISTER;
+			sector_count = SECONDARY_SECTOR_COUNT;
+			lba_low = SECONDARY_LBA_LOW;
+			lba_mid = SECONDARY_LBA_MID;
+			lba_high = SECONDARY_LBA_HIGH;
+			drive_register = SECONDARY_DRIVE_REGISTER;
+			command_register = SECONDARY_COMMAND_REGISTER;
+			return true;
 
-        default:
-            return false;
-    }
+		default:
+			return false;
+	}
 }
 
 bool sata_pio_read28(const int drive_number, const uint32_t lba, const uint8_t sector_count, void* buffer) {
-	uint16_t data_reg, sec_count, lba_low, lba_mid, lba_high, drv_reg, cmd_reg;
+	uint16_t data_reg;
+	uint16_t sec_count;
+	uint16_t lba_low;
+	uint16_t lba_mid;
+	uint16_t lba_high;
+	uint16_t drv_reg;
+	uint16_t cmd_reg;
 
-	if (!resolve_drive_registers(drive_number, data_reg, sec_count,
-								 lba_low, lba_mid, lba_high,
-								 drv_reg, cmd_reg))
+
+	if (!resolve_drive_registers(drive_number, data_reg, sec_count, lba_low, lba_mid, lba_high, drv_reg, cmd_reg))
 		return false;
 
 	// Determine master/slave based on drive number
@@ -326,9 +327,9 @@ bool sata_pio_read28(const int drive_number, const uint32_t lba, const uint8_t s
 	io_wait();
 
 	outb(sec_count, sector_count);
-	outb(lba_low,  (uint8_t)(lba      ));
-	outb(lba_mid,  (uint8_t)(lba >>  8));
-	outb(lba_high, (uint8_t)(lba >> 16));
+	outb(lba_low, (uint8_t) (lba));
+	outb(lba_mid, (uint8_t) (lba >> 8));
+	outb(lba_high, (uint8_t) (lba >> 16));
 
 	outb(cmd_reg, COMMAND_READ_SECTOR);
 	io_wait();
@@ -350,11 +351,15 @@ bool sata_pio_read28(const int drive_number, const uint32_t lba, const uint8_t s
 }
 
 bool sata_pio_write28(const int drive_number, const uint32_t lba, const uint8_t sector_count, const void* buffer) {
-	uint16_t data_reg, sec_count, lba_low, lba_mid, lba_high, drv_reg, cmd_reg;
+	uint16_t data_reg;
+	uint16_t sec_count;
+	uint16_t lba_low;
+	uint16_t lba_mid;
+	uint16_t lba_high;
+	uint16_t drv_reg;
+	uint16_t cmd_reg;
 
-	if (!resolve_drive_registers(drive_number, data_reg, sec_count,
-								 lba_low, lba_mid, lba_high,
-								 drv_reg, cmd_reg))
+	if (!resolve_drive_registers(drive_number, data_reg, sec_count, lba_low, lba_mid, lba_high, drv_reg, cmd_reg))
 		return false;
 
 	uint8_t drive_select = (drive_number == 0 || drive_number == 2) ? 0xE0 : 0xF0;
@@ -364,9 +369,9 @@ bool sata_pio_write28(const int drive_number, const uint32_t lba, const uint8_t 
 	io_wait();
 
 	outb(sec_count, sector_count);
-	outb(lba_low,  (uint8_t)(lba      ));
-	outb(lba_mid,  (uint8_t)(lba >>  8));
-	outb(lba_high, (uint8_t)(lba >> 16));
+	outb(lba_low, (uint8_t) (lba));
+	outb(lba_mid, (uint8_t) (lba >> 8));
+	outb(lba_high, (uint8_t) (lba >> 16));
 
 	outb(cmd_reg, COMMAND_WRITE_SECTOR);
 	io_wait();
@@ -404,9 +409,9 @@ int sata_test_cmd(int argc, char** argv) {
 	}
 
 	if (!drive_zero.exists && drive == 0) { printf("Drive0 not present.\n"); return 0; }
-	if (!drive_one.exists  && drive == 1) { printf("Drive1 not present.\n"); return 0; }
-	if (!drive_two.exists  && drive == 2) { printf("Drive2 not present.\n"); return 0; }
-	if (!drive_three.exists&& drive == 3) { printf("Drive3 not present.\n"); return 0; }
+	if (!drive_one.exists && drive == 1) { printf("Drive1 not present.\n"); return 0; }
+	if (!drive_two.exists && drive == 2) { printf("Drive2 not present.\n"); return 0; }
+	if (!drive_three.exists && drive == 3) { printf("Drive3 not present.\n"); return 0; }
 
 	printf("Running ATA PIO test suite on drive %d...\n", drive);
 

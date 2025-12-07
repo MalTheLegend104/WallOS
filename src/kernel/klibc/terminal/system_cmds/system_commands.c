@@ -200,4 +200,5 @@ void registerSystemCommands() {
 	registerCommand((Command) { time_command, time_help, "time", NULL, 0 });
 	registerCommand((Command) { meminfo, meminfo_help, "meminfo", NULL, 0 });
 	registerCommand((Command) { sysinfo, NULL, "sysinfo", NULL, 0 });
+	registerCommand((Command) { drive_command, drive_command_help, "drive", NULL, 0 });
 }

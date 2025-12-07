@@ -1,4 +1,5 @@
 #include <system/timing.h>
+#include <system/ktime.h>
 #include <klibc/logger.h>
 #include <terminal/terminal.h>
 #include <string.h>
@@ -37,82 +38,6 @@ bool is_int(const char* str) {
 
 	// If all characters are valid digits, the string is a base 10 integer.
 	return true;
-}
-
-static uint8_t bcd_to_binary(uint8_t bcd_value) {
-	return ((bcd_value / 16) * 10) + (bcd_value % 16);
-}
-
-void read_cmos_time(uint8_t* hours, uint8_t* minutes, uint8_t* seconds) {
-	// Disable interrupts to avoid any time discrepancies
-	asm volatile("cli");
-
-	// Wait for any previous update in progress to complete
-	uint8_t prev_status;
-	do {
-		outb(CMOS_OUT_PORT, CMOS_STATUS_A);
-		prev_status = inb(CMOS_IN_PORT);
-	} while (prev_status & 0x80);
-
-	// Read the time from CMOS registers
-	outb(CMOS_OUT_PORT, CMOS_HOURS);
-	*hours = inb(CMOS_IN_PORT);
-
-	outb(CMOS_OUT_PORT, CMOS_MINUTES);
-	*minutes = inb(CMOS_IN_PORT);
-
-	outb(CMOS_OUT_PORT, CMOS_SECONDS);
-	*seconds = inb(CMOS_IN_PORT);
-
-	// Enable interrupts again
-	// This is here to minimize time spent without interrupts.
-	asm volatile("sti");
-
-	// Convert BCD to binary
-	*hours = bcd_to_binary(*hours);
-	*minutes = bcd_to_binary(*minutes);
-	*seconds = bcd_to_binary(*seconds);
-}
-
-// Function to read the current date from CMOS
-// Output: The current date in the format DD/MM/YYYY
-void read_cmos_date(uint8_t* day, uint8_t* month, uint16_t* year) {
-	// Disable interrupts to avoid any time discrepancies
-	asm volatile("cli");
-
-	// Wait for any previous update in progress to complete
-	uint8_t prev_status;
-	do {
-		outb(CMOS_OUT_PORT, CMOS_STATUS_A);
-		prev_status = inb(CMOS_IN_PORT);
-	} while (prev_status & 0x80);
-
-	// Read the date from CMOS registers
-	outb(CMOS_OUT_PORT, CMOS_DAY);
-	*day = inb(CMOS_IN_PORT);
-
-	outb(CMOS_OUT_PORT, CMOS_MONTH);
-	*month = inb(CMOS_IN_PORT);
-
-	outb(CMOS_OUT_PORT, CMOS_YEAR); // CMOS register index 0x09 stores the current year (last two digits)
-	uint8_t low_year = inb(CMOS_IN_PORT);
-
-	outb(CMOS_OUT_PORT, CMOS_CENTURY);
-	uint8_t century = inb(CMOS_IN_PORT);
-
-	// Enable interrupts again
-	asm volatile("sti");
-
-	// Convert BCD to binary
-	*day = bcd_to_binary(*day);
-	*month = bcd_to_binary(*month);
-	low_year = bcd_to_binary(low_year);
-
-	// Convert the century binary value to the decimal representation
-	uint16_t current_century = (uint16_t) (100 * bcd_to_binary(century));
-
-	// Combine the century and the year digits to get the full year
-	*year = (uint16_t) (current_century + low_year);
 }
 
 int time_command(int argc, char** argv) {

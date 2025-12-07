@@ -7,6 +7,7 @@
 #include <stdbool.h>
 #include <drivers/keyboard.h>
 #include <drivers/serial.h>
+#include <cpu_io.h>
 
 // I aint touching the interrupt frame on 99% of these but it's required by gcc.
 #pragma GCC diagnostic ignored "-Wunused-parameter" 

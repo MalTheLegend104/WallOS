@@ -10,9 +10,9 @@ include libs/libs.mk
 ARGS ?= -m 5G -M hpet=on -machine pc -cpu max
 # To add more devices, simply put them at any index 0-3, excluding 2.
 # Qemu mounts the cd drive at index 2 (secondary master drive)
-ARGS += -drive file=hda.img,if=ide,media=disk,index=0 \
-		-drive file=hda2.img,if=ide,media=disk,index=1 \
-		-drive file=hda3.img,if=ide,media=disk,index=3
+ARGS += -drive file=hda.img,if=ide,media=disk,format=raw,index=0 \
+        -drive file=hda2.img,if=ide,media=disk,format=raw,index=1 \
+        -drive file=hda3.img,if=ide,media=disk,format=raw,index=3
 
 # These make it much easier to change things whenever we are finally self hosted.
 WALLOS_C_COMPILER 	:= x86_64-wallos-gcc
@@ -54,7 +54,13 @@ LINKER_FLAGS 	:=
 LIBC_INCLUDE	:= src/libc/include
 KLIBC_INCLUDE 	:= src/kernel/klibc/include
 KCORE_INCLUDE	:= src/kernel/kcore/include
+x86_64_INCLUDE  := src/kernel/x86_64/include
 ACPI_INCLUDE	:= src/acpi
+
+# Export the includes for libraries in ./libs
+export KLIBC_INCLUDE
+export LIBC_INCLUDE
+export x86_64_INCLUDE
 
 # ----------------------------------------------------
 # LIBC
@@ -149,7 +155,6 @@ $(KCORE_C_OBJ): build/kcore/%.o : src/kernel/kcore/%.c
 # ----------------------------------------------------
 # x86-64
 # ----------------------------------------------------
-x86_64_INCLUDE  := src/kernel/x86_64/include
 x86_64_ASM_SRCS := $(shell find src/kernel/x86_64 -name *.asm)
 x86_64_ASM_OBJ  := $(patsubst src/kernel/x86_64/%.asm, build/x86_64/%.o, $(x86_64_ASM_SRCS))
 x86_64_C_SRC    := $(shell find src/kernel/x86_64 -name *.c)

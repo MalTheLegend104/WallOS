@@ -15,6 +15,9 @@ extern "C" {
 
 	int sysinfo(int argc, char** argv);
 	void sysinfo_boot();
+
+	int drive_command(int argc, char** argv);
+	int drive_command_help(int argc, char** argv);
 #ifdef __cplusplus
 }
 #endif
