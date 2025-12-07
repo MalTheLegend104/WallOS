@@ -20,12 +20,15 @@ WALLOS_C_COMPILER 	:= x86_64-wallos-gcc
 WALLOS_CXX_COMPILER := x86_64-wallos-g++
 WALLOS_ASSEMBLER 	:= nasm
 WALLOS_LINKER 		:= x86_64-wallos-ld
+WALLOS_OBJCOPY 		:= x86_64-wallos-objcopy
 
 # We export them to make them available to other makefiles that this one will call.
 export WALLOS_C_COMPILER
 export WALLOS_CXX_COMPILER
 export WALLOS_ASSEMBLER
 export WALLOS_LINKER
+export WALLOS_OBJCOPY
+
 
 # To make builds look nicer and easier to follow, we define and export the following:
 COLOR_GREEN	  ?= \033[0;32m
@@ -199,13 +202,13 @@ all:
 	+$(MAKE) -f $(THIS_FILE) libs 
 	+$(MAKE) -f $(THIS_FILE) build 
 
-build: $(LIBC_OBJ) $(KLIBC_OBJ) $(KCORE_OBJ) $(x86_64_OBJ) $(IDT_C_OBJ)
+build: $(LIBC_OBJ) $(KLIBC_OBJ) $(KCORE_OBJ) $(x86_64_OBJ) $(IDT_C_OBJ) initrd_temp
 	echo "$(COLOR_CYAN)<--------------------------------------------------------->$(END_COLOR)"
 	echo "$(COLOR_CYAN)<-----------------Building x86_64 Kernel------------------>$(END_COLOR)"
 	echo "$(COLOR_CYAN)<--------------------------------------------------------->$(END_COLOR)"
 	mkdir -p dist/x86_64
 	echo "<---------------Linking--------------->"
-	$(WALLOS_LINKER) -n -o dist/x86_64/WallOS.bin -T targets/x86_64/linker.ld font.o $(LIBC_OBJ) $(KLIBC_OBJ) $(x86_64_OBJ) $(IDT_C_OBJ) $(KCORE_OBJ) $(LIBRARY_FLAGS)
+	$(WALLOS_LINKER) -n -o dist/x86_64/WallOS.bin -T targets/x86_64/linker.ld font.o dist/initrd.o $(LIBC_OBJ) $(KLIBC_OBJ) $(x86_64_OBJ) $(IDT_C_OBJ) $(KCORE_OBJ) $(LIBRARY_FLAGS)
 	echo "<------------Compiling ISO------------>"
 	cp dist/x86_64/WallOS.bin targets/x86_64/iso/boot/WallOS.bin && \
 	grub-mkrescue /usr/lib/grub/i386-pc -o dist/x86_64/WallOS.iso targets/x86_64/iso
@@ -214,7 +217,15 @@ build: $(LIBC_OBJ) $(KLIBC_OBJ) $(KCORE_OBJ) $(x86_64_OBJ) $(IDT_C_OBJ)
 	echo "$(COLOR_CYAN)<--------------------------------------------------------->$(END_COLOR)"
 	echo "$(COLOR_CYAN)<-----------------Finished x86_64 Kernel------------------>$(END_COLOR)"
 	echo "$(COLOR_CYAN)<--------------------------------------------------------->$(END_COLOR)"
-	
+
+initrd_temp:
+	echo "$(COLOR_CYAN)<--------------------------------------------------------->$(END_COLOR)"
+	echo "$(COLOR_CYAN)<------------------INITRD_TEMP_OBJCOPY-------------------->$(END_COLOR)"
+	echo "$(COLOR_CYAN)<--------------------------------------------------------->$(END_COLOR)"
+	echo "$(WALLOS_OBJCOPY) -I binary -O elf64-x86-64 -B i386:x86-64 dist/initrd.img dist/initrd.o --rename-section .data=.initrd"
+	$(WALLOS_OBJCOPY) -I binary -O elf64-x86-64 -B i386:x86-64 dist/initrd.img dist/initrd.o --rename-section .data=.initrd
+
+
 qemu: all
 	qemu-system-x86_64 -cdrom dist/x86_64/WallOS.iso  -cpu max $(ARGS)
 

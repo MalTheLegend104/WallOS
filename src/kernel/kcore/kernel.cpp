@@ -276,6 +276,33 @@ void framebuffer() {
 
 #include <drivers/sata/pio.h>
 
+/* TODO: Remove this when PMM is fixed. */
+#define JANKY_INITRD_LOADER
+#ifdef JANKY_INITRD_LOADER
+extern "C" {
+	// extern int drive_mount_cmd(int argc, char** argv);
+
+	extern uint64_t _initrd_start_;
+	extern uint64_t _initrd_end_;
+	uint64_t _initrd_size;
+	uint8_t* _initrd_data;
+}
+
+void init_initrd() {
+	// size_t size = (size_t) _binary_initrd_img_size;
+	// const uint8_t* data = _binary_initrd_img_start;
+
+	_initrd_size = (size_t) &_initrd_end_ - (size_t) &_initrd_start_;
+	_initrd_data = (uint8_t*) &_initrd_start_;
+
+	printf_serial("Initrd start: 0x%llx\r\n", &_initrd_start_);
+	printf_serial("Initrd end: 0x%llx\r\n", &_initrd_end_);
+	printf_serial("Initrd size: %llu bytes\r\n", (uint64_t) &_initrd_end_ - (uint64_t) &_initrd_start_);
+
+	// now you can feed `data` and `size` into your FS code
+}
+#endif // JANKY_INITRD_LOADER
+
 void kernel_main(unsigned int magic, multiboot_info* mbt_info) {
 	initScreen();
 	init_serial();
@@ -298,14 +325,15 @@ void kernel_main(unsigned int magic, multiboot_info* mbt_info) {
 	// We *should* be reserving this memory so it doesn't get allocated to something else.
 	// the physical allocator is a horrible mess from past me
 	// I'm taking my win with the regular filesystem and leaving this for now.
-	multiboot_tag_module* module_tag = MultibootManager::getModuleTag();
-	printf_serial("    MODULE tag exists. Module command line: %s\r\n", module_tag->cmdline);
-	printf_serial("    Module start: 0x%X, end: 0x%X\r\n", module_tag->mod_start, module_tag->mod_end);
-	printf_serial("    Module Type: %d\r\n", module_tag->type);
-	printf_serial("    Module Size: %d bytes\r\n", module_tag->size);
-	printf_serial("    Module Physical Size: %d bytes\r\n", module_tag->mod_end - module_tag->mod_start);
-
+	// multiboot_tag_module* module_tag = MultibootManager::getModuleTag();
+	// printf_serial("    MODULE tag exists. Module command line: %s\r\n", module_tag->cmdline);
+	// printf_serial("    Module start: 0x%X, end: 0x%X\r\n", module_tag->mod_start, module_tag->mod_end);
+	// printf_serial("    Module Type: %d\r\n", module_tag->type);
+	// printf_serial("    Module Size: %d bytes\r\n", module_tag->size);
+	// printf_serial("    Module Physical Size: %d bytes\r\n", module_tag->mod_end - module_tag->mod_start);
 	//Memory::reserveMemory(module_tag->mod_start, module_tag->mod_end - module_tag->mod_start);
+
+	init_initrd();
 
 	Memory::PhysicalMemInit();
 
@@ -350,6 +378,9 @@ void kernel_main(unsigned int magic, multiboot_info* mbt_info) {
 	Syscall::initialize();
 
 	initialize_acpi();
+
+	// char* array[] = { (char*) "drive", (char*) "mount", (char*) "0" };
+	// drive_mount_cmd(3, array);
 
 	// After we're done checking features, we need to set up our terminal.
 	// Eventually this will be a userspace program. 

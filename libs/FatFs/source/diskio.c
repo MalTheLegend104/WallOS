@@ -8,6 +8,8 @@
 #include "diskio.h"
 #include <drivers/sata/pio.h>
 #include <system/ktime.h>
+#include <string.h>
+
 
 // Access to our drive info from pio.cpp
 extern drive_info_t drive_zero;
@@ -15,13 +17,23 @@ extern drive_info_t drive_one;
 extern drive_info_t drive_two;
 extern drive_info_t drive_three;
 
+extern uint8_t* _initrd_data;
+extern uint64_t _initrd_size;
+
+drive_info_t _initrd_drive = {
+	.identify = {0},
+	.exists = true,
+	.atapi = false
+};
+
 // Helper to get drive info pointer based on pdrv
 static drive_info_t* get_drive_info_ptr(BYTE pdrv) {
 	switch (pdrv) {
-		case 0: return &drive_zero;
-		case 1: return &drive_one;
-		case 2: return &drive_two;
-		case 3: return &drive_three;
+		case 0: return &_initrd_drive;
+		case 1: return &drive_zero;
+		case 2: return &drive_one;
+		case 3: return &drive_two;
+		case 4: return &drive_three;
 		default: return NULL;
 	}
 }
@@ -52,6 +64,23 @@ DRESULT disk_read(BYTE pdrv, BYTE* buff, LBA_t sector, UINT count) {
 	drive_info_t* drive = get_drive_info_ptr(pdrv);
 	if (!drive || !drive->exists) return RES_NOTRDY;
 
+	if (pdrv == 0) {
+		// --- RamFS Read (Drive 0) ---
+		if (!_initrd_drive.exists) return RES_NOTRDY;
+
+		LBA_t offset = sector * FF_MIN_SS; // FF_MIN_SS is 512 bytes
+		size_t bytes_to_read = count * FF_MIN_SS;
+
+		if ((offset + bytes_to_read) > _initrd_size) {
+			return RES_PARERR; // Read beyond end of RAM buffer
+		}
+
+		// Copy data from the RAM buffer to the FatFs buffer
+		memcpy(buff, &_initrd_data[offset], bytes_to_read);
+
+		return RES_OK;
+	}
+
 	// FatFs might request more sectors than PIO can handle in one go (255 limit on uint8_t).
 	// The driver takes uint8_t for sector_count.
 	// We must loop if count > 255.
@@ -80,6 +109,23 @@ DRESULT disk_read(BYTE pdrv, BYTE* buff, LBA_t sector, UINT count) {
 DRESULT disk_write(BYTE pdrv, const BYTE* buff, LBA_t sector, UINT count) {
 	drive_info_t* drive = get_drive_info_ptr(pdrv);
 	if (!drive || !drive->exists) return RES_NOTRDY;
+
+	if (pdrv == 0) {
+		// --- RamFS Write (Drive 0) ---
+		if (!_initrd_drive.exists) return RES_NOTRDY;
+
+		LBA_t offset = sector * FF_MIN_SS;
+		size_t bytes_to_write = count * FF_MIN_SS;
+
+		if ((offset + bytes_to_write) > _initrd_size) {
+			return RES_PARERR; // Write beyond end of RAM buffer
+		}
+
+		// Copy data from the FatFs buffer into the RAM buffer
+		memcpy(&_initrd_data[offset], buff, bytes_to_write);
+
+		return RES_OK;
+	}
 
 	UINT remaining = count;
 	LBA_t current_lba = sector;
