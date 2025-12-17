@@ -1,13 +1,17 @@
 # Ramfs
 
 The ramfs is very similar to initrd on linux. It's the temporary files that WallOS needs on boot.
-These files are all located in `src/ramfs/`. This folder contains subfolders, each of which can contain it's own build system.
+These files are all located in `src/initrd/`. This folder contains subfolders, each of which can contain it's own build system.
 
 This ramfs supports several types of other buildsystems:
 
 - Makefile
 - CMake
 - Meson
+
+## Filesystem
+
+The ramfs is formatted with FAT, but the type may vary (12 or 16 is the most likely). Currently the filesystem doesn't load the drive automatically (which it really should, I'm just lazy). To access the ramfs, you must run `drive mount 0`, and then access it using `drive <command> 0:<path>`. This will all change eventually when a virtual filesystem is added, along with support for anything other than PIO drives.
 
 ## Exports
 
@@ -31,7 +35,7 @@ The ramfs buildsystem supports many nice exports (that you should 100% use to en
 
 All you have to do for make is ensure you use the above exports in place of your c and c++ compilers.
 The c and c++ compilers are both custom versions of gcc, meaning they support most of the same flags as regular gcc.
-In addition, the `__wallos__` macro is defined, as is `__unix__`. It is advised to use the c and cxx flags, bit it is not required.
+In addition, the `__wallos__` macro is defined, as is `__unix__`. It is advised to use the c and cxx flags, but it is not required.
 This information is the same for the linker, advised but not necessary. Just ensure the output of the executable is `elf64`.
 The assembler is nasm by default, meaning you should still use `gas` or any other assembler if required.
 The assembler flags are generally empty but are reserved for later usage.
