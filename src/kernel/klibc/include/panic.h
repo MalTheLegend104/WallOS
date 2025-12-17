@@ -1,7 +1,7 @@
 #ifndef PANIC_H
 #define PANIC_H
 #include <stdint.h>
-#ifdef __is_kernel_
+
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -18,5 +18,5 @@ extern "C" {
 #ifdef __cplusplus
 }
 #endif
-#endif // __is_kernel_
+
 #endif //PANIC_H

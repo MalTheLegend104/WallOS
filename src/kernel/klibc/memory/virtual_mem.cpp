@@ -81,7 +81,7 @@
 #include <panic.h>
 #include <klibc/logger.h>
 #include <drivers/serial.h>
-#include <memory/virtual_mem.hpp>
+#include <memory/virtual_mem.h>
 #include <memory/physical_mem.hpp>
 
 /* To start out, we're defining:
@@ -274,6 +274,7 @@ uintptr_t physToVirt(uint64_t pml4_index, uint64_t pdp_index, uint64_t pde_index
 
 /**
  * @brief Maps a framebuffer into both physical and virtual memory.
+ * The framebuffer gets identity mapped into memory.
  *
  * @param base_addr The physical memory address of the framebuffer.
  * @param size The size of the framebuffer in bytes.
@@ -336,7 +337,13 @@ void Memory::MapPreAllocMem(uintptr_t addr) {
 }
 
 uintptr_t Memory::NewKernelPage() {
-	// We need to find an entry in the kpdp that we can map to.
+	return MapSequentialKernelPages(1);
+}
+
+#define TABLE_ENTRY_EMPTY(table, index) (!(table[index] & (1 << (BIT_PRESENT - 1))))
+
+uintptr_t Memory::MapSequentialKernelPages(size_t pages) {
+	// We need to find sequential entries in the kpdp that we can map to.
 	// Each entry in kpdp is a 1GB region of memory. 
 	// We start at kpdp[510], if that's full we go to kpdp[511]
 	// If both of those are full, we start at kpdp[1]->kpdp[509] (index 0 is identity mapped to index 510)
@@ -353,43 +360,183 @@ uintptr_t Memory::NewKernelPage() {
 		// Each pdp entry has 512 pde entries.
 		// Each pde entry corresponds to 1GB of virtual addresses.
 		// Each entry in a pde is a 2MB page.
-		// If I ever get around to 4KB pages, each pde contains a pte, each of which is 512 4kb pages
+		// If I ever get around to 4KB pages, each pde contains 512 pte, each of which is 4kb pages
+
+		uint64_t pde_base_index = 0;
+		size_t current_streak = 0;
 
 		// If the pde entry isn't present, we need to create a new pde or load one from disk
-		if (!(kpdp[i] & (1 << (BIT_PRESENT - 1)))) {
-			// TODO use kernel_allocator to alloc new tables
+		if (TABLE_ENTRY_EMPTY(kpdp, i)) {
+			// TODO: use kernel allocator to alloc new tables
 			continue; // For now we're going to just continue.
 		}
 		for (int j = 0; j < TABLE_ENTRIES; j++) {
-			if (!(pde_t[j] & (1 << (BIT_PRESENT - 1)))) {
-				uintptr_t addr = Memory::PhysicalAlloc2MB();
-				// printf("\n0x%llx\n", addr);
-				/* This will be dealt with properly at a later time.
-				 * To deal with this properly I need to implement filesystems and swap space.
-				 */
-				if (!addr) panic_s("Out of physical memory.");
+			if (TABLE_ENTRY_EMPTY(pde_t, j)) {
+					// For simplicity's sake, I am not allocating across tables.
+					// I wont allocate the end of pde[1] into the beginning of pde[2]
+					// This would complicate this code to be much more messy, which I dont want to deal with right now.
+				if (current_streak == 0) {
+					pde_base_index = j;
+				}
 
-				set_page_frame(&(pde_t[j]), addr);
-				pde_t[j] |= BIT_SIZE | BIT_WRITE | BIT_PRESENT;
+				current_streak++;
 
-				// TODO make this use invlpg instead of this
-				// This forces a full tlb flush
-				asm volatile("mov %%rax, %%cr3" ::"a"((uint64_t) pml4 - KERNEL_VIRTUAL_BASE));
+				if (current_streak == pages) {
+					uintptr_t base_addr = Memory::PhysicalAlloc2MBSequential(pages);
+					if (!base_addr) panic_s("Out of physical memory.");
 
-				// The new virtual address must be assembled. It's a lil janky.
-				// pml4 index is 511
-				// pdp index is `i`
-				// pde index is `j`
-				// the rest is the base pointer to the address.
-				return physToVirt(511, i, j, 0, PAGE_2MB_SIZE);
+					for (size_t k = 0; k < pages; k++) {
+						set_page_frame(&(pde_t[pde_base_index + k]), base_addr + (PAGE_2MB_SIZE * k));
+						pde_t[pde_base_index + k] |= BIT_SIZE | BIT_WRITE | BIT_PRESENT;
+					}
+
+					// TODO make this use invlpg instead of this
+					// This forces a full tlb flush
+					asm volatile("mov %%rax, %%cr3" ::"a"((uint64_t) pml4 - KERNEL_VIRTUAL_BASE));
+
+					// The new virtual address must be assembled. It's a lil janky.
+					// pml4 index is 511
+					// pdp index is `i`
+					// pde index is `j`
+					// the rest is the base pointer to the address.
+					return physToVirt(511, i, pde_base_index, 0, PAGE_2MB_SIZE);
+				}
+			} else {
+				current_streak = 0;
+				pde_base_index = 0;
 			}
 		}
 		i++;
 	}
 
 	// If we still haven't found something we got a problem.
+	// This will eventually be solved with swap space or something similar.
 	panic_s("Kernel has run out of virtual memory space.");
 	return 0; // Keep GCC happy. This is irrelevant.
+}
+
+/**
+ * @brief Map sequential pages of virtual memory.
+ * This assumes you've already provided/allocated the base address of the sequential physical pages you require.
+ *
+ * @param pages Amount of pages to map
+ * @param phys_base_addr Base address of the physical pages.
+ * If you have more than one page, it will automatically add 2MB_PAGE_SIZE to the base for each sequential page.
+ * @return uintptr_t The base virtual memory address corresponding to the provided physical addresses.
+ */
+uintptr_t Memory::MapSequentialKernelPages(size_t pages, uintptr_t phys_base_addr) {
+	// This is essentially an exact copy of the other sequential mapping
+	// This one just assumes you have already asked the physical allocator for the pages rather than allocating it's own.
+
+	/* First attempt. Check kpdp[510] and kpdp[511] for empty entry. */
+	int i = 510;
+	while (i <= TABLE_ENTRIES) {
+		if (i == 512) i = 1; /* Second attempt. Check the rest of kpdp. */
+		if (i == 509) break; // Break the loop after we loop through the entire kpdp
+		uint64_t* pde_t = (uint64_t*) getFrame(kpdp[i]);
+		// Each pdp entry has 512 pde entries.
+		// Each pde entry corresponds to 1GB of virtual addresses.
+		// Each entry in a pde is a 2MB page.
+		// If I ever get around to 4KB pages, each pde contains 512 pte, each of which is 4kb pages
+
+		uint64_t pde_base_index = 0;
+		size_t current_streak = 0;
+
+		// If the pde entry isn't present, we need to create a new pde or load one from disk
+		if (TABLE_ENTRY_EMPTY(kpdp, i)) {
+			// TODO: use kernel allocator to alloc new tables
+			continue; // For now we're going to just continue.
+		}
+		for (int j = 0; j < TABLE_ENTRIES; j++) {
+			if (TABLE_ENTRY_EMPTY(pde_t, j)) {
+				// For simplicity's sake, I am not allocating across tables.
+				// I wont allocate the end of pde[1] into the beginning of pde[2]
+				// This would complicate this code to be much more messy, which I dont want to deal with right now.
+				if (current_streak == 0) {
+					pde_base_index = j;
+				}
+
+				current_streak++;
+
+				if (current_streak == pages) {
+					uintptr_t base_addr = phys_base_addr;
+					if (!base_addr) {
+						// panic_s("Out of physical memory.");
+						return 0;
+					}
+
+					for (size_t k = 0; k < pages; k++) {
+						set_page_frame(&(pde_t[pde_base_index + k]), base_addr + (PAGE_2MB_SIZE * k));
+						pde_t[pde_base_index + k] |= BIT_SIZE | BIT_WRITE | BIT_PRESENT;
+					}
+
+					// TODO make this use invlpg instead of this
+					// This forces a full tlb flush
+					asm volatile("mov %%rax, %%cr3" ::"a"((uint64_t) pml4 - KERNEL_VIRTUAL_BASE));
+
+					// The new virtual address must be assembled. It's a lil janky.
+					// pml4 index is 511
+					// pdp index is `i`
+					// pde index is `j`
+					// the rest is the base pointer to the address.
+					return physToVirt(511, i, pde_base_index, 0, PAGE_2MB_SIZE);
+				}
+			} else {
+				current_streak = 0;
+				pde_base_index = 0;
+			}
+		}
+		i++;
+	}
+
+	// If we still haven't found something we got a problem.
+	// This will eventually be solved with swap space or something similar.
+	panic_s("Kernel has run out of virtual memory space.");
+	return 0; // Keep GCC happy. This is irrelevant.
+}
+
+/**
+ * @brief Maps the provided address into the kernel address space.
+ *
+ * The entire 2MB page around the address will be mapped. The length is to check how many pages it takes up.
+ * If (addr + len) is over the 2MB boundary, both pages will be mapped sequentially.
+ *
+ * @param addr The PHYSICAL address to be mapped. This will NOT work for remapping virtual addresses.
+ * @param len Length of the requested mapping in bytes.
+ * @return uintptr_t Virtual address corresponding to the provided physical address.
+ */
+uintptr_t Memory::MapKernelLocation(uintptr_t addr, size_t len) {
+	// The offset from the 2MB boundary line to the base address.
+	size_t addr_offset = addr & 0x1FFFFF;
+	uintptr_t final_addr = addr + len;
+
+	uintptr_t base_page_addr = addr & ~0x1FFFFF; // Clear the lower bytes of the addr to get the base page pointer
+	uintptr_t final_page_addr = final_addr & ~0x1FFFFF;
+
+	int page_count = 1;
+	if (final_page_addr != base_page_addr) {
+		page_count = (final_page_addr - base_page_addr) / PAGE_2MB_SIZE;
+	}
+
+	// printf_serial("\tBase Page Addr: 0x%llx\r\n\tFinal Page Addr: 0x%llx\r\n\tBase Offset: 0x%llx\r\n", base_page_addr, final_page_addr, addr_offset);
+
+	uintptr_t phys_base_addr = Memory::PhysicalMarkAllocated(addr, len);
+	// We're going to assume we have access to the memory at this point.
+	// The only way it returns NULL is if it's reserved or already mapped, which we're just going to assume means we have access.
+
+	// printf_serial("\tPhysical Base: 0x%llx\r\n", phys_base_addr);
+
+	// Now that the physical allocator knows we mapped it, we can tell the virtual manager to map it to the kernel address space.
+	uintptr_t allocated_addr = Memory::MapSequentialKernelPages(page_count, phys_base_addr);
+	if (allocated_addr == 0) return allocated_addr;
+
+	// printf_serial("\tAllocated Virtual: 0x%llx\r\n", allocated_addr + addr_offset);
+
+	return (allocated_addr + addr_offset);
+}
+
+uintptr_t mapKernelLocation(uintptr_t addr, size_t len) {
+	return Memory::MapKernelLocation(addr, len);
 }
 
 #pragma GCC diagnostic ignored "-Wunused-parameter" 

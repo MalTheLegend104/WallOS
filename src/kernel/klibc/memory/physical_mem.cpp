@@ -1,12 +1,12 @@
 #include <memory/physical_mem.hpp>
-#include <memory/virtual_mem.hpp>
+#include <memory/virtual_mem.h>
 #include <stdlib.h>
 #include <string.h>
 #include <panic.h>
 #include <stdio.h>
 #include <klibc/kprint.h>
 #include <klibc/logger.h>
-#include <idt.h>
+#include <system/idt.h>
 #include <assert.h>
 
 mmap_info mem_info;
@@ -192,10 +192,10 @@ void Memory::PhysicalMemInit() {
 	set_to_last();
 	set_colors(VGA_COLOR_BROWN, VGA_DEFAULT_BG);
 	for (mmap = mmap_tag->entries; (size_t) mmap < (size_t) mmap_tag + mmap_tag->size; mmap = (struct multiboot_mmap_entry*) ((size_t) mmap + (size_t) mmap_tag->entry_size)) {
+		printf("Found chunk: addr->0x%x len->0x%x\n");
 		map_chunk(mmap->addr, mmap->len, mmap->type);
 	}
 	set_to_last();
-
 	// We need to get the offset that the memory map has taken up, then mark it as not free.
 	// The first "n" number of blocks represent the memory directly behind the kernel
 	uintptr_t end_of_map = (uintptr_t) last_block - (uintptr_t) (&kernel_end);
@@ -233,26 +233,117 @@ Block* last_allocated_block = NULL;
  * Check for a 0 return value, this means it couldn't find a chunk of memory.
  */
 uintptr_t Memory::PhysicalAlloc2MB() {
+	return PhysicalAlloc2MBSequential(1);
+}
+
+uintptr_t Memory::PhysicalAlloc2MBSequential(size_t page_count) {
+	Block* base_block = NULL;
+	Block* last_block = NULL;
+	size_t current_streak = 0;
+
 	// First attempt, we check if last_allocated_block.next_block is free
 	if (last_allocated_block != NULL && last_allocated_block->next_block != NULL) {
-		if (last_allocated_block->next_block->free) {
-			last_allocated_block = last_allocated_block->next_block;
+		base_block = last_block = last_allocated_block->next_block;
+		current_streak++;
+		if (page_count == 1) {
+			last_allocated_block = base_block;
 			last_allocated_block->free = false;
 			return (last_allocated_block->pointer);
+		} else {
+			for (size_t i = 0; i < page_count; i++) {
+				if (last_block->next_block->free) {
+					last_block = last_block->next_block;
+					current_streak++;
+					if (current_streak == page_count) {
+						uintptr_t return_addr = base_block->pointer;
+						last_allocated_block = last_block;
+						for (size_t i = 0; i > page_count; i++) {
+							base_block->free = false;
+							base_block = base_block->next_block;
+						}
+						return (return_addr);
+					}
+				} else {
+					break;
+				}
+			}
 		}
 	}
 
 	// We have to go through the entire map otherwise
 	Block* current = block_list;
 	while (current != NULL) {
-		if (current->free) {
-			current->free = false;
-			last_allocated_block = current;
-			return (current->pointer);
+		if (current->free && current_streak != page_count) {
+			base_block = last_block = current;
+			current_streak++;
+			if (page_count == 1) {
+				last_allocated_block = base_block;
+				last_allocated_block->free = false;
+				return (last_allocated_block->pointer);
+			} else {
+				for (size_t i = 0; i < page_count; i++) {
+					if (last_block->next_block->free) {
+						last_block = last_block->next_block;
+						current_streak++;
+						if (current_streak == page_count) {
+							uintptr_t return_addr = base_block->pointer;
+							last_allocated_block = last_block;
+							for (size_t i = 0; i > page_count; i++) {
+								base_block->free = false;
+								base_block = base_block->next_block;
+							}
+							return (return_addr);
+						}
+					} else {
+						break;
+					}
+				}
+				current = last_block;
+			}
 		}
 		current = current->next_block;
 	}
+
 	return 0; // GCC complains about returning null, bc we're technically returning an int, not a pointer
+}
+
+// TODO: write a function that undoes this and sequential allocations.
+/**
+ * @brief Marks the physical page(s) containing the address + len as taken.
+ *
+ * @param addr Physical address to map as taken
+ * @param len Length of the data block located at the address.
+ * @return The base physical address relating to the provided address. NULL if the address is not mappable (likely protected/reserved memory already).
+ */
+uintptr_t Memory::PhysicalMarkAllocated(uintptr_t addr, size_t len) {
+	uintptr_t base_page_addr = addr & ~0x1FFFFF; // Clear the lower bytes of the addr to get the base page pointer
+	uintptr_t final_page_addr = (addr + len) & ~0x1FFFFF; // Get the final base page pointer
+	size_t page_count = 1;
+
+	// If the base and final are not the same, we need to set more than one page as used.
+	if (final_page_addr != base_page_addr) {
+		page_count = (final_page_addr - base_page_addr) / PAGE_2MB_SIZE;
+	}
+
+	// It will always be a range of addresses we need to map.
+	// This makes out lives much easier, as we can just check ranges of pointers in blocks
+	// We unfortunately have to walk the entirety of the list. At the very worst case, it's O(n).
+
+	Block* current = block_list;
+	size_t pages_marked = 0;
+	while (current != NULL) {
+		register uintptr_t current_ptr = current->pointer;
+		if (current_ptr >= base_page_addr && current_ptr <= final_page_addr) {
+			current->free = false;
+			pages_marked++;
+			if (pages_marked == page_count) break;
+		}
+		current = current->next_block;
+	}
+
+	if (pages_marked == 0) return 0;
+
+	return base_page_addr;
 }
 
 /**

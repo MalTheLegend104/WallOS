@@ -1,7 +1,7 @@
 #ifndef INTERNAL_CALLS_H
 #define INTERNAL_CALLS_H
 #include <stdint.h>
-#include <cpuid.h>
+#include <system/cpuid.h>
 #ifdef __cplusplus
 extern "C" {
 #endif

@@ -1,6 +1,7 @@
-#include <idt.h>
+#include <system/idt.h>
 #include <stdio.h>
 #include <klibc/kprint.h>
+#include <cpu_io.h>
 
 // IDT entry for the handler.
 extern __attribute__((interrupt)) void system_pit(struct interrupt_frame* frame);
@@ -10,7 +11,7 @@ size_t system_execution_time;
 void sleep(size_t ms) {
 	size_t start = system_execution_time;
 	// Busy waiting probably isn't the best way to do this but oh well.
-	while ((system_execution_time - start) < ms) {}
+	while ((system_execution_time - start) < ms) { }
 	return;
 }
 

@@ -53,17 +53,6 @@ extern "C" {
 
 	void initScreen();
 
-	// this is temporarily here
-	static inline void outb(uint16_t port, uint8_t val) {
-		__asm volatile ("outb %0, %1" : : "a"(val), "Nd"(port));
-	}
-
-	//read a value from a port
-	static inline uint8_t inb(uint16_t port) {
-		uint8_t ret;
-		__asm volatile ("inb %1, %0" : "=a"(ret) : "Nd"(port));
-		return ret;
-	}
 #ifdef __is_kernel_
 	void pink_screen(const char* error);
 	void pink_screen_sa(const char** error, uint8_t length);

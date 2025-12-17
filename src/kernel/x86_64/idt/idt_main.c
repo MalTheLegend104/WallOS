@@ -3,10 +3,11 @@
 #include <stdio.h>
 #include <panic.h>
 #include <klibc/logger.h>
-#include <idt.h>
+#include <system/idt.h>
 #include <stdbool.h>
 #include <drivers/keyboard.h>
 #include <drivers/serial.h>
+#include <cpu_io.h>
 
 // I aint touching the interrupt frame on 99% of these but it's required by gcc.
 #pragma GCC diagnostic ignored "-Wunused-parameter" 
@@ -132,7 +133,7 @@ extern void enableAPIC();
 extern void enablePS2();
 extern void reEnableIRQ1();
 
-#include <timing.h>
+#include <system/timing.h>
 __attribute__((interrupt)) void system_pit(struct interrupt_frame* frame) {
 	incriment_sys_time();
 	outb(0x20, 0x20);
@@ -153,6 +154,12 @@ __attribute__((interrupt)) void system_pit(struct interrupt_frame* frame) {
  * @return false If trying to override hardware interrupts.
  */
 bool add_interrupt_handler(uint8_t entry, void (*handler)(struct interrupt_frame*), uint8_t ist, uint8_t type_attr) {
+	if (entry <= 32) return false;
+	set_idt_entry(&idt[entry], handler, ist, type_attr);
+	return true;
+}
+
+bool add_interrupt_handler_asm(uint8_t entry, void(*handler)(), uint8_t ist, uint8_t type_attr) {
 	if (entry <= 32) return false;
 	set_idt_entry(&idt[entry], handler, ist, type_attr);
 	return true;

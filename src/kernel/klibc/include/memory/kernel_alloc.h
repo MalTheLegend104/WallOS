@@ -1,6 +1,8 @@
 #ifndef KERNEL_ALLOC_H
 #define KERNEL_ALLOC_H
 
+#include <stddef.h>
+
 #ifdef __cplusplus
 extern "C" {
 #endif 

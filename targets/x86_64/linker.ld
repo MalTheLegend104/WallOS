@@ -38,6 +38,13 @@ SECTIONS
 		_bss_end_ = .;
 	}
 	
+	/* TODO: THIS NEEDS TO BE REMOVED. */
+	.initrd ALIGN(4096) : {
+		_initrd_start_ = .;
+        KEEP(*(.initrd*))
+		_initrd_end_ = .;
+    }
+
 	kernel_end = .;
 
 	/DISCARD/ : {

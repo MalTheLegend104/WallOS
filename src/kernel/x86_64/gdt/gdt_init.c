@@ -1,5 +1,5 @@
 #include <stdint.h>
-#include <gdt.h>
+#include <system/gdt.h>
 // Define the GDT
 gdt_entry_t gdt[3];
 gdt_descriptor_t gdtr;

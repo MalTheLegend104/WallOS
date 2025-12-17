@@ -6,7 +6,7 @@
 #include <stdint.h>
 #include <stddef.h>
 
-#include <klibc/multiboot.hpp>
+#include <klibc/multiboot.h>
 
 typedef struct {
 	size_t total;
@@ -25,6 +25,10 @@ namespace Memory {
 	}
 
 	uintptr_t PhysicalAlloc2MB();
+	uintptr_t PhysicalAlloc2MBSequential(size_t amount);
+
+	uintptr_t PhysicalMarkAllocated(uintptr_t base_addr, uintptr_t final_addr);
+
 	void PhysicalDeAlloc2MB(uintptr_t phys_addr);
 }
 

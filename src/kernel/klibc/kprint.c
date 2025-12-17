@@ -4,6 +4,8 @@
 #include <stdint.h>
 #include <stdlib.h>
 #include <klibc/kprint.h>
+#include <cpu_io.h>
+
 static const size_t vga_width = 80;
 static const size_t vga_height = 25;
 

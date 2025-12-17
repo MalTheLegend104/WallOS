@@ -1,5 +1,5 @@
 #include <ssfn-renderer.h>
-#include <klibc/multiboot.hpp>
+#include <klibc/multiboot.h>
 #include <string.h>
 //#include <font.h>
 #define SSFN_CONSOLEBITMAP_TRUECOLOR        /* use the special renderer for 32 bit truecolor packed pixels */

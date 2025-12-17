@@ -3,6 +3,7 @@
 
 #include <stddef.h>
 #include <stdint.h>
+#include <stdarg.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -15,8 +16,8 @@ extern "C" {
 	void write_serial(char a);
 	void write_string_serial(char* str);
 
-	int printf_serial(const char* format, ...);
-	int vprintf_serial(const char* format, va_list arg);
+	int printf_serial(const char* __restrict format, ...);
+	int vprintf_serial(const char* __restrict format, va_list list);
 
 #ifdef __cplusplus
 }
