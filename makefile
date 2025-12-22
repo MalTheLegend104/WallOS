@@ -210,8 +210,12 @@ build: $(LIBC_OBJ) $(KLIBC_OBJ) $(KCORE_OBJ) $(x86_64_OBJ) $(IDT_C_OBJ) initrd_t
 	echo "<---------------Linking--------------->"
 	$(WALLOS_LINKER) -n -o dist/x86_64/WallOS.bin -T targets/x86_64/linker.ld font.o dist/initrd.o $(LIBC_OBJ) $(KLIBC_OBJ) $(x86_64_OBJ) $(IDT_C_OBJ) $(KCORE_OBJ) $(LIBRARY_FLAGS)
 	echo "<------------Compiling ISO------------>"
+# 	cp dist/x86_64/WallOS.bin targets/x86_64/iso/boot/WallOS.bin && \
+#	grub-mkrescue /usr/lib/grub/i386-pc -o dist/x86_64/WallOS.iso targets/x86_64/iso
+# This in theory makes it work for both regular BIOS and UEFI.
+# I think this works in practice but I need to actually finish apollo before I can fully test it.
 	cp dist/x86_64/WallOS.bin targets/x86_64/iso/boot/WallOS.bin && \
-	grub-mkrescue /usr/lib/grub/i386-pc -o dist/x86_64/WallOS.iso targets/x86_64/iso
+	grub-mkrescue -o dist/x86_64/WallOS.iso targets/x86_64/iso --modules="multiboot2"
 	echo "<---------Finished  Compiling--------->"
 
 	echo "$(COLOR_CYAN)<--------------------------------------------------------->$(END_COLOR)"
