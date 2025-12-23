@@ -138,8 +138,9 @@ ACPI_STATUS AcpiOsTableOverride(ACPI_TABLE_HEADER* ExistingTable, ACPI_TABLE_HEA
 void* AcpiOsMapMemory(ACPI_PHYSICAL_ADDRESS PhysicalAddress, ACPI_SIZE Length) {
 	if (PhysicalAddress >= KERNEL_VIRTUAL_BASE) return (void*) PhysicalAddress; // It's already mapped.
 
-	// printf_serial("\r\nMAP REQUEST:\r\n\tRequest PHYS: 0x%llx\r\n\tRequest LEN:  0x%llx\r\n", PhysicalAddress, Length);
-	return (void*) mapKernelLocation(PhysicalAddress, Length);
+	void* ret = (void*) mapKernelLocation(PhysicalAddress, Length);
+	printf_serial("\r\nMAP REQUEST:\r\n\tRequest PHYS: 0x%llx\r\n\tRequest LEN:  0x%llx\r\n\tMapped Return: 0x%llx\r\n", PhysicalAddress, Length, ret);
+	return ret;
 }
 
 void AcpiOsUnmapMemory(void* where, ACPI_SIZE length) {
