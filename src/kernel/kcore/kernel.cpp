@@ -384,8 +384,8 @@ void kernel_main(unsigned int magic, multiboot_info* mbt_info) {
 
 	printf_serial("Ended kernel init... handing control to WallShell.\r\n");
 
-	char* args[] = { "acpi", "list" };
-	acpi_command(2, args);
+	// char* args[] = { "acpi", "list" };
+	// acpi_command(2, args);
 
 	// After we're done checking features, we need to set up our terminal.
 	// Eventually this will be a userspace program. 

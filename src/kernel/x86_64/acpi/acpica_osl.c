@@ -20,6 +20,11 @@
 
 void acpica_failure(const char* str) {
 	const char* msg[] = { "ACPICA called a function stub: ", str };
+
+	printf("ACPICA called stub function %s\n", str);
+
+	asm volatile("cli");
+	asm volatile("hlt");
 	panic_sa(msg, 2);
 }
 
@@ -34,8 +39,10 @@ ACPI_STATUS AcpiOsSignal(UINT32 function, void* info) {
 }
 
 UINT64 AcpiOsGetTimer(void) {
-	acpica_failure(__func__);
-	return 0;
+	// acpica_failure(__func__);
+	printf("ACPICA: %s called.\n", __func__);
+
+	return AE_NOT_IMPLEMENTED;
 }
 
 ACPI_STATUS AcpiOsPhysicalTableOverride(ACPI_TABLE_HEADER* existingTable, ACPI_PHYSICAL_ADDRESS* newAddress, UINT32* newTableLength) {
@@ -43,14 +50,49 @@ ACPI_STATUS AcpiOsPhysicalTableOverride(ACPI_TABLE_HEADER* existingTable, ACPI_P
 	return 0;
 }
 
-ACPI_STATUS AcpiOsWritePort(ACPI_IO_ADDRESS address, UINT32 value, UINT32 width) {
-	acpica_failure(__func__);
-	return 0;
+#include <cpu_io.h>
+
+ACPI_STATUS AcpiOsWritePort(ACPI_IO_ADDRESS Address, UINT32 Value, UINT32 Width) {
+	// Optional: Log for debugging
+	printf("ACPI_IO: Write 0x%X to Port 0x%llx\n", Value, (uint64_t) Address);
+
+	switch (Width) {
+		case 8:
+			outb(Address, (uint8_t) Value);
+			break;
+		case 16:
+			outw(Address, (uint16_t) Value);
+			break;
+		case 32:
+			outl(Address, (uint32_t) Value);
+			break;
+		default:
+			return AE_BAD_PARAMETER;
+	}
+
+	return AE_OK;
 }
 
-ACPI_STATUS AcpiOsReadPort(ACPI_IO_ADDRESS address, UINT32* value, UINT32 width) {
-	acpica_failure(__func__);
-	return 0;
+
+ACPI_STATUS AcpiOsReadPort(ACPI_IO_ADDRESS Address, UINT32* Value, UINT32 Width) {
+	switch (Width) {
+		case 8:
+			*Value = inb(Address);
+			break;
+		case 16:
+			*Value = inw(Address);
+			break;
+		case 32:
+			*Value = inl(Address);
+			break;
+		default:
+			return AE_BAD_PARAMETER;
+	}
+
+	// Optional: Log for debugging
+	printf("ACPI_IO: Read 0x%X from Port 0x%llx\n", *Value, (uint64_t) Address);
+
+	return AE_OK;
 }
 
 ACPI_STATUS AcpiOsWriteMemory(ACPI_PHYSICAL_ADDRESS address, UINT64 value, UINT32 width) {
@@ -159,8 +201,19 @@ ACPI_STATUS AcpiOsTableOverride(ACPI_TABLE_HEADER* ExistingTable, ACPI_TABLE_HEA
 void* AcpiOsMapMemory(ACPI_PHYSICAL_ADDRESS PhysicalAddress, ACPI_SIZE Length) {
 	if (PhysicalAddress >= KERNEL_VIRTUAL_BASE) return (void*) PhysicalAddress; // It's already mapped.
 
+	// Arbitrary Cutoff, 256 continuous MB.
+	if (Length > 0x200000 * 128) {
+		// Map only the requested location, get the table header, return 0.
+		char* magic = (char*) mapKernelLocation(PhysicalAddress, 0x24);
+		printf("ACPICA: Target Signature: \"%c%c%c%c\"\n", magic[0], magic[1], magic[2], magic[3]);
+		return 0;
+	}
+
 	void* ret = (void*) mapKernelLocation(PhysicalAddress, Length);
+
 	// printf_serial("\r\nMAP REQUEST:\r\n\tRequest PHYS: 0x%llx\r\n\tRequest LEN:  0x%llx\r\n\tMapped Return: 0x%llx\r\n", PhysicalAddress, Length, ret);
+	// printf("\nMAP REQUEST:\n\tRequest PHYS: 0x%llx\n\tRequest LEN:  0x%llx\n\tMapped Return: 0x%llx\n", PhysicalAddress, Length, ret);
+
 	return ret;
 }
 

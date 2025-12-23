@@ -179,14 +179,23 @@ void print_fadt() {
 	}
 }
 
-void print_acpi_table_info(const char* signature) {
+#include <ctype.h>
+
+void print_acpi_table_info(const char* sig) {
 	ACPI_TABLE_HEADER* table;
 	ACPI_STATUS status;
+	char signature[5];
+	strncpy(signature, sig, 4);
+	signature[4] = '\0';
 
-	// Handle RSDP separately since it does not use a normal ACPI table header
-	if (!memcmp(signature, ACPI_SIG_RSDP, 8)) {
+	for (int i = 0; i < 4; i++) {
+		signature[i] = toupper(signature[i]);
+	}
+
+	// Handle RSDP separately
+	if (!memcmp(signature, "RSDP", 4)) {
 		ACPI_TABLE_RSDP* rsdp;
-		status = AcpiGetTable(signature, 0, (ACPI_TABLE_HEADER**) &rsdp);
+		status = AcpiGetTable((char*) "RSDP", 0, (ACPI_TABLE_HEADER**) &rsdp);
 		if (ACPI_FAILURE(status)) {
 			printf("Failed to get RSDP: %s\n", AcpiFormatException(status));
 			return;
@@ -194,19 +203,16 @@ void print_acpi_table_info(const char* signature) {
 
 		printf("RSDP:\n");
 		printf("  Signature: %.8s\n", rsdp->Signature);
-		printf("  Checksum: 0x%X\n", rsdp->Checksum);
 		printf("  OEM ID: %.6s\n", rsdp->OemId);
 		printf("  Revision: %u\n", rsdp->Revision);
 		printf("  RSDT Address: 0x%X\n", rsdp->RsdtPhysicalAddress);
 		if (rsdp->Revision >= 2) {
 			printf("  Length: %u\n", rsdp->Length);
 			printf("  XSDT Address: 0x%llX\n", rsdp->XsdtPhysicalAddress);
-			printf("  Extended Checksum: 0x%X\n", rsdp->ExtendedChecksum);
 		}
 		return;
 	}
 
-	// Handle standard ACPI tables
 	status = AcpiGetTable(signature, 0, &table);
 	if (ACPI_FAILURE(status)) {
 		printf("Failed to get ACPI table %.4s: %s\n", signature, AcpiFormatException(status));
@@ -216,63 +222,75 @@ void print_acpi_table_info(const char* signature) {
 	printf("ACPI Table: %.4s\n", table->Signature);
 	printf("  Length: %u bytes\n", table->Length);
 	printf("  Revision: %u\n", table->Revision);
-	printf("  Checksum: 0x%X\n", table->Checksum);
 	printf("  OEM ID: %.6s\n", table->OemId);
 	printf("  OEM Table ID: %.8s\n", table->OemTableId);
-	printf("  OEM Revision: 0x%X\n", table->OemRevision);
-	printf("  ASL Compiler ID: %.4s\n", table->AslCompilerId);
-	printf("  ASL Compiler Revision: 0x%X\n", table->AslCompilerRevision);
 
-	// Handle known table types
 	if (!memcmp(table->Signature, "FACP", 4)) { // FADT
 		ACPI_TABLE_FADT* fadt = (ACPI_TABLE_FADT*) table;
-		printf("  FACS Address: 0x%X\n", fadt->Facs);
-		printf("  DSDT Address: 0x%X\n", fadt->Dsdt);
-		printf("  Preferred PM Profile: %u\n", fadt->PreferredProfile);
-		printf("  SCI Interrupt: %u\n", fadt->SciInterrupt);
 		printf("  SMI Command Port: 0x%X\n", fadt->SmiCommand);
-		printf("  Flags: 0x%X\n", fadt->Flags);
-		printf("  Reset Register: Space 0x%X, Addr 0x%llX, BitWidth %u\n",
-			fadt->ResetRegister.SpaceId, fadt->ResetRegister.Address, fadt->ResetRegister.BitWidth);
-		printf("  Reset Value: 0x%X\n", fadt->ResetValue);
-	} else if (!memcmp(table->Signature, "FACS", 4)) { // FACS
-		ACPI_TABLE_FACS* facs = (ACPI_TABLE_FACS*) table;
-		printf("FACS:\n");
-		printf("  Length: %u bytes\n", facs->Length);
-		printf("  Hardware Signature: 0x%X\n", facs->HardwareSignature);
-		printf("  Firmware Waking Vector: 0x%X\n", facs->FirmwareWakingVector);
-		printf("  Global Lock: 0x%X\n", facs->GlobalLock);
-		printf("  Flags: 0x%X\n", facs->Flags);
-		printf("  XFirmware Waking Vector: 0x%llX\n", facs->XFirmwareWakingVector);
-		printf("  Version: %u\n", facs->Version);
-	} else if (!memcmp(table->Signature, "DSDT", 4) || !memcmp(table->Signature, "SSDT", 4)) {
-		printf("  AML bytecode length: %u\n", table->Length - sizeof(ACPI_TABLE_HEADER));
-	} else if (!memcmp(table->Signature, "MADT", 4) || !memcmp(table->Signature, "APIC", 4)) {
+		printf("  ACPI Enable: 0x%X, Disable: 0x%X\n", fadt->AcpiEnable, fadt->AcpiDisable);
+		printf("  PM1a Event Block: 0x%X\n", fadt->Pm1aEventBlock);
+		printf("  PM1a Control Block: 0x%X\n", fadt->Pm1aControlBlock);
+		printf("  DSDT Address: 0x%X\n", fadt->Dsdt);
+		if (fadt->Header.Length > 140) {
+			printf("  X_DSDT Address: 0x%llX\n", fadt->XDsdt);
+		}
+		printf("Making assumption system is a: ");
+		switch (fadt->PreferredProfile) {
+			case 0: printf("Unspecified\n"); 		break;
+			case 1: printf("Desktop\n"); 			break;
+			case 2: printf("Mobile\n"); 			break;
+			case 3: printf("Workstation\n"); 		break;
+			case 4: printf("Enterprise Server\n"); 	break;
+			case 5: printf("SOHO Server\n"); 		break;
+			case 6: printf("Aplliance PC\n"); 		break;
+			case 7: printf("Performance Server\n"); break;
+			default: printf("Reserved... (how did you get here?)\n"); break;
+		}
+	} else if (!memcmp(table->Signature, "APIC", 4)) { // MADT
 		ACPI_TABLE_MADT* madt = (ACPI_TABLE_MADT*) table;
 		printf("  Local APIC Address: 0x%X\n", madt->Address);
-		printf("  Flags: 0x%X\n", madt->Flags);
-	} else if (!memcmp(table->Signature, "RSDT", 4) || !memcmp(table->Signature, "XSDT", 4)) {
-		printf("  Root System Descriptor Table contains pointers to other ACPI tables.\n");
-	} else if (!memcmp(table->Signature, "WAET", 4)) { // Windows ACPI Emulated Timer
-		typedef struct acpi_table_waet {
-			ACPI_TABLE_HEADER Header;   /* Common header */
-			UINT32 TimerPeriod;         /* Period in 100ns units */
-		} ACPI_TABLE_WAET;
+		printf("  Flags: 0x%X (1=PCAT Dual 8259)\n", madt->Flags);
 
-		ACPI_TABLE_WAET* waet = (ACPI_TABLE_WAET*) table;
-		printf("WAET (Windows ACPI Emulated Timer):\n");
-		printf("  TimerPeriod: %u (100ns units)\n", waet->TimerPeriod);
+		// Subtable parsing
+		ACPI_SUBTABLE_HEADER* sub = (ACPI_SUBTABLE_HEADER*) ((uint8_t*) madt + sizeof(ACPI_TABLE_MADT));
+		while ((uint8_t*) sub < (uint8_t*) madt + madt->Header.Length) {
+			if (sub->Type == ACPI_MADT_TYPE_LOCAL_APIC) {
+				ACPI_MADT_LOCAL_APIC* la = (ACPI_MADT_LOCAL_APIC*) sub;
+				printf("    - Processor Local APIC: ID %u, APIC ID %u, Flags 0x%X\n", la->ProcessorId, la->Id, la->LapicFlags);
+			} else if (sub->Type == ACPI_MADT_TYPE_IO_APIC) {
+				ACPI_MADT_IO_APIC* io = (ACPI_MADT_IO_APIC*) sub;
+				printf("    - I/O APIC: ID %u, Address 0x%X, GSI Base %u\n", io->Id, io->Address, io->GlobalIrqBase);
+			} else if (sub->Type == ACPI_MADT_TYPE_INTERRUPT_OVERRIDE) {
+				ACPI_MADT_INTERRUPT_OVERRIDE* iso = (ACPI_MADT_INTERRUPT_OVERRIDE*) sub;
+				printf("    - Int Source Override: Bus %u, IRQ %u -> GSI %u\n", iso->Bus, iso->SourceIrq, iso->GlobalIrq);
+			}
+			sub = (ACPI_SUBTABLE_HEADER*) ((uint8_t*) sub + sub->Length);
+		}
+	} else if (!memcmp(table->Signature, "MCFG", 4)) {
+		// MCFG has a reserved 8-byte block before the base address allocations
+		ACPI_MCFG_ALLOCATION* alloc = (ACPI_MCFG_ALLOCATION*) ((uint8_t*) table + sizeof(ACPI_TABLE_HEADER) + 8);
+		uint32_t count = (table->Length - sizeof(ACPI_TABLE_HEADER) - 8) / sizeof(ACPI_MCFG_ALLOCATION);
+		for (uint32_t i = 0; i < count; i++) {
+			printf("  - Base Address: 0x%llX (Segment %u, Busses %u-%u)\n",
+				alloc[i].Address, alloc[i].PciSegment, alloc[i].StartBusNumber, alloc[i].EndBusNumber);
+		}
 	} else if (!memcmp(table->Signature, "HPET", 4)) {
 		print_hpet();
 	} else if (!memcmp(table->Signature, "FADT", 4)) {
 		print_fadt();
+	} else if (!memcmp(table->Signature, "BGRT", 4)) {
+		ACPI_TABLE_BGRT* bgrt = (ACPI_TABLE_BGRT*) table;
+		printf("  - Boot Graphics: Type %u, Image at 0x%llX\n", bgrt->ImageType, bgrt->ImageAddress);
+		printf("  - Image Offset: X=%u, Y=%u\n", bgrt->ImageOffsetX, bgrt->ImageOffsetY);
+	} else if (!memcmp(table->Signature, "FPDT", 4)) {
+		printf("  - Firmware Performance Data Table is present (Boot profiling).\n");
+	} else if (!memcmp(table->Signature, "DSDT", 4) || !memcmp(table->Signature, "SSDT", 4)) {
+		printf("  - AML Bytecode Length: %u\n", table->Length - sizeof(ACPI_TABLE_HEADER));
 	} else {
-		printf("  Table type not explicitly handled.\n");
+		printf("  - Table type not explicitly handled.\n");
 	}
 }
-
-
-
 void list_acpi_tables(void) {
 	ACPI_TABLE_HEADER* table;
 	UINT32 index = 0;
@@ -327,10 +345,14 @@ int acpi_command(int argc, char** argv) {
 
 void init_failure(const char* str) {
 	const char* msg[] = { "ACPICA initialization failed: ", str };
+	printf("ACPICA initialization failed: %s\n", str);
+
+	asm volatile("cli");
+	asm volatile("hlt");
 	panic_sa(msg, 2);
 }
 
-#define ACPI_MAX_INIT_TABLES 16
+#define ACPI_MAX_INIT_TABLES 64
 static ACPI_TABLE_DESC TableArray[ACPI_MAX_INIT_TABLES];
 
 #include <drivers/serial.h>
@@ -339,6 +361,7 @@ void acpi_tables(void) {
 	const ACPI_STATUS status = AcpiInitializeTables(TableArray, ACPI_MAX_INIT_TABLES, FALSE);
 	if (ACPI_FAILURE(status)) {
 		printf_serial("Status: %d\r\n", status);
+		printf("ACPICA Status: %d\r\n", status);
 		init_failure("Failed to initialize tables.");
 	}
 
@@ -363,14 +386,14 @@ void initialize_acpi(void) {
 	logger(INFO, "ACPICA loaded tables.\n");
 
 	// Test example header.
-	ACPI_TABLE_HEADER* table;
-	status = AcpiGetTable(ACPI_SIG_FADT, 1, &table);
+	// ACPI_TABLE_HEADER* table;
+	// status = AcpiGetTable(ACPI_SIG_FADT, 1, &table);
 
-	if (ACPI_FAILURE(status)) {
-		// Handle error
-	} else {
-		// Parse the FADT table
-		ACPI_TABLE_FADT* fadt = (ACPI_TABLE_FADT*) table;
-		printf("FADT pointer addr: 0x%llx\n", fadt);
-	}
+	// if (ACPI_FAILURE(status)) {
+	// 	// Handle error
+	// } else {
+	// 	// Parse the FADT table
+	// 	ACPI_TABLE_FADT* fadt = (ACPI_TABLE_FADT*) table;
+	// 	printf("FADT pointer addr: 0x%llx\n", fadt);
+	// }
 }

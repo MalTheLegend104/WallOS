@@ -32,7 +32,7 @@ void copy_mmap(multiboot_tag_mmap* map) {
 }
 
 
-static RSDP_t base_rsdp;
+static XSDP_t base_rsdp;
 
 void* getAcpiRoot() {
 	return &base_rsdp;
@@ -104,6 +104,7 @@ void MultibootManager::loadTags() {
 				break;
 			case MULTIBOOT_TAG_TYPE_ACPI_NEW:
 				acpi->xsdp = (XSDP_t*) ((multiboot_tag_new_acpi*) tag)->rsdp;
+				memcpy(&base_rsdp, acpi->xsdp, sizeof(XSDP_t));
 				logExists("ACPI_NEW");
 				break;
 			case MULTIBOOT_TAG_TYPE_NETWORK:

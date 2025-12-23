@@ -554,15 +554,25 @@ uintptr_t Memory::MapKernelLocation(uintptr_t addr, size_t len) {
 		page_count, addr_offset
 	);
 
+	// printf(
+	// 	"[KMAP] addr=0x%llx len=0x%llx\r\n"
+	// 	"       base=0x%llx final=0x%llx pages=%zu offset=0x%llx\n",
+	// 	addr, len,
+	// 	base_page_addr, final_page_addr,
+	// 	page_count, addr_offset
+	// );
+
 	uintptr_t phys_base_addr = base_page_addr;
 
 	/* Bypass the fact the PMM doesn't properly handle low memory addresses. */
 	if (final_addr <= 0x400000) {
 		printf_serial("[KMAP] Low-memory mapping (PMM bypass): phys=0x%llx\r\n", phys_base_addr);
+		// printf("[KMAP] Low-memory mapping (PMM bypass): phys=0x%llx\n", phys_base_addr);
 	} else {
 		phys_base_addr = Memory::PhysicalMarkAllocated(addr, len);
 		if (phys_base_addr == 0) {
 			printf_serial("[KMAP] ERROR: PMM refused mapping for phys=0x%llx\r\n", addr);
+			// printf("[KMAP] ERROR: PMM refused mapping for phys=0x%llx\n", addr);
 			return 0;
 		}
 	}

@@ -11,6 +11,9 @@
 #define SECONDARY_FIRST  2
 #define SECONDARY_SECOND 3
 
+// Timeout value for busy-wait loops (adjust as needed)
+#define ATA_TIMEOUT 100000
+
 drive_info_t drive_zero{};
 drive_info_t drive_one{};
 drive_info_t drive_two{};
@@ -31,6 +34,9 @@ bool identify(int drive_number) {
 	uint16_t command_register;
 	uint16_t data_register;
 	bool primary = true;
+
+	printf("identify: Starting identification for drive %d\n", drive_number);
+
 	// We have to clear a few things before we can call identify
 	switch (drive_number) {
 		case 0:
@@ -63,7 +69,9 @@ bool identify(int drive_number) {
 			data_register = SECONDARY_DATA_REGISTER;
 			primary = false;
 			break;
-		default: return false;
+		default:
+			printf("identify: Invalid drive number %d\n", drive_number);
+			return false;
 	}
 
 	outb(drive_register, drive_select);
@@ -99,13 +107,23 @@ bool identify(int drive_number) {
 	outb(command_register, COMMAND_IDENTIFY);
 	io_wait();
 
-	uint8_t status = inb(command_register); // get the status from the command port
-	if (status == 0) return false; // no drive
+	uint8_t status = inb(command_register);
+
+	if (status == 0) {
+		printf("identify: No drive present (status = 0)\n");
+		return false;
+	}
 
 	// Wait for BSY bit to clear
+	int timeout = ATA_TIMEOUT;
 	while (status & 0x80) {
 		status = inb(command_register);
+		if (--timeout <= 0) {
+			printf("identify: TIMEOUT waiting for BSY to clear! Final status = 0x%02x\n", status);
+			return false;
+		}
 	}
+	printf("identify: BSY cleared, status = 0x%02x\n", status);
 
 	// Check LBA Mid and High for ATAPI devices
 	uint8_t lba_mid, lba_high;
@@ -138,18 +156,38 @@ bool identify(int drive_number) {
 	}
 
 	// Continue polling until ERR is set or DRQ is set
-	while (((status = inb(command_register)) & (0x40 | 0x01)) == 0) { }
+	printf("identify: Waiting for DRQ or ERR...\n");
+	timeout = ATA_TIMEOUT;
+	while (((status = inb(command_register)) & (0x40 | 0x01)) == 0) {
+		if (--timeout == 0) {
+			printf("identify: TIMEOUT waiting for DRQ/ERR! Final status = 0x%02x\n", status);
+			return false;
+		}
+		if (timeout % 10000 == 0) {
+			printf("identify: Still waiting for DRQ/ERR... status = 0x%02x\n", status);
+		}
+	}
 
-	if (status & 0x01) return false; // It failed to give the command, we just ignore it.
+	printf("identify: Got DRQ or ERR, status = 0x%02x\n", status);
+
+	if (status & 0x01) {
+		printf("identify: ERR bit set, command failed\n");
+		return false;
+	}
 
 	// 256 WORDs from the data_register
+	printf("identify: Reading 256 words from data register\n");
 	for (int i = 0; i < 256; i++) {
 		((uint16_t*) current)[i] = inw(data_register);
 	}
+
+	printf("identify: Successfully read IDENTIFY data\n");
 	return true;
 }
 
 void detect_ide_drives() {
+	printf("Checking for drives...\n");
+
 	drive_zero.exists = identify(PRIMARY_FIRST);
 	if (drive_zero.exists) {
 		printf("Drive 0 detected.\n");
@@ -237,15 +275,25 @@ void print_sata_device_info(drive_info_t* info) {
 
 static void ata_wait_bsy(const uint16_t command_register) {
 	uint8_t status;
+	int timeout = ATA_TIMEOUT;
 	do {
 		status = inb(command_register);
+		if (--timeout == 0) {
+			printf("ata_wait_bsy: TIMEOUT! status = 0x%02x\n", status);
+			return;
+		}
 	} while (status & 0x80); // BSY
 }
 
 static void ata_wait_drq(const uint16_t command_register) {
 	uint8_t status;
+	int timeout = ATA_TIMEOUT;
 	do {
 		status = inb(command_register);
+		if (--timeout == 0) {
+			printf("ata_wait_drq: TIMEOUT! status = 0x%02x\n", status);
+			return;
+		}
 	} while (!(status & 0x08)); // DRQ
 }
 

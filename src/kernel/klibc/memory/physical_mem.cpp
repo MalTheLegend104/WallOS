@@ -143,9 +143,8 @@ void map_chunk(uintptr_t start_address, size_t length, uint32_t type) {
 	uintptr_t old_start_addr = start_address;
 	uintptr_t new_start_address = (start_address + 0x1FFFFF) & ~0x1FFFFF; // Round up & clear the lower 21 bits 
 
-	if ((new_start_address - old_start_addr) > length) {
-		printf("\tMemory chunk too small to map... (%u bytes)\n", new_start_address - old_start_addr);
-		printf_serial("\tMemory chunk too small to map... (%u bytes, need at least %u)\r\n", new_start_address - old_start_addr, PAGE_2MB_SIZE);
+	if (length < PAGE_2MB_SIZE) {
+		printf("\tMemory chunk at 0x%llx is too short (0x%llx)\n", start_address, length);
 		return;
 	}
 
@@ -372,6 +371,8 @@ uintptr_t Memory::PhysicalMarkAllocated(uintptr_t addr, size_t len) {
 	uintptr_t base_page_addr = addr & ~0x1FFFFF;               // 2MB align down
 	uintptr_t final_page_addr = (addr + len) & ~0x1FFFFF;       // 2MB align down
 	size_t page_count = 1;
+
+
 
 	if (final_page_addr != base_page_addr) {
 		page_count = ((final_page_addr - base_page_addr) / PAGE_2MB_SIZE) + 1;
