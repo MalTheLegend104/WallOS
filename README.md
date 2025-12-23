@@ -2,7 +2,8 @@
 
 64-Bit hobby OS. Currently only supports x86-64, but hope to expand to Aarch64 and potentially other platforms.
 
-> Disclaimer: Currently the CI/CD is broken. I recently changed how the project is built, and have yet to update the CI/CD to reflect those changes.
+> Disclaimer: Currently the CI/CD is broken. This build "requires" (not really, it could still be built with x86_64-elf-gcc) a custom cross-compiler.
+> More documentation is "on the way" for this, but definitely not a priority.
 
 ## Project Structure
 
@@ -40,6 +41,22 @@ src┐
       └─ makefile
 ```
 
+## TODO
+
+1. Rewrite memory managers
+   - My current memory managers are rather... horrible. The virtual memory manager is in a *much* better state than the physical one, but they both need full rewrites.
+   - The physical memory manager has a ton of limitations that I constantly have to work around, and has been my biggest limitation for a long time.
+2. Framebuffer Graphics
+   - Quite literally the only thing preventing UEFI from working is the lack of VGA text mode.
+3. CPU Scheduler
+   - I really need the ability to spawn tasks in different threads. I don't even really care about this being a fully featured scheduler, I just want different threads.
+4. System Calls
+   - These are already supported, at least in a "the infrastructure exists" kind of way.
+     The ability to handle and registers handlers exists, there's just none that are implemented yet.
+5. Move terminal to userspace.
+   - Scheduling and multitasking are necessary for me to do userspace apps, but I can still move the terminal to userspace.
+   - This would also make developing and testing syscalls much easier.
+
 ### Kernel
 
 #### KCore
@@ -75,6 +92,8 @@ In terms of structure, it sits somewhere between `klibc` and `kcore`. Whenever a
 
 System calls will likely be held in a single header, among the likes of <Windows.h> on windows. If this isn't achieveable, we will likely follow the unix-like <sys/header>. This will be determined at a later date, after the userspace is fully designed.
 
+These will take a call convention of `int 0x42` on x86_64 (along with implementing actual `syscall/sysenter` support later). I also plan on (potentially) supporting `int 0x80` for portability support.
+
 ## Documentation
 
 All current documentation can be found [here.](documentation/README.md)
@@ -94,26 +113,6 @@ All code that needs to be documented should be done so by following the rules of
 int test(int a);
 ```
 
-## TODO
-
-### Ordered
-
-1. Filesystem
-   - At the very least, want to be able to load from disk and load programs.
-   - This could also just be a simple ramfs
-2. System Calls
-   - These are already supported, at least in a "the infrastructure exists" kind of way.
-     The ability to handle and registers handlers exists, there's just none that are implemented yet.
-3. Move terminal to userspace.
-   - Scheduling and multitasking are necessary for me to do userspace apps, but I can still move the terminal to userspace.
-   - This would also make developing and testing syscalls much easier.
-
-### Unordered/Long Term
-
-- GUI
-- Multitasking
-- Userspace Applications
-
 ## Contributing
 
 There are many ways to contribute to the project:
@@ -130,21 +129,27 @@ If you are interested in fixing issues, adding features, or otherwise contributi
 
 #### Building results in a `*.iso` file, and an associated binary file being put in `/dist/<platform architecture>/`. This iso CAN be deployed to actual systems.
 
-### Docker
+The only way to build this currently is using a gcc cross compiler. This can be done on any system that supports it (tested on FreeBSD, several linux distros, WSL).
 
-- In `/docker/`, there exist commands for setting up the dev environment for the project. Windows commands are the `*.bat` files, while the `*.sh` and files without extensions are for linux (potentially MacOS as well, this is untested).
-    > You must have docker already installed. On windows, I highly recommend installing qemu.
-- To build, simply run the script to build for the desired architecture. `build64` and `build.bat` both build for `x86_64`. Running `qemu` or `qemu.bat` both result in `x86_64` being built and ran in a vm.
-    > Other platforms have names according to their architecture. For example `build64` builds for x86_64, `buildarm64` builds for Aarch64, etc.
+Currently all build files require the usage of `x86_64-wallos-*` binaries. The process of building these is long and complex, and (as is a trend here) not documented.
 
-### Native
+The build *can* be done using `x86_64-elf-*` options from binutils and gcc, but all of the makefiles will need to be changed (or aliased to `x86_64-wallos-*` but that's probably a bad idea).
 
-- In `/scripts/`, there exist commands for setting up the dev environment for the project. Simply run `dockerless-setup.sh`, and follow the prompts.
-    > In order to fully setup the environment you **WILL** have to build GCC and Binutils. (Grab a coffee and check your emails, it's going to take a while.)
+I hope to distribute a `docker` image to remove the pain of building eventually, but the process of making `x86_64-wallos-*` binaries is nowhere near good enough for a docker image yet.
 
-- All the other commands are identical to the docker versions, `clean` cleans the build dirs, `build` builds for all architectures, etc.
+### Packages
 
-### WSL
+#### apt
 
-- Windows Subsystem for Linux is a fully fledged linux enviroment, meaning everything under [native](#native) applies here.
-    > The only exception is that a lot of the time Windows and the WSL version of QEMU don't get along. Because of this, on WSL the `qemu` script defaults to using the Window's executable QEMU. If for some reason QEMU is not installed, or you simply want to run the linux version, run the `qemu` script with the `--native` flag.
+- `dosfstools`
+- `build-essential`
+- `xorriso`
+- `qemu-system`
+  - This package has been completely different in the past, and might not even be the correct package.
+  - We need `qemu-system-x86_64`, you can look it up if `qemu-system` doesn't install it.
+
+#### pacman
+
+I have built WallOS on Arch before... I didn't keep track of the packages...
+
+If I end up building it on Arch again I will put all the packages here (or if someone else does I'd appreciate a pull request for this list...).
