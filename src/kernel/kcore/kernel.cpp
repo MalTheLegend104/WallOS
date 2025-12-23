@@ -319,7 +319,7 @@ void kernel_main(unsigned int magic, multiboot_info* mbt_info) {
 
 	multiboot_tag_framebuffer* e = MultibootManager::getFramebufferTag();
 	Memory::mapFramebuffer((uintptr_t) e->common.framebuffer_addr, e->common.framebuffer_height * e->common.framebuffer_pitch);
-//	framebuffer_init();
+	//	framebuffer_init();
 
 	// We get initrd from grub via a multiboot module tag.
 	// We *should* be reserving this memory so it doesn't get allocated to something else.
@@ -381,6 +381,11 @@ void kernel_main(unsigned int magic, multiboot_info* mbt_info) {
 
 	// char* array[] = { (char*) "drive", (char*) "mount", (char*) "0" };
 	// drive_mount_cmd(3, array);
+
+	printf_serial("Ended kernel init... handing control to WallShell.\r\n");
+
+	char* args[] = { "acpi", "list" };
+	acpi_command(2, args);
 
 	// After we're done checking features, we need to set up our terminal.
 	// Eventually this will be a userspace program. 

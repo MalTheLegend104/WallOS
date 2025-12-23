@@ -64,9 +64,30 @@ ACPI_STATUS AcpiOsReadMemory(ACPI_PHYSICAL_ADDRESS address, UINT64* value, UINT3
 }
 
 ACPI_STATUS AcpiOsReadPciConfiguration(ACPI_PCI_ID* pciId, UINT32 reg, UINT64* value, UINT32 width) {
-	acpica_failure(__func__);
-	return 0;
+	// Print out information about the request
+	printf("ACPI: Read PCI config\n");
+	printf("  Segment: %u\n", pciId->Segment);
+	printf("  Bus:     %u\n", pciId->Bus);
+	printf("  Device:  %u\n", pciId->Device);
+	printf("  Function:%u\n", pciId->Function);
+	printf("  Register:0x%X\n", reg);
+	printf("  Width:   %u bits\n", width);
+
+	printf_serial("ACPI: Read PCI config\r\n");
+	printf_serial("  Segment: %u\r\n", pciId->Segment);
+	printf_serial("  Bus:     %u\r\n", pciId->Bus);
+	printf_serial("  Device:  %u\r\n", pciId->Device);
+	printf_serial("  Function:%u\r\n", pciId->Function);
+	printf_serial("  Register:0x%X\r\n", reg);
+	printf_serial("  Width:   %u bits\r\n", width);
+
+	// Set *value to 0 to avoid undefined reads
+	if (value) *value = 0;
+
+	// Tell ACPICA that this read is not actually implemented
+	return AE_NOT_IMPLEMENTED;
 }
+
 
 void AcpiOsWaitEventsComplete(void) {
 	acpica_failure(__func__);
@@ -139,7 +160,7 @@ void* AcpiOsMapMemory(ACPI_PHYSICAL_ADDRESS PhysicalAddress, ACPI_SIZE Length) {
 	if (PhysicalAddress >= KERNEL_VIRTUAL_BASE) return (void*) PhysicalAddress; // It's already mapped.
 
 	void* ret = (void*) mapKernelLocation(PhysicalAddress, Length);
-	printf_serial("\r\nMAP REQUEST:\r\n\tRequest PHYS: 0x%llx\r\n\tRequest LEN:  0x%llx\r\n\tMapped Return: 0x%llx\r\n", PhysicalAddress, Length, ret);
+	// printf_serial("\r\nMAP REQUEST:\r\n\tRequest PHYS: 0x%llx\r\n\tRequest LEN:  0x%llx\r\n\tMapped Return: 0x%llx\r\n", PhysicalAddress, Length, ret);
 	return ret;
 }
 

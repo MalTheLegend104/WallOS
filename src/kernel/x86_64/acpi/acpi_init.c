@@ -5,25 +5,23 @@
 #include <klibc/logger.h>
 #include <acpi/acpi_init.h>
 
-ACPI_STATUS acpi_device_callback(ACPI_HANDLE object, UINT32 nestingLevel,
-								 void *context, void **returnValue) {
+ACPI_STATUS acpi_device_callback(ACPI_HANDLE object, UINT32 nestingLevel, void* context, void** returnValue) {
 	ACPI_BUFFER namebuf = { ACPI_ALLOCATE_BUFFER, NULL };
-
 	if (ACPI_SUCCESS(AcpiGetName(object, ACPI_FULL_PATHNAME, &namebuf))) {
-		printf("ACPI Object: %s\n", (char *)namebuf.Pointer);
-		printf_serial("ACPI Object: %s\r\n", (char *)namebuf.Pointer);
+		printf("ACPI Object: %s\n", (char*) namebuf.Pointer);
+		printf_serial("ACPI Object: %s\r\n", (char*) namebuf.Pointer);
 		AcpiOsFree(namebuf.Pointer);
 	}
-
 	return AE_OK;
 }
 
+
 void walk_acpi_namespace(void) {
 	ACPI_STATUS status = AcpiWalkNamespace(ACPI_TYPE_DEVICE,
-										   ACPI_ROOT_OBJECT,
-										   UINT32_MAX,
-										   acpi_device_callback,
-										   NULL, NULL, NULL);
+		ACPI_ROOT_OBJECT,
+		UINT32_MAX,
+		acpi_device_callback,
+		NULL, NULL, NULL);
 	if (ACPI_FAILURE(status)) {
 		printf("Namespace walk failed: %s\n", AcpiFormatException(status));
 	}
@@ -32,7 +30,7 @@ void walk_acpi_namespace(void) {
 void print_acpi_device_info(const char* path) {
 	// ACPICA allows us to get a device by its string handle
 	ACPI_HANDLE handle;
-	ACPI_STATUS status = AcpiGetHandle(NULL, (char*)path, &handle);
+	ACPI_STATUS status = AcpiGetHandle(NULL, (char*) path, &handle);
 	if (ACPI_FAILURE(status)) {
 		printf("ACPI path not found: %s\n", AcpiFormatException(status));
 		return;
@@ -107,7 +105,7 @@ void print_hpet() {
 		printf("OEM ID:           %.6s\n", hpet->Header.OemId);
 		printf("OEM Table ID:     %.8s\n", hpet->Header.OemTableId);
 		printf("OEM Revision:     0x%08X\n", hpet->Header.OemRevision);
-		printf("Creator ID:       %.4s\n", (char *)&hpet->Header.AslCompilerId);
+		printf("Creator ID:       %.4s\n", (char*) &hpet->Header.AslCompilerId);
 		printf("Creator Revision: 0x%08X\n", hpet->Header.AslCompilerRevision);
 
 		// Print HPET-specific info
@@ -147,42 +145,136 @@ void print_fadt() {
 			case 1: {
 					printf("Unspecified.");
 					break;
-			}
+				}
 			case 2: {
 					printf("Desktop.");
 					break;
-			}
+				}
 			case 3: {
 					printf("Mobile.");
 					break;
-			}
+				}
 			case 4: {
 					printf("Workstation.");
 					break;
-			}
+				}
 			case 5: {
 					printf("Enterprise Server.");
 					break;
-			}
+				}
 			case 6: {
 					printf("SOHO Server.");
 					break;
-			}
+				}
 			case 7: {
 					printf("Aplliance PC.");
 					break;
-			}
+				}
 			default: {
 					printf("Performance Server.");
 					break;
-			}
+				}
 		}
 		printf("\n");
 	}
 }
 
+void print_acpi_table_info(const char* signature) {
+	ACPI_TABLE_HEADER* table;
+	ACPI_STATUS status;
+
+	// Handle RSDP separately since it does not use a normal ACPI table header
+	if (!memcmp(signature, ACPI_SIG_RSDP, 8)) {
+		ACPI_TABLE_RSDP* rsdp;
+		status = AcpiGetTable(signature, 0, (ACPI_TABLE_HEADER**) &rsdp);
+		if (ACPI_FAILURE(status)) {
+			printf("Failed to get RSDP: %s\n", AcpiFormatException(status));
+			return;
+		}
+
+		printf("RSDP:\n");
+		printf("  Signature: %.8s\n", rsdp->Signature);
+		printf("  Checksum: 0x%X\n", rsdp->Checksum);
+		printf("  OEM ID: %.6s\n", rsdp->OemId);
+		printf("  Revision: %u\n", rsdp->Revision);
+		printf("  RSDT Address: 0x%X\n", rsdp->RsdtPhysicalAddress);
+		if (rsdp->Revision >= 2) {
+			printf("  Length: %u\n", rsdp->Length);
+			printf("  XSDT Address: 0x%llX\n", rsdp->XsdtPhysicalAddress);
+			printf("  Extended Checksum: 0x%X\n", rsdp->ExtendedChecksum);
+		}
+		return;
+	}
+
+	// Handle standard ACPI tables
+	status = AcpiGetTable(signature, 0, &table);
+	if (ACPI_FAILURE(status)) {
+		printf("Failed to get ACPI table %.4s: %s\n", signature, AcpiFormatException(status));
+		return;
+	}
+
+	printf("ACPI Table: %.4s\n", table->Signature);
+	printf("  Length: %u bytes\n", table->Length);
+	printf("  Revision: %u\n", table->Revision);
+	printf("  Checksum: 0x%X\n", table->Checksum);
+	printf("  OEM ID: %.6s\n", table->OemId);
+	printf("  OEM Table ID: %.8s\n", table->OemTableId);
+	printf("  OEM Revision: 0x%X\n", table->OemRevision);
+	printf("  ASL Compiler ID: %.4s\n", table->AslCompilerId);
+	printf("  ASL Compiler Revision: 0x%X\n", table->AslCompilerRevision);
+
+	// Handle known table types
+	if (!memcmp(table->Signature, "FACP", 4)) { // FADT
+		ACPI_TABLE_FADT* fadt = (ACPI_TABLE_FADT*) table;
+		printf("  FACS Address: 0x%X\n", fadt->Facs);
+		printf("  DSDT Address: 0x%X\n", fadt->Dsdt);
+		printf("  Preferred PM Profile: %u\n", fadt->PreferredProfile);
+		printf("  SCI Interrupt: %u\n", fadt->SciInterrupt);
+		printf("  SMI Command Port: 0x%X\n", fadt->SmiCommand);
+		printf("  Flags: 0x%X\n", fadt->Flags);
+		printf("  Reset Register: Space 0x%X, Addr 0x%llX, BitWidth %u\n",
+			fadt->ResetRegister.SpaceId, fadt->ResetRegister.Address, fadt->ResetRegister.BitWidth);
+		printf("  Reset Value: 0x%X\n", fadt->ResetValue);
+	} else if (!memcmp(table->Signature, "FACS", 4)) { // FACS
+		ACPI_TABLE_FACS* facs = (ACPI_TABLE_FACS*) table;
+		printf("FACS:\n");
+		printf("  Length: %u bytes\n", facs->Length);
+		printf("  Hardware Signature: 0x%X\n", facs->HardwareSignature);
+		printf("  Firmware Waking Vector: 0x%X\n", facs->FirmwareWakingVector);
+		printf("  Global Lock: 0x%X\n", facs->GlobalLock);
+		printf("  Flags: 0x%X\n", facs->Flags);
+		printf("  XFirmware Waking Vector: 0x%llX\n", facs->XFirmwareWakingVector);
+		printf("  Version: %u\n", facs->Version);
+	} else if (!memcmp(table->Signature, "DSDT", 4) || !memcmp(table->Signature, "SSDT", 4)) {
+		printf("  AML bytecode length: %u\n", table->Length - sizeof(ACPI_TABLE_HEADER));
+	} else if (!memcmp(table->Signature, "MADT", 4) || !memcmp(table->Signature, "APIC", 4)) {
+		ACPI_TABLE_MADT* madt = (ACPI_TABLE_MADT*) table;
+		printf("  Local APIC Address: 0x%X\n", madt->Address);
+		printf("  Flags: 0x%X\n", madt->Flags);
+	} else if (!memcmp(table->Signature, "RSDT", 4) || !memcmp(table->Signature, "XSDT", 4)) {
+		printf("  Root System Descriptor Table contains pointers to other ACPI tables.\n");
+	} else if (!memcmp(table->Signature, "WAET", 4)) { // Windows ACPI Emulated Timer
+		typedef struct acpi_table_waet {
+			ACPI_TABLE_HEADER Header;   /* Common header */
+			UINT32 TimerPeriod;         /* Period in 100ns units */
+		} ACPI_TABLE_WAET;
+
+		ACPI_TABLE_WAET* waet = (ACPI_TABLE_WAET*) table;
+		printf("WAET (Windows ACPI Emulated Timer):\n");
+		printf("  TimerPeriod: %u (100ns units)\n", waet->TimerPeriod);
+	} else if (!memcmp(table->Signature, "HPET", 4)) {
+		print_hpet();
+	} else if (!memcmp(table->Signature, "FADT", 4)) {
+		print_fadt();
+	} else {
+		printf("  Table type not explicitly handled.\n");
+	}
+}
+
+
+
 void list_acpi_tables(void) {
-	ACPI_TABLE_HEADER *table;
+	ACPI_TABLE_HEADER* table;
 	UINT32 index = 0;
 
 	while (1) {
@@ -195,10 +287,16 @@ void list_acpi_tables(void) {
 		}
 
 		printf("Table %u: %.4s | OEM ID: %.6s | OEM Table ID: %.8s\n",
-			   index,
-			   table->Signature,
-			   table->OemId,
-			   table->OemTableId);
+			index,
+			table->Signature,
+			table->OemId,
+			table->OemTableId);
+
+		printf_serial("Table %u: %.4s | OEM ID: %.6s | OEM Table ID: %.8s\r\n",
+			index,
+			table->Signature,
+			table->OemId,
+			table->OemTableId);
 
 		index++;
 	}
@@ -214,8 +312,10 @@ int acpi_command(int argc, char** argv) {
 			list_acpi_tables();
 		else if (strcmp(argv[1], "walk") == 0)
 			walk_acpi_namespace();
-		else if (strcmp(argv[1], "info") == 0 && argc > 2)
+		else if (strcmp(argv[1], "device") == 0 && argc > 2)
 			print_acpi_device_info(argv[2]);
+		else if (strcmp(argv[1], "info") == 0 && argc > 2)
+			print_acpi_table_info(argv[2]);
 		else
 			printf("Unknown or incomplete ACPI command.\n");
 	} else {

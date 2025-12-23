@@ -9,6 +9,8 @@
 #include <system/idt.h>
 #include <assert.h>
 
+#include <drivers/serial.h>
+
 mmap_info mem_info;
 
 typedef struct Block {
@@ -20,6 +22,15 @@ typedef struct Block {
 Block* block_list = NULL;
 Block* last_block = NULL;
 Block* last_block_start = NULL;
+
+typedef struct {
+	uintptr_t virt_start_addr;
+	uintptr_t real_start_addr;
+	size_t length;
+} __attribute__((packed)) acpi_block;
+
+acpi_block acpi_blocks[128];
+size_t acpi_block_index = 0;
 
 #define MAX_RESERVED 50
 typedef struct {
@@ -59,6 +70,23 @@ size_t Memory::Info::getUsedPageCount() {
 	return used_phys_pages;
 }
 
+void map_acpi_reclaimable(uintptr_t start_addr, size_t length) {
+	if (acpi_block_index >= 128) return;
+	acpi_blocks[acpi_block_index].real_start_addr = start_addr;
+	acpi_blocks[acpi_block_index].length = length;
+
+	uintptr_t new_start_address = start_addr & ~0x1FFFFF; // Round down to the nearest 2MB boundary
+
+	acpi_blocks[acpi_block_index].virt_start_addr = new_start_address;
+
+	acpi_block_index++;
+
+	printf_serial("\tMapped ACPI block.\r\n");
+	printf_serial("\t\tStart Addr: 0x%llx\r\n", start_addr);
+	printf_serial("\t\tVirt Addr:  0x%llx\r\n", new_start_address);
+	printf_serial("\t\tLength:     0x%llx\r\n", length);
+}
+
 /**
  * @brief This is some voodoo magic. It's also poorly commented. GLHF :)
  *
@@ -67,13 +95,27 @@ size_t Memory::Info::getUsedPageCount() {
  * @param type Type of memory chunk, as defined by the MultiBoot2 Memory Map Tag
  */
 void map_chunk(uintptr_t start_address, size_t length, uint32_t type) {
-	if (type != MULTIBOOT_MEMORY_AVAILABLE) return;
-	if (start_address < 0x100000) return;
+	if (type != MULTIBOOT_MEMORY_AVAILABLE && type != MULTIBOOT_MEMORY_ACPI_RECLAIMABLE) {
+		printf_serial("\tType (%d) isn't MULTIBOOT_MEMORY_AVAILABLE\r\n", type);
+		return;
+	}
+	if (start_address < 0x100000) {
+		printf_serial("\tStart address is below 1MB. This is identity mapped so we ignore it.\r\n");
+		return;
+	}
 	if (start_address <= phys_kernel_end) {
 		// We have to make sure that we can map the physical memory behind the kernel.
-		if (start_address + length < phys_kernel_end) return;
+		if (start_address + length < phys_kernel_end) {
+			printf_serial("\tAddr + length is below the kernel.\r\n");
+			return;
+		}
 		length = length - (phys_kernel_end - start_address);
 		start_address = phys_kernel_end;
+	}
+
+	if (type == MULTIBOOT_MEMORY_ACPI_RECLAIMABLE) {
+		map_acpi_reclaimable(start_address, length);
+		return;
 	}
 
 	// check if the memory region just so happens to contain reserved memory
@@ -100,9 +142,17 @@ void map_chunk(uintptr_t start_address, size_t length, uint32_t type) {
 	// We want the start address to be on a 2MB boundary.
 	uintptr_t old_start_addr = start_address;
 	uintptr_t new_start_address = (start_address + 0x1FFFFF) & ~0x1FFFFF; // Round up & clear the lower 21 bits 
+
+	if ((new_start_address - old_start_addr) > length) {
+		printf("\tMemory chunk too small to map... (%u bytes)\n", new_start_address - old_start_addr);
+		printf_serial("\tMemory chunk too small to map... (%u bytes, need at least %u)\r\n", new_start_address - old_start_addr, PAGE_2MB_SIZE);
+		return;
+	}
+
 	length = length - (new_start_address - old_start_addr); // Adjust length to start at the new boundary
 
 	printf("\tMemory Chunk: 0x%llx -> 0x%llx bytes\n", new_start_address, length);
+	printf_serial("\tMemory Chunk: 0x%llx -> 0x%llx bytes\r\n", new_start_address, length);
 	size_t max_pages = length / PAGE_2MB_SIZE;
 
 	// Calculate the size of the linked list, then see how many pages it takes up
@@ -146,6 +196,7 @@ void map_chunk(uintptr_t start_address, size_t length, uint32_t type) {
 	}
 
 	printf("\t\tTotal Blocks: %llu -> Last Addr: 0x%llx\n", max_pages, new_start_address + (max_pages * PAGE_2MB_SIZE));
+	printf_serial("\t\tTotal Blocks: %llu -> Last Addr: 0x%llx\r\n", max_pages, new_start_address + (max_pages * PAGE_2MB_SIZE));
 }
 
 void fillMMapInfo(struct multiboot_tag_mmap* mmap_tag) {
@@ -189,10 +240,12 @@ void Memory::PhysicalMemInit() {
 	phys_kernel_end = (uint64_t) (&kernel_end) - KERNEL_VIRTUAL_BASE;
 	set_colors(VGA_COLOR_YELLOW, VGA_DEFAULT_BG);
 	printf("Initalizing Physical Memory Allocator:\n");
+	printf_serial("Initalizing Physical Memory Allocator:\r\n");
 	set_to_last();
 	set_colors(VGA_COLOR_BROWN, VGA_DEFAULT_BG);
 	for (mmap = mmap_tag->entries; (size_t) mmap < (size_t) mmap_tag + mmap_tag->size; mmap = (struct multiboot_mmap_entry*) ((size_t) mmap + (size_t) mmap_tag->entry_size)) {
-		printf("Found chunk: addr->0x%x len->0x%x\n");
+		printf("Found chunk: addr->0x%x len->0x%x\n", mmap->addr, mmap->len);
+		printf_serial("Found chunk: addr->0x%x len->0x%x\r\n", mmap->addr, mmap->len);
 		map_chunk(mmap->addr, mmap->len, mmap->type);
 	}
 	set_to_last();
@@ -316,32 +369,55 @@ uintptr_t Memory::PhysicalAlloc2MBSequential(size_t page_count) {
  * @return The base physical address relating to the provided address. NULL if the address is not mappable (likely protected/reserved memory already).
  */
 uintptr_t Memory::PhysicalMarkAllocated(uintptr_t addr, size_t len) {
-	uintptr_t base_page_addr = addr & ~0x1FFFFF; // Clear the lower bytes of the addr to get the base page pointer
-	uintptr_t final_page_addr = (addr + len) & ~0x1FFFFF; // Get the final base page pointer
+	uintptr_t base_page_addr = addr & ~0x1FFFFF;               // 2MB align down
+	uintptr_t final_page_addr = (addr + len) & ~0x1FFFFF;       // 2MB align down
 	size_t page_count = 1;
 
-	// If the base and final are not the same, we need to set more than one page as used.
 	if (final_page_addr != base_page_addr) {
-		page_count = (final_page_addr - base_page_addr) / PAGE_2MB_SIZE;
+		page_count = ((final_page_addr - base_page_addr) / PAGE_2MB_SIZE) + 1;
 	}
 
-	// It will always be a range of addresses we need to map.
-	// This makes out lives much easier, as we can just check ranges of pointers in blocks
-	// We unfortunately have to walk the entirety of the list. At the very worst case, it's O(n).
+	printf_serial("[PMM] Page range: base=0x%lx final=0x%lx pages=%zu\r\n", base_page_addr, final_page_addr, page_count);
 
 	Block* current = block_list;
 	size_t pages_marked = 0;
+
 	while (current != NULL) {
-		register uintptr_t current_ptr = current->pointer;
+		uintptr_t current_ptr = current->pointer;
+
 		if (current_ptr >= base_page_addr && current_ptr <= final_page_addr) {
-			current->free = false;
-			pages_marked++;
-			if (pages_marked == page_count) break;
+			if (current->free) {
+				current->free = false;
+				pages_marked++;
+
+				printf_serial("[PMM]   Marked page @ 0x%lx (%zu/%zu)\r\n", current_ptr, pages_marked, page_count);
+
+				if (pages_marked == page_count)
+					break;
+			} else {
+				pages_marked++;
+				printf_serial("[PMM]   Page already marked @ 0x%llx (%zu/%zu)\r\n", current_ptr, pages_marked, page_count);
+			}
 		}
+
 		current = current->next_block;
 	}
 
-	if (pages_marked == 0) return 0;
+	for (int i = 0; i < acpi_block_index; i++) {
+		printf_serial("[PMM] ACPI BLOCK allocated...\r\n");
+		return acpi_blocks[i].virt_start_addr;
+	}
+
+	if (pages_marked == 0) {
+		printf_serial("[PMM] ERROR: No pages marked\r\n");
+		return 0;
+	}
+
+	if (pages_marked != page_count) {
+		printf_serial("[PMM] WARNING: Partial allocation (%zu/%zu pages)\r\n", pages_marked, page_count);
+	}
+
+	printf_serial("[PMM] Allocation complete: base=0x%lx pages=%zu\r\n", base_page_addr, pages_marked);
 
 	return base_page_addr;
 }
