@@ -4,7 +4,8 @@ SECTIONS
 {
 	KERNAL_VIRTUAL_BASE = 0xFFFFFFFF80000000;
 	. = 1M;
-
+	kernel_start = .;
+	
 	.boot.text : {
 		KEEP(*(.multiboot_header))
 		*(.boot.text)

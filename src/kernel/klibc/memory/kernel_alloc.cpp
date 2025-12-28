@@ -345,17 +345,17 @@ void* kalloc(size_t bytes) {
 			continue;
 		}
 
-		size_t consective_chunks = 0;
+		size_t consecutive_chunks = 0;
 		chunk_number = 0;
 		for (size_t i = 0; i < header->chunk_count / 8; i++) {
-			if (consective_chunks == 0) chunk_number = i * 8;
+			if (consecutive_chunks == 0) chunk_number = i * 8;
 			for (int j = 1; j <= 8; j++) {
 				if (!GET_BIT(BITLIST_BASE(header)[i], j)) {
-					if (consective_chunks == 0) chunk_number = (i * 8) + j;
+					if (consecutive_chunks == 0) chunk_number = (i * 8) + j;
 
-					consective_chunks++;
+					consecutive_chunks++;
 
-					if (consective_chunks == amount_of_objects) {
+					if (consecutive_chunks == amount_of_objects) {
 						for (size_t k = 0; k < amount_of_objects; k++) {
 							setChunkUsed(header, chunk_number + k);
 						}
@@ -366,7 +366,7 @@ void* kalloc(size_t bytes) {
 						goto finish;
 					}
 				} else {
-					consective_chunks = 0;
+					consecutive_chunks = 0;
 				}
 			}
 		}
