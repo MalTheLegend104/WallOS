@@ -337,7 +337,7 @@ void kernel_main(unsigned int magic, multiboot_info* mbt_info) {
 
 	init_initrd();
 
-	pmm_init();
+	// pmm_init();
 
 	Memory::PhysicalMemInit();
 

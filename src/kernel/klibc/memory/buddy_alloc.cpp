@@ -33,6 +33,8 @@ uintptr_t mem_map_phys;
 // The amount of 4kb pages the system has, from 0x0 to physical memory max.
 size_t total_system_pages;
 
+mmap_info mem_info;
+
 // The array of list heads (indices)
 // We use 0xFFFFFFFF as a "null" index
 uint32_t free_lists[MAX_ORDER + 1];
@@ -291,7 +293,7 @@ uintptr_t scan_memory_map(struct multiboot_tag_mmap* mmap_tag) {
 	return max_addr;
 }
 
-// Need a way to map things as reserved so we don't accidentally overwrite them.
+// Need a way to map our own things as reserved so we don't accidentally overwrite them.
 #define MAX_RESERVED 50
 typedef struct {
 	uintptr_t addr;
@@ -300,62 +302,187 @@ typedef struct {
 reserved_region reservedMemory[MAX_RESERVED];
 size_t reservedChunks = 0;
 
+#include <assert.h>
 
-Page* find_free_region_internal(struct multiboot_tag_mmap* mmap_tag, size_t size) {
-	// Find (and map with the VMM) a region of memory for the PMM map.
-	uintptr_t region = 0;
+void Memory::reserveMemory(uintptr_t base_addr, size_t size) {
+	assert(reservedChunks < MAX_RESERVED);
 
-	// We kinda want this after the kernel location.
-	struct multiboot_mmap_entry* mmap;
-	for (mmap = mmap_tag->entries; (size_t) mmap < (size_t) mmap_tag + mmap_tag->size; mmap = (struct multiboot_mmap_entry*) ((size_t) mmap + (size_t) mmap_tag->entry_size)) {
-		// if (mmap->addr < buddy_phys_kernel_end) continue;
-		if (mmap->type != MULTIBOOT_MEMORY_AVAILABLE) continue;
-
-		uintptr_t start = mmap->addr;
-		uintptr_t end = mmap->addr + mmap->len;
-
-
-		// This makes sure we actually put it after the kernel if the kernel region is long.
-		// For example, the region containing the kernel may start at 1MiB, but be 500MiB long.
-		// This would prevent us from using that region.
-		if (end <= buddy_phys_kernel_end) continue;
-		if (start < buddy_phys_kernel_end) start = buddy_phys_kernel_end;
-
-
-
-
-		// Align start up to the nearest 4kb address
-		// uintptr_t aligned = (start + 4095) & ~4095;
-		// We can't actually do that...
-		// Screw the VMM and it's 2MB limitation...
-		uintptr_t aligned = (start + PAGE_2MB_SIZE - 1) & ~(PAGE_2MB_SIZE - 1);
-
-		if (aligned + size > end) continue;
-
-		printf("[PMM] Found region after kernel for map:\n\tADDR 0x%llx\n\tLEN: 0x%llx\n\tSIZE: 0x%llx\n\tALIGNED: 0x%llx\n", mmap->addr, mmap->len, size, aligned);
-		region = aligned;
-		break;
+	// Find insertion index
+	size_t insert = 0;
+	while (insert < reservedChunks &&
+		reservedMemory[insert].addr < base_addr) {
+		insert++;
 	}
 
-	if (region == 0) {
+	// Shift entries to the right
+	for (size_t i = reservedChunks; i > insert; i--) {
+		reservedMemory[i] = reservedMemory[i - 1];
+	}
+
+	// Insert new region
+	reservedMemory[insert].addr = base_addr;
+	reservedMemory[insert].size = size;
+
+	reservedChunks++;
+}
+
+
+// Page* find_free_region_internal(struct multiboot_tag_mmap* mmap_tag, size_t size) {
+// 	// Find (and map with the VMM) a region of memory for the PMM map.
+// 	uintptr_t region = 0;
+
+// 	// We kinda want this after the kernel location.
+// 	struct multiboot_mmap_entry* mmap;
+// 	for (mmap = mmap_tag->entries; (size_t) mmap < (size_t) mmap_tag + mmap_tag->size; mmap = (struct multiboot_mmap_entry*) ((size_t) mmap + (size_t) mmap_tag->entry_size)) {
+// 		// if (mmap->addr < buddy_phys_kernel_end) continue;
+// 		if (mmap->type != MULTIBOOT_MEMORY_AVAILABLE) continue;
+
+// 		uintptr_t start = mmap->addr;
+// 		uintptr_t end = mmap->addr + mmap->len;
+
+// 		for (int i = 0; i < reservedChunks; i++) {
+// 			uintptr_t reserved_start = reservedMemory[i].addr;
+// 			uintptr_t reserved_end = reserved_start + reservedMemory[i].size;
+// 			if (start > reserved_start && start < reserved_end) {
+// 				start = reserved_end;
+// 			}
+
+// 			if (end > reserved_start && end < reserved_end) end = reserved_end;
+// 		}
+
+// 		// This makes sure we actually put it after the kernel if the kernel region is long.
+// 		// For example, the region containing the kernel may start at 1MiB, but be 500MiB long.
+// 		// This would prevent us from using that region.
+// 		if (end <= buddy_phys_kernel_end) continue;
+// 		if (start < buddy_phys_kernel_end) start = buddy_phys_kernel_end;
+
+
+// 		// Align start up to the nearest 4kb address
+// 		// uintptr_t aligned = (start + 4095) & ~4095;
+// 		// We can't actually do that...
+// 		// Screw the VMM and it's 2MB limitation...
+// 		uintptr_t aligned = (start + PAGE_2MB_SIZE - 1) & ~(PAGE_2MB_SIZE - 1);
+
+// 		if (aligned + size > end) continue;
+
+// 		printf("[PMM] Found region after kernel for map:\n\tADDR 0x%llx\n\tLEN: 0x%llx\n\tSIZE: 0x%llx\n\tALIGNED: 0x%llx\n", mmap->addr, mmap->len, size, aligned);
+// 		region = aligned;
+// 		break;
+// 	}
+
+// 	if (region == 0) {
+// 		printf("[PMM][FATAL] couldn't find a region to map to...\n");
+// 		return (Page*) region;
+// 	}
+
+// 	mem_map_phys = region;
+
+// 	// Memory::MapPreAllocMem(region);
+// 	// uintptr_t Memory::MapSequentialKernelPages(size_t pages, uintptr_t phys_base_addr)
+// 	size_t pages = (size + PAGE_2MB_SIZE - 1) / PAGE_2MB_SIZE;
+// 	uintptr_t virt_addr = Memory::MapSequentialKernelPages(pages, region);
+
+// 	printf("Requested pages: %d\n", pages);
+// 	printf("Max Map: 0x%llx\n", virt_addr + ((pages - 1) * PAGE_2MB_SIZE) + (PAGE_2MB_SIZE - 1));
+// 	return (Page*) virt_addr;
+// }
+
+Page* find_free_region_internal(struct multiboot_tag_mmap* mmap_tag, size_t size) {
+	uintptr_t region = 0;
+
+	struct multiboot_mmap_entry* mmap;
+	for (mmap = mmap_tag->entries;
+		(size_t) mmap < (size_t) mmap_tag + mmap_tag->size;
+		mmap = (struct multiboot_mmap_entry*) ((size_t) mmap + mmap_tag->entry_size)) {
+
+		if (mmap->type != MULTIBOOT_MEMORY_AVAILABLE)
+			continue;
+
+		uintptr_t region_start = mmap->addr;
+		uintptr_t region_end = mmap->addr + mmap->len;
+
+		// Enforce kernel boundary
+		if (region_end <= buddy_phys_kernel_end)
+			continue;
+
+		if (region_start < buddy_phys_kernel_end)
+			region_start = buddy_phys_kernel_end;
+
+		if (region_start >= region_end)
+			continue;
+
+		// Walk reserved regions and test gaps
+		uintptr_t cursor = region_start;
+
+		for (size_t i = 0; i < reservedChunks; i++) {
+			uintptr_t rs = reservedMemory[i].addr;
+			uintptr_t re = rs + reservedMemory[i].size;
+
+			// Reserved region completely before cursor
+			if (re <= cursor)
+				continue;
+
+			// Reserved region starts after usable area
+			if (rs >= region_end)
+				break;
+
+			// Gap before this reserved region
+			if (rs > cursor) {
+				uintptr_t gap_start = cursor;
+				uintptr_t gap_end = rs;
+
+				// Align gap start to 2MB
+				uintptr_t aligned = (gap_start + PAGE_2MB_SIZE - 1) &
+					~(PAGE_2MB_SIZE - 1);
+
+				if (aligned + size <= gap_end) {
+					region = aligned;
+					goto found;
+				}
+			}
+
+			// Advance cursor past reserved region
+			if (re > cursor)
+				cursor = re;
+		}
+
+		// Tail gap after last reserved region
+		if (cursor < region_end) {
+			uintptr_t aligned = (cursor + PAGE_2MB_SIZE - 1) &
+				~(PAGE_2MB_SIZE - 1);
+
+			if (aligned + size <= region_end) {
+				region = aligned;
+				goto found;
+			}
+		}
+	}
+
+found:
+	if (!region) {
 		printf("[PMM][FATAL] couldn't find a region to map to...\n");
-		return (Page*) region;
+		return nullptr;
 	}
 
 	mem_map_phys = region;
 
-	// Memory::MapPreAllocMem(region);
-	// uintptr_t Memory::MapSequentialKernelPages(size_t pages, uintptr_t phys_base_addr)
 	size_t pages = (size + PAGE_2MB_SIZE - 1) / PAGE_2MB_SIZE;
-	uintptr_t virt_addr = Memory::MapSequentialKernelPages(pages, region);
+	uintptr_t virt = Memory::MapSequentialKernelPages(pages, region);
 
-	printf("Requested pages: %d\n", pages);
-	printf("Max Map: 0x%llx\n", virt_addr + ((pages - 1) * PAGE_2MB_SIZE) + (PAGE_2MB_SIZE - 1));
-	return (Page*) virt_addr;
+	printf("[PMM] Found mem_map region:\n");
+	printf("  Phys: 0x%llx\n", region);
+	printf("  Virt: 0x%llx\n", virt);
+	printf("  Size: 0x%llx\n", size);
+	printf("  Pages: %zu\n", pages);
+
+	return (Page*) virt;
 }
+
 
 void pmm_init() {
 	struct multiboot_tag_mmap* mmap_tag = MultibootManager::getMMap();
+
+	Memory::reserveMemory((uintptr_t) mmap_tag, mmap_tag->size);
 
 	buddy_phys_kernel_end = (uint64_t) (&kernel_end) - KERNEL_VIRTUAL_BASE;
 
@@ -388,13 +515,13 @@ void pmm_init() {
 	}
 
 	// Mark ALL pages as unusable initially
-	// for (uint32_t i = 0; i < total_system_pages; i++) {
-	// 	mem_map[i].is_free = false;
-	// 	mem_map[i].order = 0;
-	// 	mem_map[i].next = 0xFFFFFFFF;
-	// 	mem_map[i].prev = 0xFFFFFFFF;
-	// 	mem_map[i].flags = PMM_PAGE_UNUSABLE;
-	// }
+	for (uint32_t i = 0; i < total_system_pages; i++) {
+		mem_map[i].is_free = false;
+		mem_map[i].order = 0;
+		mem_map[i].next = 0xFFFFFFFF;
+		mem_map[i].prev = 0xFFFFFFFF;
+		mem_map[i].flags = PMM_PAGE_UNUSABLE;
+	}
 
 	// Process each usable region from bootloader memory map
 	// I pseudocoded this because I don't want to deal with multiboot rn
@@ -413,6 +540,10 @@ void pmm_init() {
 		printf_serial("multiboot region: ADDR 0x%llx LEN: 0x%llx TYPE: %d", mmap->addr, mmap->len, mmap->type);
 	}
 
+	mem_info.total = 0;
+	mem_info.usable = 0;
+	mem_info.reserved = 0;
+
 	int entry_count = 0;
 	// struct multiboot_mmap_entry* mmap;
 	for (mmap = mmap_tag->entries; (size_t) mmap < (size_t) mmap_tag + mmap_tag->size; mmap = (struct multiboot_mmap_entry*) ((size_t) mmap + (size_t) mmap_tag->entry_size)) {
@@ -427,6 +558,13 @@ void pmm_init() {
 			printf_serial("[PMM][WARN] Corrupt MMap entry detected (hopefully because of QEMU)! Base: 0x%llx Entry Count: %d\n", start, entry_count);
 			continue;
 		}
+
+		mem_info.total += (end - start);
+
+		if (region_flags & PMM_PAGE_USABLE)
+			mem_info.usable += (end - start);
+		else
+			mem_info.reserved += (end - start);
 
 		switch (mmap->type) {
 			case MULTIBOOT_MEMORY_AVAILABLE:
@@ -476,13 +614,12 @@ void pmm_init() {
 		// Always mark flags so the PMM knows what's at these addresses
 		mark_region_flags(start, end, region_flags);
 	}
-	asm volatile("cli");
-	asm volatile("hlt");
+	// asm volatile("cli");
+	// asm volatile("hlt");
 
 	// Mark special regions (kernel, mem_map itself, etc.)
-	mark_region_flags(kernel_start, kernel_end, PMM_PAGE_KERNEL);
+	mark_region_flags((uintptr_t) (&kernel_start), buddy_phys_kernel_end, PMM_PAGE_KERNEL);
 	mark_region_flags(mem_map_phys, mem_map_phys + mem_map_size, PMM_PAGE_KERNEL);
-
 
 	return;
 }
@@ -494,7 +631,6 @@ void pmm_init() {
 
 // size_t Memory::Info::getFreePageCount();
 // size_t Memory::Info::getUsedPageCount();
-// uintptr_t Memory::Info::getPhysKernelEnd();
 // const mmap_info* Memory::Info::getMMapInfo();
 
 // uintptr_t Memory::PhysicalAlloc2MB();
@@ -517,3 +653,105 @@ void pmm_init() {
  * We also calculate the total_system_pages, which covers everything from address 0 to the end of physical memory.
  * When initializing memory, we'll map all possible pages, and just set the reserved or unusable chunks as not free (and they'll never get added to the freelist)
  */
+
+
+const mmap_info* Memory::Info::getMMapInfo() { return &mem_info; }
+
+uintptr_t Memory::Info::getPhysKernelEnd() {
+	return buddy_phys_kernel_end;
+}
+
+size_t Memory::Info::getFreePageCount() {
+	size_t count = 0;
+	for (uint32_t i = 0; i < total_system_pages; i++) {
+		if (mem_map[i].is_free)
+			count++;
+	}
+	return count;
+}
+
+size_t Memory::Info::getUsedPageCount() {
+	size_t count = 0;
+	for (uint32_t i = 0; i < total_system_pages; i++) {
+		if (!mem_map[i].is_free &&
+			(mem_map[i].flags & PMM_PAGE_USABLE))
+			count++;
+	}
+	return count;
+}
+
+void Memory::PhysicalMemInit() {
+	pmm_init();
+}
+
+uintptr_t Memory::PhysicalAlloc2MB() {
+	const uint8_t order = 9; // 2MB = 2^9 pages
+
+	uint32_t idx = buddy_alloc(order);
+	if (idx == 0xFFFFFFFF)
+		return 0;
+
+	return idx_to_addr(idx);
+}
+
+uintptr_t Memory::PhysicalAlloc2MBSequential(size_t page_count) {
+	if (page_count == 0)
+		return 0;
+
+	const uint8_t order = 9;
+
+	// Try to find a contiguous run
+	for (uint32_t i = 0; i + (page_count << order) <= total_system_pages; i += (1 << order)) {
+		bool ok = true;
+
+		for (size_t j = 0; j < page_count; j++) {
+			Page* p = &mem_map[i + (j << order)];
+			if (!p->is_free || p->order < order) {
+				ok = false;
+				break;
+			}
+		}
+
+		if (!ok)
+			continue;
+
+		// Allocate them
+		for (size_t j = 0; j < page_count; j++) {
+			buddy_alloc(order);
+		}
+
+		return idx_to_addr(i);
+	}
+
+	return 0;
+}
+
+uintptr_t Memory::PhysicalMarkAllocated(uintptr_t addr, size_t len) {
+	uint32_t start_idx = addr_to_idx(ALIGN_DOWN(addr, PAGE_SIZE));
+	uint32_t end_idx = addr_to_idx(ALIGN_UP(addr + len, PAGE_SIZE));
+
+	if (end_idx > total_system_pages)
+		end_idx = total_system_pages;
+
+	for (uint32_t i = start_idx; i < end_idx; i++) {
+		Page* p = &mem_map[i];
+
+		if (p->is_free) {
+			remove_from_list(p->order, i);
+			p->is_free = false;
+		}
+
+		p->flags |= PMM_PAGE_RESERVED;
+	}
+
+	return idx_to_addr(start_idx);
+}
+
+void Memory::PhysicalDeAlloc2MB(uintptr_t phys_addr) {
+	uint32_t idx = addr_to_idx(phys_addr);
+
+	if (idx >= total_system_pages)
+		panic_s("PhysicalDeAlloc2MB: invalid address");
+
+	buddy_free(idx, 9);
+}

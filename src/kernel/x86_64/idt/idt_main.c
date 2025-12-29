@@ -221,7 +221,7 @@ __attribute__((interrupt)) void page_fault_handler(struct interrupt_frame* frame
 	printf_serial("Page fault at address (CR2): 0x%llx\r\n", cr2);
 	printf_serial("Present: %d, Write: %d, User Mode: %d, Reserved: %d, Instruction Fetch: %d, Protection: %d, Shadow Stack: %d, SGX: %d\r\n",
 		present, write, user_mode, reserved, instruction_fetch, protection_key, shadow_stack, sgx);
-	printf_serial("Code that caused it: 0x%llx", frame->ip);
+	printf_serial("Code that caused it: 0x%llx\r\n", frame->ip);
 	asm volatile("hlt");
 }
 

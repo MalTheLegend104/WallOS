@@ -505,7 +505,7 @@ uintptr_t Memory::MapSequentialKernelPages(size_t pages, uintptr_t phys_base_add
  * @param len Length of the requested mapping in bytes.
  * @return uintptr_t Virtual address corresponding to the provided physical address.
  */
-/*uintptr_t Memory::MapKernelLocation(uintptr_t addr, size_t len) {
+uintptr_t Memory::MapKernelLocation(uintptr_t addr, size_t len) {
 	// The offset from the 2MB boundary line to the base address.
 	size_t addr_offset = addr & 0x1FFFFF;
 	uintptr_t final_addr = addr + len;
@@ -520,7 +520,13 @@ uintptr_t Memory::MapSequentialKernelPages(size_t pages, uintptr_t phys_base_add
 
 	printf_serial("\tBase Page Addr: 0x%llx\r\n\tFinal Page Addr: 0x%llx\r\n\tBase Offset: 0x%llx\r\n", base_page_addr, final_page_addr, addr_offset);
 
-	uintptr_t phys_base_addr = Memory::PhysicalMarkAllocated(addr, len);
+	// uintptr_t phys_base_addr = Memory::PhysicalMarkAllocated(addr, len);
+
+	// Mark the whole 2MB-aligned region as allocated
+	Memory::PhysicalMarkAllocated(base_page_addr, PAGE_2MB_SIZE);
+
+	// Use the 2MB-aligned base for mapping
+	uintptr_t phys_base_addr = base_page_addr;
 	// We're going to assume we have access to the memory at this point.
 	// The only way it returns NULL is if it's reserved or already mapped, which we're just going to assume means we have access.
 
@@ -533,62 +539,62 @@ uintptr_t Memory::MapSequentialKernelPages(size_t pages, uintptr_t phys_base_add
 	printf_serial("\tAllocated Virtual: 0x%llx\r\n", allocated_addr + addr_offset);
 
 	return (allocated_addr + addr_offset);
-}*/
+}
 // TODO: THIS IS A VERY BAD IMPLEMENTATION OF THIS TO CIRCUMVENT ISSUES WITH THE PMM
 // ONCE THE PMM GETS REWRITTEN, GO BACK TO THE OLD ONE
-uintptr_t Memory::MapKernelLocation(uintptr_t addr, size_t len) {
-	size_t addr_offset = addr & 0x1FFFFF;
-	uintptr_t final_addr = addr + len - 1;
+// uintptr_t Memory::MapKernelLocation(uintptr_t addr, size_t len) {
+// 	size_t addr_offset = addr & 0x1FFFFF;
+// 	uintptr_t final_addr = addr + len - 1;
 
-	uintptr_t base_page_addr = addr & ~0x1FFFFF;
-	uintptr_t final_page_addr = final_addr & ~0x1FFFFF;
+// 	uintptr_t base_page_addr = addr & ~0x1FFFFF;
+// 	uintptr_t final_page_addr = final_addr & ~0x1FFFFF;
 
-	size_t page_count =
-		((final_page_addr - base_page_addr) / PAGE_2MB_SIZE) + 1;
+// 	size_t page_count =
+// 		((final_page_addr - base_page_addr) / PAGE_2MB_SIZE) + 1;
 
-	printf_serial(
-		"[KMAP] addr=0x%llx len=0x%llx\r\n"
-		"       base=0x%llx final=0x%llx pages=%zu offset=0x%llx\r\n",
-		addr, len,
-		base_page_addr, final_page_addr,
-		page_count, addr_offset
-	);
+// 	printf_serial(
+// 		"[KMAP] addr=0x%llx len=0x%llx\r\n"
+// 		"       base=0x%llx final=0x%llx pages=%zu offset=0x%llx\r\n",
+// 		addr, len,
+// 		base_page_addr, final_page_addr,
+// 		page_count, addr_offset
+// 	);
 
-	// printf(
-	// 	"[KMAP] addr=0x%llx len=0x%llx\r\n"
-	// 	"       base=0x%llx final=0x%llx pages=%zu offset=0x%llx\n",
-	// 	addr, len,
-	// 	base_page_addr, final_page_addr,
-	// 	page_count, addr_offset
-	// );
+// 	// printf(
+// 	// 	"[KMAP] addr=0x%llx len=0x%llx\r\n"
+// 	// 	"       base=0x%llx final=0x%llx pages=%zu offset=0x%llx\n",
+// 	// 	addr, len,
+// 	// 	base_page_addr, final_page_addr,
+// 	// 	page_count, addr_offset
+// 	// );
 
-	uintptr_t phys_base_addr = base_page_addr;
+// 	uintptr_t phys_base_addr = base_page_addr;
 
-	/* Bypass the fact the PMM doesn't properly handle low memory addresses. */
-	if (final_addr <= 0x400000) {
-		printf_serial("[KMAP] Low-memory mapping (PMM bypass): phys=0x%llx\r\n", phys_base_addr);
-		// printf("[KMAP] Low-memory mapping (PMM bypass): phys=0x%llx\n", phys_base_addr);
-	} else {
-		phys_base_addr = Memory::PhysicalMarkAllocated(addr, len);
-		if (phys_base_addr == 0) {
-			printf_serial("[KMAP] ERROR: PMM refused mapping for phys=0x%llx\r\n", addr);
-			// printf("[KMAP] ERROR: PMM refused mapping for phys=0x%llx\n", addr);
-			return 0;
-		}
-	}
+// 	/* Bypass the fact the PMM doesn't properly handle low memory addresses. */
+// 	if (final_addr <= 0x400000) {
+// 		printf_serial("[KMAP] Low-memory mapping (PMM bypass): phys=0x%llx\r\n", phys_base_addr);
+// 		// printf("[KMAP] Low-memory mapping (PMM bypass): phys=0x%llx\n", phys_base_addr);
+// 	} else {
+// 		phys_base_addr = Memory::PhysicalMarkAllocated(addr, len);
+// 		if (phys_base_addr == 0) {
+// 			printf_serial("[KMAP] ERROR: PMM refused mapping for phys=0x%llx\r\n", addr);
+// 			// printf("[KMAP] ERROR: PMM refused mapping for phys=0x%llx\n", addr);
+// 			return 0;
+// 		}
+// 	}
 
-	uintptr_t virt_base = Memory::MapSequentialKernelPages(page_count, phys_base_addr);
-	if (virt_base == 0) return 0;
+// 	uintptr_t virt_base = Memory::MapSequentialKernelPages(page_count, phys_base_addr);
+// 	if (virt_base == 0) return 0;
 
-	printf_serial(
-		"[KMAP] Mapped: phys=0x%llx → virt=0x%llx (ret=0x%llx)\r\n",
-		phys_base_addr,
-		virt_base,
-		virt_base + addr_offset
-	);
+// 	printf_serial(
+// 		"[KMAP] Mapped: phys=0x%llx → virt=0x%llx (ret=0x%llx)\r\n",
+// 		phys_base_addr,
+// 		virt_base,
+// 		virt_base + addr_offset
+// 	);
 
-	return virt_base + addr_offset;
-}
+// 	return virt_base + addr_offset;
+// }
 
 
 uintptr_t mapKernelLocation(uintptr_t addr, size_t len) {
