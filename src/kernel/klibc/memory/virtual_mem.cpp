@@ -315,7 +315,7 @@ void Memory::mapFramebuffer(uintptr_t base_addr, size_t size) {
  *
  * @param addr Address of the page to be mapped. Does NOT matter if it's the base address or not.
  */
-void Memory::MapPreAllocMem(uintptr_t addr) {
+uintptr_t Memory::MapPreAllocMem(uintptr_t addr) {
 	// This address will be the virtual address, including the offset from KERNEL_VIRTUAL_BASE
 	// Before we set up any allocators, we use 2mb pages.
 	addr = addr & ~0x1FFFFF; // Clear the lower bytes of the addr to get the base page pointer

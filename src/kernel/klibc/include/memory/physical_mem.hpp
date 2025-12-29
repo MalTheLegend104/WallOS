@@ -8,6 +8,33 @@
 
 #include <klibc/multiboot.h>
 
+#define MAX_ORDER 11 // This is 8MiB
+#define PAGE_SIZE 4096
+
+#define ALIGN_DOWN(x, align)  ((x) & ~((align) - 1))
+#define ALIGN_UP(x, align)    (((x) + (align) - 1) & ~((align) - 1))
+
+/* We keep certain flags relating to memory regions. We have 16 positions for flags (can be expanded to more, just causes more overhead).
+ * These are meant to be used for debugging (by throwing panics when the PMM is misused),
+ * as well as enforcing that we never accidentally touch regions we shouldn't.
+ */
+#define PMM_PAGE_USABLE		(1 << 0)   // Currently in buddy free list
+#define PMM_PAGE_RESERVED	(1 << 1)   // Must never be allocated
+#define PMM_PAGE_UNUSABLE	(1 << 2)   // Bad RAM / holes
+#define PMM_PAGE_ACPI		(1 << 3)   // ACPI reclaimable or NVS. These can only be touched by the ACPI subsystem.
+#define PMM_PAGE_KERNEL		(1 << 4)   // Kernel image / mem_map / stacks
+#define PMM_PAGE_DMA		(1 << 5)   // Belongs to DMA zone (future use)
+#define PMM_PAGE_MMIO		(1 << 6)   // Belongs to a MMIO device
+#define PMM_PAGE_BIT_7		(1 << 7)   // Reserved for future use
+#define PMM_PAGE_BIT_8		(1 << 8)   // Reserved for future use
+#define PMM_PAGE_BIT_9		(1 << 9)   // Reserved for future use
+#define PMM_PAGE_BIT_10		(1 << 10)  // Reserved for future use
+#define PMM_PAGE_BIT_11		(1 << 11)  // Reserved for future use
+#define PMM_PAGE_BIT_12		(1 << 12)  // Reserved for future use
+#define PMM_PAGE_BIT_13		(1 << 13)  // Reserved for future use
+#define PMM_PAGE_BIT_14		(1 << 14)  // Reserved for future use
+#define PMM_PAGE_BIT_15		(1 << 15)  // Reserved for future use
+
 typedef struct {
 	size_t total;
 	size_t usable;

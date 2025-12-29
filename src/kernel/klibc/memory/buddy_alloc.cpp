@@ -7,26 +7,17 @@
 #include <klibc/multiboot.h>
 #include <memory/virtual_mem.h>
 
-#define MAX_ORDER 11 // This is 8MiB
-#define PAGE_SIZE 4096
+#include <memory/physical_mem.hpp>
 
-#define ALIGN_DOWN(x, align)  ((x) & ~((align) - 1))
-#define ALIGN_UP(x, align)    (((x) + (align) - 1) & ~((align) - 1))
+extern "C" {
+	extern uint64_t kernel_start;
+	extern uint64_t kernel_end;
+}
 
-/* We keep certain flags relating to memory regions.
- * These are meant to be used for debugging (by throwing panics when the PMM is misused),
- * as well as enforcing we never accidentally touch regions we shouldn't.
- */
-#define PAGE_USABLE		(1 << 0)  // Currently in buddy free list
-#define PAGE_RESERVED	(1 << 1)  // Must never be allocated
-#define PAGE_UNUSABLE	(1 << 2)  // Bad RAM / holes
-#define PAGE_ACPI		(1 << 3)  // ACPI reclaimable or NVS. These can only be touched by the ACPI subsystem.
-#define PAGE_KERNEL		(1 << 4)  // Kernel image / mem_map / stacks
-#define PAGE_DMA		(1 << 5)  // Belongs to DMA zone (future use)
-#define PAGE_MMIO		(1 << 6)  // Belongs to a MMIO device
+uint64_t buddy_phys_kernel_end;
 
 typedef struct {
-	// These are commented so I keep track of array size without doing math every time I look at it.
+	// These are commented so I keep track of array size without doing mental math every time I look at it.
 	// They're self explanitory but still explained bc why not.
 	uint32_t next;    // 4: Index of next free block in this order list
 	uint32_t prev;    // 4: Index of previous free block
@@ -235,7 +226,7 @@ void init_region(uintptr_t start, uintptr_t end) {
  * mark_region_flags - Set flags for a range of physical memory
  * @start: Starting physical address
  * @end: Ending physical address (exclusive)
- * @flags: Flags to set (PAGE_USABLE, PAGE_RESERVED, etc.)
+ * @flags: Flags to set (PMM_PAGE_USABLE, PMM_PAGE_RESERVED, etc.)
  *
  * This function marks all pages in the given range with the specified flags.
  * It properly handles alignment and ensures we don't go out of bounds.
@@ -254,58 +245,140 @@ void mark_region_flags(uintptr_t start, uintptr_t end, uint16_t flags) {
 		end_idx = total_system_pages;
 	}
 
+	// printf_serial("Marking region: addr 0x%llx, idx: 0x%llx, flags: %d", idx_to_addr(i), i, flags);
 	// Mark all pages in range
 	for (uint32_t i = start_idx; i < end_idx; i++) {
 		mem_map[i].flags = flags;
 	}
 }
 
+#include <stdio.h>
 
 uintptr_t scan_memory_map(struct multiboot_tag_mmap* mmap_tag) {
-	// This should return the maximum address 	
+	// This should return the maximum address
 	uintptr_t max_addr;
+	uintptr_t max_usable_addr;
 
 	struct multiboot_mmap_entry* mmap;
 	for (mmap = mmap_tag->entries; (size_t) mmap < (size_t) mmap_tag + mmap_tag->size; mmap = (struct multiboot_mmap_entry*) ((size_t) mmap + (size_t) mmap_tag->entry_size)) {
+
 		uintptr_t current_max = mmap->addr + mmap->len;
-		if (current_max > max_addr) max_addr = current_max;
+		if (current_max > max_addr) {
+			max_addr = current_max;
+			if (mmap->type != MULTIBOOT_MEMORY_RESERVED && mmap->type != MULTIBOOT_MEMORY_BADRAM) {
+				max_usable_addr = current_max;
+			}
+		}
+		printf("[PMM] Base 0x%llx, Type %d, Length: 0x%llx\n", mmap->addr, mmap->type, mmap->len);
+	}
+
+
+	// SANITY CHECK (thanks QEMU for saying I have 1 TiB of memory):
+	// Only trigger if we are significantly high (64 GiB) AND the gap is suspiciously large (3x higher than the last usable address).
+	const uintptr_t upper_limit = 0x1000000000ULL;
+	if (max_addr > max_usable_addr * 3) {
+		printf("[PMM][WARNING] Max address is more than 3 times higher than max usable address.\n");
+		printf_serial("[PMM][WARNING] Max address is more than 3 times higher than max usable address.\r\n");
+
+		if (max_addr > upper_limit) {
+			printf("[PMM] Max address is above 64GiB.\n\t- Assuming max usable is highest RAM location...\n\t- This is unusual on anything other than QEMU...\n");
+			printf_serial("[PMM] Max address is above 64GiB.\r\n\t- Assuming max usable is highest RAM location...\r\n");
+			max_addr = max_usable_addr;
+		}
 	}
 
 	total_system_pages = addr_to_idx(ALIGN_DOWN(max_addr, PAGE_SIZE));
 	return max_addr;
 }
 
-Page* find_free_region_internal(size_t size) {
+// Need a way to map things as reserved so we don't accidentally overwrite them.
+#define MAX_RESERVED 50
+typedef struct {
+	uintptr_t addr;
+	size_t size;
+} reserved_region;
+reserved_region reservedMemory[MAX_RESERVED];
+size_t reservedChunks = 0;
+
+
+Page* find_free_region_internal(struct multiboot_tag_mmap* mmap_tag, size_t size) {
 	// Find (and map with the VMM) a region of memory for the PMM map.
+	uintptr_t region = 0;
+
+	// We kinda want this after the kernel location.
+	struct multiboot_mmap_entry* mmap;
+	for (mmap = mmap_tag->entries; (size_t) mmap < (size_t) mmap_tag + mmap_tag->size; mmap = (struct multiboot_mmap_entry*) ((size_t) mmap + (size_t) mmap_tag->entry_size)) {
+		// if (mmap->addr < buddy_phys_kernel_end) continue;
+		if (mmap->type != MULTIBOOT_MEMORY_AVAILABLE) continue;
+
+		uintptr_t start = mmap->addr;
+		uintptr_t end = mmap->addr + mmap->len;
 
 
-	return nullptr;
+		// This makes sure we actually put it after the kernel if the kernel region is long.
+		// For example, the region containing the kernel may start at 1MiB, but be 500MiB long.
+		// This would prevent us from using that region.
+		if (end <= buddy_phys_kernel_end) continue;
+		if (start < buddy_phys_kernel_end) start = buddy_phys_kernel_end;
+
+
+
+
+		// Align start up to the nearest 4kb address
+		// uintptr_t aligned = (start + 4095) & ~4095;
+		// We can't actually do that...
+		// Screw the VMM and it's 2MB limitation...
+		uintptr_t aligned = (start + PAGE_2MB_SIZE - 1) & ~(PAGE_2MB_SIZE - 1);
+
+		if (aligned + size > end) continue;
+
+		printf("[PMM] Found region after kernel for map:\n\tADDR 0x%llx\n\tLEN: 0x%llx\n\tSIZE: 0x%llx\n\tALIGNED: 0x%llx\n", mmap->addr, mmap->len, size, aligned);
+		region = aligned;
+		break;
+	}
+
+	if (region == 0) {
+		printf("[PMM][FATAL] couldn't find a region to map to...\n");
+		return (Page*) region;
+	}
+
+	mem_map_phys = region;
+
+	// Memory::MapPreAllocMem(region);
+	// uintptr_t Memory::MapSequentialKernelPages(size_t pages, uintptr_t phys_base_addr)
+	size_t pages = (size + PAGE_2MB_SIZE - 1) / PAGE_2MB_SIZE;
+	uintptr_t virt_addr = Memory::MapSequentialKernelPages(pages, region);
+
+	printf("Requested pages: %d\n", pages);
+	printf("Max Map: 0x%llx\n", virt_addr + ((pages - 1) * PAGE_2MB_SIZE) + (PAGE_2MB_SIZE - 1));
+	return (Page*) virt_addr;
 }
-
-extern "C" {
-	extern uint64_t kernel_start;
-	extern uint64_t kernel_end;
-}
-
-// uint64_t phys_kernel_end = (uint64_t) (&kernel_end) - KERNEL_VIRTUAL_BASE;
 
 void pmm_init() {
 	struct multiboot_tag_mmap* mmap_tag = MultibootManager::getMMap();
+
+	buddy_phys_kernel_end = (uint64_t) (&kernel_end) - KERNEL_VIRTUAL_BASE;
 
 	// Calculate system size
 	uintptr_t max_addr = scan_memory_map(mmap_tag);
 
 	printf_serial("Max address for buddy alloc: 0x%llx\r\n", max_addr);
+	printf("Max address for buddy alloc: 0x%llx\n", max_addr);
+
+	printf_serial("Page count for buddy alloc: 0x%llx\r\n", max_addr);
+	printf("Page count for buddy alloc: 0x%llx\n", max_addr);
 
 	if (max_addr == NULL) panic_s("Failed to parse multiboot memory map.");
 
 	// Calculate mem_map size
 	size_t mem_map_size = total_system_pages * sizeof(Page);
 
-	return;
+	printf_serial("Size needed for buddy alloc mem_map: 0x%llx\r\n", mem_map_size);
 
 	// Find suitable location for mem_map
-	mem_map = find_free_region_internal(mem_map_size);
+	mem_map = find_free_region_internal(mmap_tag, mem_map_size);
+
+	printf("[PMM] MEM_MAP ADDR: 0x%llx\n", mem_map);
 
 	if (!mem_map) panic_s("Couldn't allocate enough contiguous memory for the memory map.");
 
@@ -315,63 +388,123 @@ void pmm_init() {
 	}
 
 	// Mark ALL pages as unusable initially
-	for (uint32_t i = 0; i < total_system_pages; i++) {
-		mem_map[i].is_free = false;
-		mem_map[i].order = 0;
-		mem_map[i].next = 0xFFFFFFFF;
-		mem_map[i].prev = 0xFFFFFFFF;
-		mem_map[i].flags = PAGE_UNUSABLE;
-	}
+	// for (uint32_t i = 0; i < total_system_pages; i++) {
+	// 	mem_map[i].is_free = false;
+	// 	mem_map[i].order = 0;
+	// 	mem_map[i].next = 0xFFFFFFFF;
+	// 	mem_map[i].prev = 0xFFFFFFFF;
+	// 	mem_map[i].flags = PMM_PAGE_UNUSABLE;
+	// }
 
 	// Process each usable region from bootloader memory map
 	// I pseudocoded this because I don't want to deal with multiboot rn
 	// for (each usable region in bootloader_memmap) {
 	// 	// Mark pages with appropriate flags
-	// 	mark_region_flags(region.start, region.end, PAGE_USABLE);
+	// 	mark_region_flags(region.start, region.end, PMM_PAGE_USABLE);
 
 	// 	// Add to buddy system
 	// 	init_region(region.start, region.end);
 	// }
 
+	// struct multiboot_mmap_entry* mmap;
+
 	struct multiboot_mmap_entry* mmap;
 	for (mmap = mmap_tag->entries; (size_t) mmap < (size_t) mmap_tag + mmap_tag->size; mmap = (struct multiboot_mmap_entry*) ((size_t) mmap + (size_t) mmap_tag->entry_size)) {
-		// we have mmap len, addr, type, and zero.
+		printf_serial("multiboot region: ADDR 0x%llx LEN: 0x%llx TYPE: %d", mmap->addr, mmap->len, mmap->type);
+	}
+
+	int entry_count = 0;
+	// struct multiboot_mmap_entry* mmap;
+	for (mmap = mmap_tag->entries; (size_t) mmap < (size_t) mmap_tag + mmap_tag->size; mmap = (struct multiboot_mmap_entry*) ((size_t) mmap + (size_t) mmap_tag->entry_size)) {
 
 		uint16_t region_flags = 0;
+		const char* type_str = "UNKNOWN";
+
+		uintptr_t start = mmap->addr;
+		uintptr_t end = mmap->addr + mmap->len;
+
+		if (start > max_addr || mmap->len == 0) {
+			printf_serial("[PMM][WARN] Corrupt MMap entry detected (hopefully because of QEMU)! Base: 0x%llx Entry Count: %d\n", start, entry_count);
+			continue;
+		}
 
 		switch (mmap->type) {
 			case MULTIBOOT_MEMORY_AVAILABLE:
-				region_flags |= PAGE_USABLE;
+				region_flags |= PMM_PAGE_USABLE;
+				type_str = "AVAILABLE";
 				break;
-
 			case MULTIBOOT_MEMORY_RESERVED:
-				region_flags |= PAGE_RESERVED;
+				region_flags |= PMM_PAGE_RESERVED;
+				type_str = "RESERVED";
 				break;
-
-			case MULTIBOOT_MEMORY_ACPI_RECLAIMABLE: __attribute__((fallthrough));
+			case MULTIBOOT_MEMORY_ACPI_RECLAIMABLE:
+				region_flags |= PMM_PAGE_ACPI;
+				type_str = "ACPI_RECLAIMABLE";
+				break;
 			case MULTIBOOT_MEMORY_NVS:
-				region_flags |= PAGE_ACPI;
+				region_flags |= PMM_PAGE_ACPI;
+				type_str = "ACPI_NVS";
 				break;
-
 			case MULTIBOOT_MEMORY_BADRAM:
-				region_flags |= PAGE_UNUSABLE;
+				region_flags |= PMM_PAGE_UNUSABLE;
+				type_str = "BAD_RAM";
 				break;
-
 			default:
-				// This shouldn't be possible
-				// We'll just mark it as unusable
-				region_flags |= PAGE_UNUSABLE;
+				region_flags |= PMM_PAGE_UNUSABLE;
+				type_str = "UNDEFINED";
 				break;
 		}
 
+		// Verbose logging for each map entry
+		printf_serial("[PMM] MMap Entry #%d: Base: 0x%llx, End: 0x%llx, Type: %s (%d)\r\n",
+			entry_count++, start, end, type_str, mmap->type);
 
+// CRITICAL CHECK: Ensure we don't try to initialize memory outside our mem_map range
+		if (addr_to_idx(start) >= total_system_pages) {
+			printf_serial("  [!] Skipping: Region starts beyond calculated total_system_pages\r\n");
+			continue;
+		}
 
+		// Only add to the free list if it's actually usable RAM
+		if (mmap->type == MULTIBOOT_MEMORY_AVAILABLE) {
+			printf_serial("  [+] Initializing usable region into buddy lists...\r\n");
+			init_region(start, end);
+		} else {
+			printf_serial("  [-] Skipping buddy init for non-available region.\r\n");
+		}
+
+		// Always mark flags so the PMM knows what's at these addresses
+		mark_region_flags(start, end, region_flags);
 	}
+	asm volatile("cli");
+	asm volatile("hlt");
 
 	// Mark special regions (kernel, mem_map itself, etc.)
-	mark_region_flags(kernel_start, kernel_end, PAGE_KERNEL);
-	mark_region_flags(mem_map_phys, mem_map_phys + mem_map_size, PAGE_KERNEL);
+	mark_region_flags(kernel_start, kernel_end, PMM_PAGE_KERNEL);
+	mark_region_flags(mem_map_phys, mem_map_phys + mem_map_size, PMM_PAGE_KERNEL);
+
+
+	return;
 }
+
+// void Memory::PhysicalMemInit() {
+
+// }
+
+
+// size_t Memory::Info::getFreePageCount();
+// size_t Memory::Info::getUsedPageCount();
+// uintptr_t Memory::Info::getPhysKernelEnd();
+// const mmap_info* Memory::Info::getMMapInfo();
+
+// uintptr_t Memory::PhysicalAlloc2MB();
+// uintptr_t Memory::PhysicalAlloc2MBSequential(size_t amount);
+
+// uintptr_t Memory::PhysicalMarkAllocated(uintptr_t base_addr, uintptr_t final_addr);
+
+// void Memory::PhysicalDeAlloc2MB(uintptr_t phys_addr);
+
+
 
 /* Principles of init.
  * Instead of mapping while we go, we're going to determine how much we actually have at first.
