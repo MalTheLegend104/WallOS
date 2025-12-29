@@ -303,6 +303,8 @@ void init_initrd() {
 }
 #endif // JANKY_INITRD_LOADER
 
+extern void pmm_init();
+
 void kernel_main(unsigned int magic, multiboot_info* mbt_info) {
 	initScreen();
 	init_serial();
@@ -334,6 +336,8 @@ void kernel_main(unsigned int magic, multiboot_info* mbt_info) {
 	//Memory::reserveMemory(module_tag->mod_start, module_tag->mod_end - module_tag->mod_start);
 
 	init_initrd();
+
+	pmm_init();
 
 	Memory::PhysicalMemInit();
 

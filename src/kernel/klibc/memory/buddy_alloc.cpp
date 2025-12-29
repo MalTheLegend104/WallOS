@@ -3,10 +3,11 @@
 #include <stdbool.h>
 
 #include <panic.h>
+#include <drivers/serial.h>
 #include <klibc/multiboot.h>
 #include <memory/virtual_mem.h>
 
-#define MAX_ORDER 11
+#define MAX_ORDER 11 // This is 8MiB
 #define PAGE_SIZE 4096
 
 #define ALIGN_DOWN(x, align)  ((x) & ~((align) - 1))
@@ -53,6 +54,43 @@ uintptr_t idx_to_addr(uint32_t index) { return (uintptr_t) index * PAGE_SIZE; }
 
 // Find the index of the "buddy" block
 uint32_t get_buddy_idx(uint32_t index, uint8_t order) { return index ^ (1 << order); }
+
+void push_to_list(uint8_t order, uint32_t index) {
+	Page* page = &mem_map[index];
+
+	// The new page points to the old head
+	page->next = free_lists[order];
+	page->prev = 0xFFFFFFFF; // NULL index
+
+	// If there was an old head, it now points back to the new page
+	if (free_lists[order] != 0xFFFFFFFF) {
+		mem_map[free_lists[order]].prev = index;
+	}
+
+	// Move the head of the list to our new page
+	free_lists[order] = index;
+}
+
+void remove_from_list(uint8_t order, uint32_t index) {
+	Page* page = &mem_map[index];
+
+	// If there is a next element, update its 'prev' to our 'prev'
+	if (page->next != 0xFFFFFFFF) {
+		mem_map[page->next].prev = page->prev;
+	}
+
+	// If there is a prev element, update its 'next' to our 'next'
+	if (page->prev != 0xFFFFFFFF) {
+		mem_map[page->prev].next = page->next;
+	} else {
+		// We were the head, update the global list head
+		free_lists[order] = page->next;
+	}
+
+	// Always clear metadata on the node being removed
+	page->next = 0xFFFFFFFF;
+	page->prev = 0xFFFFFFFF;
+}
 
 uint32_t buddy_alloc(uint8_t order) {
 	int found_order = order;
@@ -176,43 +214,6 @@ uint8_t calculate_max_fit_order(uint32_t base_idx, uint32_t available_pages) {
 	return order;
 }
 
-void push_to_list(uint8_t order, uint32_t index) {
-	Page* page = &mem_map[index];
-
-	// The new page points to the old head
-	page->next = free_lists[order];
-	page->prev = 0xFFFFFFFF; // NULL index
-
-	// If there was an old head, it now points back to the new page
-	if (free_lists[order] != 0xFFFFFFFF) {
-		mem_map[free_lists[order]].prev = index;
-	}
-
-	// Move the head of the list to our new page
-	free_lists[order] = index;
-}
-
-void remove_from_list(uint8_t order, uint32_t index) {
-	Page* page = &mem_map[index];
-
-	// If there is a next element, update its 'prev' to our 'prev'
-	if (page->next != 0xFFFFFFFF) {
-		mem_map[page->next].prev = page->prev;
-	}
-
-	// If there is a prev element, update its 'next' to our 'next'
-	if (page->prev != 0xFFFFFFFF) {
-		mem_map[page->prev].next = page->next;
-	} else {
-		// We were the head, update the global list head
-		free_lists[order] = page->next;
-	}
-
-	// Always clear metadata on the node being removed
-	page->next = 0xFFFFFFFF;
-	page->prev = 0xFFFFFFFF;
-}
-
 void init_region(uintptr_t start, uintptr_t end) {
 	uint32_t start_idx = addr_to_idx(ALIGN_UP(start, PAGE_SIZE));
 	uint32_t end_idx = addr_to_idx(ALIGN_DOWN(end, PAGE_SIZE));
@@ -259,14 +260,23 @@ void mark_region_flags(uintptr_t start, uintptr_t end, uint16_t flags) {
 	}
 }
 
-uintptr_t scan_memory_map(struct multiboot_tag_mmap* mmap_tag) {
-	// This should return the maximum address 
 
+uintptr_t scan_memory_map(struct multiboot_tag_mmap* mmap_tag) {
+	// This should return the maximum address 	
+	uintptr_t max_addr;
+
+	struct multiboot_mmap_entry* mmap;
+	for (mmap = mmap_tag->entries; (size_t) mmap < (size_t) mmap_tag + mmap_tag->size; mmap = (struct multiboot_mmap_entry*) ((size_t) mmap + (size_t) mmap_tag->entry_size)) {
+		uintptr_t current_max = mmap->addr + mmap->len;
+		if (current_max > max_addr) max_addr = current_max;
+	}
+
+	total_system_pages = addr_to_idx(ALIGN_DOWN(max_addr, PAGE_SIZE));
+	return max_addr;
 }
 
 Page* find_free_region_internal(size_t size) {
 	// Find (and map with the VMM) a region of memory for the PMM map.
-
 
 
 	return nullptr;
@@ -277,17 +287,22 @@ extern "C" {
 	extern uint64_t kernel_end;
 }
 
-uint64_t phys_kernel_end = (uint64_t) (&kernel_end) - KERNEL_VIRTUAL_BASE;
+// uint64_t phys_kernel_end = (uint64_t) (&kernel_end) - KERNEL_VIRTUAL_BASE;
 
 void pmm_init() {
 	struct multiboot_tag_mmap* mmap_tag = MultibootManager::getMMap();
 
 	// Calculate system size
 	uintptr_t max_addr = scan_memory_map(mmap_tag);
-	total_system_pages = addr_to_idx(ALIGN_DOWN(max_addr, PAGE_SIZE));
+
+	printf_serial("Max address for buddy alloc: 0x%llx\r\n", max_addr);
+
+	if (max_addr == NULL) panic_s("Failed to parse multiboot memory map.");
 
 	// Calculate mem_map size
 	size_t mem_map_size = total_system_pages * sizeof(Page);
+
+	return;
 
 	// Find suitable location for mem_map
 	mem_map = find_free_region_internal(mem_map_size);
@@ -317,6 +332,41 @@ void pmm_init() {
 	// 	// Add to buddy system
 	// 	init_region(region.start, region.end);
 	// }
+
+	struct multiboot_mmap_entry* mmap;
+	for (mmap = mmap_tag->entries; (size_t) mmap < (size_t) mmap_tag + mmap_tag->size; mmap = (struct multiboot_mmap_entry*) ((size_t) mmap + (size_t) mmap_tag->entry_size)) {
+		// we have mmap len, addr, type, and zero.
+
+		uint16_t region_flags = 0;
+
+		switch (mmap->type) {
+			case MULTIBOOT_MEMORY_AVAILABLE:
+				region_flags |= PAGE_USABLE;
+				break;
+
+			case MULTIBOOT_MEMORY_RESERVED:
+				region_flags |= PAGE_RESERVED;
+				break;
+
+			case MULTIBOOT_MEMORY_ACPI_RECLAIMABLE: __attribute__((fallthrough));
+			case MULTIBOOT_MEMORY_NVS:
+				region_flags |= PAGE_ACPI;
+				break;
+
+			case MULTIBOOT_MEMORY_BADRAM:
+				region_flags |= PAGE_UNUSABLE;
+				break;
+
+			default:
+				// This shouldn't be possible
+				// We'll just mark it as unusable
+				region_flags |= PAGE_UNUSABLE;
+				break;
+		}
+
+
+
+	}
 
 	// Mark special regions (kernel, mem_map itself, etc.)
 	mark_region_flags(kernel_start, kernel_end, PAGE_KERNEL);
