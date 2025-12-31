@@ -29,6 +29,7 @@ typedef struct {
 // We determine the location of this in the init function
 Page* mem_map;
 uintptr_t mem_map_phys;
+size_t mem_map_size;
 
 // The amount of 4kb pages the system has, from 0x0 to physical memory max.
 size_t total_system_pages;
@@ -50,39 +51,39 @@ uint32_t get_buddy_idx(uint32_t index, uint8_t order) { return index ^ (1 << ord
 
 void push_to_list(uint8_t order, uint32_t index) {
 	Page* page = &mem_map[index];
-
-	// The new page points to the old head
 	page->next = free_lists[order];
-	page->prev = 0xFFFFFFFF; // NULL index
+	page->prev = 0xFFFFFFFF;
 
-	// If there was an old head, it now points back to the new page
 	if (free_lists[order] != 0xFFFFFFFF) {
 		mem_map[free_lists[order]].prev = index;
 	}
-
-	// Move the head of the list to our new page
 	free_lists[order] = index;
+
+	// TELEMETRY: Add pages (2^order) to the free count
+	mem_info.free_pages += (1ULL << order);
 }
 
 void remove_from_list(uint8_t order, uint32_t index) {
 	Page* page = &mem_map[index];
 
-	// If there is a next element, update its 'prev' to our 'prev'
 	if (page->next != 0xFFFFFFFF) {
 		mem_map[page->next].prev = page->prev;
 	}
-
-	// If there is a prev element, update its 'next' to our 'next'
 	if (page->prev != 0xFFFFFFFF) {
 		mem_map[page->prev].next = page->next;
 	} else {
-		// We were the head, update the global list head
 		free_lists[order] = page->next;
 	}
 
-	// Always clear metadata on the node being removed
 	page->next = 0xFFFFFFFF;
 	page->prev = 0xFFFFFFFF;
+
+	// TELEMETRY: Subtract pages (2^order) from the free count
+	// Only subtract if we aren't underflowing (safety check)
+	size_t pages = (1ULL << order);
+	if (mem_info.free_pages >= pages) {
+		mem_info.free_pages -= pages;
+	}
 }
 
 uint32_t buddy_alloc(uint8_t order) {
@@ -254,6 +255,37 @@ void mark_region_flags(uintptr_t start, uintptr_t end, uint16_t flags) {
 	}
 }
 
+void mark_and_allocate_region(uintptr_t start, uintptr_t end, uint16_t flags) {
+	uint32_t start_idx = addr_to_idx(ALIGN_UP(start, PAGE_SIZE));
+	uint32_t end_idx = addr_to_idx(ALIGN_DOWN(end, PAGE_SIZE));
+
+	// Bounds check
+	if (start_idx >= total_system_pages) {
+		return;
+	}
+
+	if (end_idx > total_system_pages) {
+		end_idx = total_system_pages;
+	}
+
+	printf_serial("[PMM] Reserving region: 0x%llx - 0x%llx (flags: 0x%x)\r\n",
+		idx_to_addr(start_idx), idx_to_addr(end_idx), flags);
+
+	// Remove all pages in this range from free lists
+	for (uint32_t i = start_idx; i < end_idx; i++) {
+		Page* page = &mem_map[i];
+
+		// If the page is currently free, remove it from its list
+		if (page->is_free) {
+			remove_from_list(page->order, i);
+			page->is_free = false;
+		}
+
+		// Mark with appropriate flags
+		page->flags = flags;
+	}
+}
+
 #include <stdio.h>
 
 uintptr_t scan_memory_map(struct multiboot_tag_mmap* mmap_tag) {
@@ -325,67 +357,6 @@ void Memory::reserveMemory(uintptr_t base_addr, size_t size) {
 
 	reservedChunks++;
 }
-
-
-// Page* find_free_region_internal(struct multiboot_tag_mmap* mmap_tag, size_t size) {
-// 	// Find (and map with the VMM) a region of memory for the PMM map.
-// 	uintptr_t region = 0;
-
-// 	// We kinda want this after the kernel location.
-// 	struct multiboot_mmap_entry* mmap;
-// 	for (mmap = mmap_tag->entries; (size_t) mmap < (size_t) mmap_tag + mmap_tag->size; mmap = (struct multiboot_mmap_entry*) ((size_t) mmap + (size_t) mmap_tag->entry_size)) {
-// 		// if (mmap->addr < buddy_phys_kernel_end) continue;
-// 		if (mmap->type != MULTIBOOT_MEMORY_AVAILABLE) continue;
-
-// 		uintptr_t start = mmap->addr;
-// 		uintptr_t end = mmap->addr + mmap->len;
-
-// 		for (int i = 0; i < reservedChunks; i++) {
-// 			uintptr_t reserved_start = reservedMemory[i].addr;
-// 			uintptr_t reserved_end = reserved_start + reservedMemory[i].size;
-// 			if (start > reserved_start && start < reserved_end) {
-// 				start = reserved_end;
-// 			}
-
-// 			if (end > reserved_start && end < reserved_end) end = reserved_end;
-// 		}
-
-// 		// This makes sure we actually put it after the kernel if the kernel region is long.
-// 		// For example, the region containing the kernel may start at 1MiB, but be 500MiB long.
-// 		// This would prevent us from using that region.
-// 		if (end <= buddy_phys_kernel_end) continue;
-// 		if (start < buddy_phys_kernel_end) start = buddy_phys_kernel_end;
-
-
-// 		// Align start up to the nearest 4kb address
-// 		// uintptr_t aligned = (start + 4095) & ~4095;
-// 		// We can't actually do that...
-// 		// Screw the VMM and it's 2MB limitation...
-// 		uintptr_t aligned = (start + PAGE_2MB_SIZE - 1) & ~(PAGE_2MB_SIZE - 1);
-
-// 		if (aligned + size > end) continue;
-
-// 		printf("[PMM] Found region after kernel for map:\n\tADDR 0x%llx\n\tLEN: 0x%llx\n\tSIZE: 0x%llx\n\tALIGNED: 0x%llx\n", mmap->addr, mmap->len, size, aligned);
-// 		region = aligned;
-// 		break;
-// 	}
-
-// 	if (region == 0) {
-// 		printf("[PMM][FATAL] couldn't find a region to map to...\n");
-// 		return (Page*) region;
-// 	}
-
-// 	mem_map_phys = region;
-
-// 	// Memory::MapPreAllocMem(region);
-// 	// uintptr_t Memory::MapSequentialKernelPages(size_t pages, uintptr_t phys_base_addr)
-// 	size_t pages = (size + PAGE_2MB_SIZE - 1) / PAGE_2MB_SIZE;
-// 	uintptr_t virt_addr = Memory::MapSequentialKernelPages(pages, region);
-
-// 	printf("Requested pages: %d\n", pages);
-// 	printf("Max Map: 0x%llx\n", virt_addr + ((pages - 1) * PAGE_2MB_SIZE) + (PAGE_2MB_SIZE - 1));
-// 	return (Page*) virt_addr;
-// }
 
 Page* find_free_region_internal(struct multiboot_tag_mmap* mmap_tag, size_t size) {
 	uintptr_t region = 0;
@@ -498,7 +469,7 @@ void pmm_init() {
 	if (max_addr == NULL) panic_s("Failed to parse multiboot memory map.");
 
 	// Calculate mem_map size
-	size_t mem_map_size = total_system_pages * sizeof(Page);
+	mem_map_size = total_system_pages * sizeof(Page);
 
 	printf_serial("Size needed for buddy alloc mem_map: 0x%llx\r\n", mem_map_size);
 
@@ -523,29 +494,12 @@ void pmm_init() {
 		mem_map[i].flags = PMM_PAGE_UNUSABLE;
 	}
 
-	// Process each usable region from bootloader memory map
-	// I pseudocoded this because I don't want to deal with multiboot rn
-	// for (each usable region in bootloader_memmap) {
-	// 	// Mark pages with appropriate flags
-	// 	mark_region_flags(region.start, region.end, PMM_PAGE_USABLE);
-
-	// 	// Add to buddy system
-	// 	init_region(region.start, region.end);
-	// }
-
-	// struct multiboot_mmap_entry* mmap;
-
-	struct multiboot_mmap_entry* mmap;
-	for (mmap = mmap_tag->entries; (size_t) mmap < (size_t) mmap_tag + mmap_tag->size; mmap = (struct multiboot_mmap_entry*) ((size_t) mmap + (size_t) mmap_tag->entry_size)) {
-		printf_serial("multiboot region: ADDR 0x%llx LEN: 0x%llx TYPE: %d", mmap->addr, mmap->len, mmap->type);
-	}
-
 	mem_info.total = 0;
 	mem_info.usable = 0;
 	mem_info.reserved = 0;
 
 	int entry_count = 0;
-	// struct multiboot_mmap_entry* mmap;
+	struct multiboot_mmap_entry* mmap;
 	for (mmap = mmap_tag->entries; (size_t) mmap < (size_t) mmap_tag + mmap_tag->size; mmap = (struct multiboot_mmap_entry*) ((size_t) mmap + (size_t) mmap_tag->entry_size)) {
 
 		uint16_t region_flags = 0;
@@ -560,11 +514,6 @@ void pmm_init() {
 		}
 
 		mem_info.total += (end - start);
-
-		if (region_flags & PMM_PAGE_USABLE)
-			mem_info.usable += (end - start);
-		else
-			mem_info.reserved += (end - start);
 
 		switch (mmap->type) {
 			case MULTIBOOT_MEMORY_AVAILABLE:
@@ -593,11 +542,16 @@ void pmm_init() {
 				break;
 		}
 
+		if (region_flags & PMM_PAGE_USABLE)
+			mem_info.usable += (end - start);
+		else
+			mem_info.reserved += (end - start);
+
 		// Verbose logging for each map entry
 		printf_serial("[PMM] MMap Entry #%d: Base: 0x%llx, End: 0x%llx, Type: %s (%d)\r\n",
 			entry_count++, start, end, type_str, mmap->type);
 
-// CRITICAL CHECK: Ensure we don't try to initialize memory outside our mem_map range
+		// CRITICAL CHECK: Ensure we don't try to initialize memory outside our mem_map range
 		if (addr_to_idx(start) >= total_system_pages) {
 			printf_serial("  [!] Skipping: Region starts beyond calculated total_system_pages\r\n");
 			continue;
@@ -618,8 +572,8 @@ void pmm_init() {
 	// asm volatile("hlt");
 
 	// Mark special regions (kernel, mem_map itself, etc.)
-	mark_region_flags((uintptr_t) (&kernel_start), buddy_phys_kernel_end, PMM_PAGE_KERNEL);
-	mark_region_flags(mem_map_phys, mem_map_phys + mem_map_size, PMM_PAGE_KERNEL);
+	mark_and_allocate_region((uintptr_t) (&kernel_start), buddy_phys_kernel_end, PMM_PAGE_KERNEL);
+	mark_and_allocate_region(mem_map_phys, mem_map_phys + mem_map_size, PMM_PAGE_KERNEL);
 
 	return;
 }
@@ -661,70 +615,78 @@ uintptr_t Memory::Info::getPhysKernelEnd() {
 	return buddy_phys_kernel_end;
 }
 
-size_t Memory::Info::getFreePageCount() {
-	size_t count = 0;
-	for (uint32_t i = 0; i < total_system_pages; i++) {
-		if (mem_map[i].is_free)
-			count++;
+size_t Memory::Info::getTotalFreeBytes() {
+	// mem_info.free_pages tracks 4KB pages in the buddy allocator
+	return mem_info.free_pages * PAGE_SIZE;
+}
+
+size_t Memory::Info::getTotalUsedBytes() {
+	// Total usable RAM minus what is currently free
+	size_t free_bytes = getTotalFreeBytes();
+	if (free_bytes > mem_info.usable) {
+		return 0;
 	}
-	return count;
+	return mem_info.usable - free_bytes;
+}
+
+size_t Memory::Info::getFreePageCount() {
+	return mem_info.free_pages;
 }
 
 size_t Memory::Info::getUsedPageCount() {
-	size_t count = 0;
-	for (uint32_t i = 0; i < total_system_pages; i++) {
-		if (!mem_map[i].is_free &&
-			(mem_map[i].flags & PMM_PAGE_USABLE))
-			count++;
-	}
-	return count;
+	// Total usable RAM pages minus what is currently in the free lists
+	size_t usable_pages = mem_info.usable / PAGE_SIZE;
+	if (mem_info.free_pages > usable_pages) return 0;
+	return usable_pages - mem_info.free_pages;
 }
 
 void Memory::PhysicalMemInit() {
 	pmm_init();
 }
 
-uintptr_t Memory::PhysicalAlloc2MB() {
-	const uint8_t order = 9; // 2MB = 2^9 pages
-
-	uint32_t idx = buddy_alloc(order);
-	if (idx == 0xFFFFFFFF)
-		return 0;
-
-	return idx_to_addr(idx);
-}
-
 uintptr_t Memory::PhysicalAlloc2MBSequential(size_t page_count) {
-	if (page_count == 0)
+	printf_serial("\n[PMM] PhysicalAlloc2MBSequential ENTER\n");
+	printf_serial("[PMM] requested page_count=%llu\n", page_count);
+
+	if (page_count == 0) {
 		return 0;
-
-	const uint8_t order = 9;
-
-	// Try to find a contiguous run
-	for (uint32_t i = 0; i + (page_count << order) <= total_system_pages; i += (1 << order)) {
-		bool ok = true;
-
-		for (size_t j = 0; j < page_count; j++) {
-			Page* p = &mem_map[i + (j << order)];
-			if (!p->is_free || p->order < order) {
-				ok = false;
-				break;
-			}
-		}
-
-		if (!ok)
-			continue;
-
-		// Allocate them
-		for (size_t j = 0; j < page_count; j++) {
-			buddy_alloc(order);
-		}
-
-		return idx_to_addr(i);
 	}
 
-	return 0;
+	// Calculate the order needed for page_count * 2MB
+	// Each order-9 block is 512 pages (2MB)
+	// We need an order that fits page_count * 512 pages
+
+	size_t total_pages = page_count << 9; // page_count * 512
+
+	// Find the smallest order that fits
+	uint8_t needed_order = 0;
+	while ((1U << needed_order) < total_pages) {
+		needed_order++;
+	}
+
+	if (needed_order > MAX_ORDER) {
+		printf_serial("[PMM] ERROR: requested size too large (order %u > MAX %u)\n",
+			needed_order, MAX_ORDER);
+		return 0;
+	}
+
+	printf_serial("[PMM] Allocating order-%u block (contains %llu x 2MB)\n",
+		needed_order, page_count);
+
+	uint32_t idx = buddy_alloc(needed_order);
+
+	if (idx == 0xFFFFFFFF) {
+		printf_serial("[PMM] ERROR: buddy_alloc failed for order-%u\n", needed_order);
+		return 0;
+	}
+
+	uintptr_t result = idx_to_addr(idx);
+
+	printf_serial("[PMM] SUCCESS addr=0x%llx\n", result);
+
+	return result;
 }
+
 
 uintptr_t Memory::PhysicalMarkAllocated(uintptr_t addr, size_t len) {
 	uint32_t start_idx = addr_to_idx(ALIGN_DOWN(addr, PAGE_SIZE));

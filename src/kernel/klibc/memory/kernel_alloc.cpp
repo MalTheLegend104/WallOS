@@ -131,7 +131,8 @@ void initSlab(uint64_t object_size) {
 	uint64_t bls = calculateBitlistSize(object_size);
 	header->chunk_count = bls * 8;
 	// Set all entries in the bitlist to zero.
-	memset((header + sizeof(header)), 0, bls);
+	// memset((header + sizeof(header)), 0, bls);
+	memset((uint8_t*) header + sizeof(slab_header_t), 0, bls);
 
 	// Calculate the base
 	uint64_t padding = calculatePadding(bls, object_size);
@@ -183,19 +184,26 @@ void initKernelAllocator() {
  * @param header Header containing the chunk
  * @param chunk chunk number in the slab
  */
+// void setChunkUsed(slab_header_t* header, size_t chunk) {
+// 	// We can divide the chunk by 8 to get which spot in the bitlist it is
+// 	size_t bitlist_spot = chunk / 8;
+// 	// Anything that's 8 % 8 = 0 will produce a number 1 too high
+// 	if (chunk % 8 == 0) bitlist_spot--;
+
+// 	// The bitlist is in squential order, so it starts filling at the highest bit of the uint8_t
+// 	// This means bit "8" is the final bit in 0b00000001
+// 	// The macro takes this into account.
+// 	uint8_t index = chunk % 8;
+// 	if (chunk % 8 == 0) index = 8;
+
+// 	SET_BIT(BITLIST_BASE(header)[bitlist_spot], index);
+// }
+
 void setChunkUsed(slab_header_t* header, size_t chunk) {
-	// We can divide the chunk by 8 to get which spot in the bitlist it is
-	size_t bitlist_spot = chunk / 8;
-	// Anything that's 8 % 8 = 0 will produce a number 1 too high
-	if (chunk % 8 == 0) bitlist_spot--;
-
-	// The bitlist is in squential order, so it starts filling at the highest bit of the uint8_t
-	// This means bit "8" is the final bit in 0b00000001
-	// The macro takes this into account.
-	uint8_t index = chunk % 8;
-	if (chunk % 8 == 0) index = 8;
-
-	SET_BIT(BITLIST_BASE(header)[bitlist_spot], index);
+	size_t zero_indexed_chunk = chunk - 1;
+	size_t byte_idx = zero_indexed_chunk / 8;
+	size_t bit_idx = zero_indexed_chunk % 8;
+	SET_BIT(BITLIST_BASE(header)[byte_idx], (bit_idx + 1));  // +1 for macro's 1-8 indexing
 }
 
 /**
@@ -323,22 +331,96 @@ void kfree(void* ptr) {
 }
 
 #include <drivers/serial.h>
+// void* kalloc(size_t bytes) {
+// 	printf("kalloc called: BYTES: 0x%llx", bytes);
+// 	printf_serial("kalloc called: BYTES: 0x%llx", bytes);
+// 	if (bytes > PAGE_2MB_SIZE) {
+// 		// For stupidly large objects, we're just going to allocate consecutive blocks and return the base pointer.
+// 		// This cannot be freed properly. This will be properly handled later.
+// 		// The only object larger than 2MB that we allocate is the framebuffer right now, which is never freed anyway.
+// 		return (void*) Memory::MapSequentialKernelPages(((int) (bytes / PAGE_2MB_SIZE)) + 1);
+// 	}
+
+// 	size_t object_size = 2;
+// 	if (bytes % 8 == 0) object_size = 8;
+// 	else if (bytes % 4 == 0) object_size = 4;
+// 	else if (bytes % 2 != 0) bytes++;
+// 	size_t amount_of_objects = bytes / object_size;
+
+// 	slab_header_t* header = first_slab;
+// 	size_t chunk_number = 0;
+// 	while (header != NULL) {
+// 		if (header->object_size != object_size) {
+// 			header = header->next_slab;
+// 			continue;
+// 		}
+
+// 		size_t consecutive_chunks = 0;
+// 		chunk_number = 0;
+// 		for (size_t i = 0; i < header->chunk_count / 8; i++) {
+// 			if (consecutive_chunks == 0) chunk_number = i * 8;
+// 			for (int j = 1; j <= 8; j++) {
+// 				if (!GET_BIT(BITLIST_BASE(header)[i], j)) {
+// 					if (consecutive_chunks == 0) chunk_number = (i * 8) + j;
+
+// 					consecutive_chunks++;
+
+// 					if (consecutive_chunks == amount_of_objects) {
+// 						for (size_t k = 0; k < amount_of_objects; k++) {
+// 							setChunkUsed(header, chunk_number + k);
+// 						}
+// 						// printf("i: %llu -> j: %llu\nchunk#: %llu\n", i, j, chunk_number);
+// 						// printf("Header: 0x%llx -> bitlist_base: 0x%llx\n", header, BITLIST_BASE(header));
+// 						// printf("chunk count: %llu -> object_size: %llu\n", header->chunk_count, header->object_size);
+// 						// printf("chunk base: 0x%llx\n\n", header->chunk_base);
+// 						goto finish;
+// 					}
+// 				} else {
+// 					consecutive_chunks = 0;
+// 				}
+// 			}
+// 		}
+// 		header = header->next_slab;
+// 	}
+
+// finish:
+// 	printf("header: 0x%llx\r\n", header);
+// 	printf_serial("header: 0x%llx\r\n", header);
+// 	if (header == NULL) {
+// 		initSlab(object_size);
+// 		printf("recursion");
+// 		printf_serial("recursion");
+// 		return kalloc(bytes);
+// 	} else {
+// 		//printf("chunk #: %llu\n", (chunk_number - 1));
+// 		uintptr_t ptr = (header->chunk_base + ((chunk_number - 1) * object_size));
+// 		if (amount_of_objects > 1)
+// 			addSpan(ptr, amount_of_objects);
+// 		return (void*) ptr;
+// 	}
+// }
+
 void* kalloc(size_t bytes) {
 	if (bytes > PAGE_2MB_SIZE) {
-		// For stupidly large objects, we're just going to allocate consecutive blocks and return the base pointer.
-		// This cannot be freed properly. This will be properly handled later.
-		// The only object larger than 2MB that we allocate is the framebuffer right now, which is never freed anyway.
 		return (void*) Memory::MapSequentialKernelPages(((int) (bytes / PAGE_2MB_SIZE)) + 1);
 	}
 
-	size_t object_size = 2;
-	if (bytes % 8 == 0) object_size = 8;
-	else if (bytes % 4 == 0) object_size = 4;
-	else if (bytes % 2 != 0) bytes++;
-	size_t amount_of_objects = bytes / object_size;
+	// Determine best object size - pick the smallest size that fits
+	size_t object_size;
+	if (bytes <= 2) {
+		object_size = WORD;  // 2
+	} else if (bytes <= 4) {
+		object_size = DWORD;  // 4
+	} else if (bytes <= 8) {
+		object_size = QWORD;  // 8
+	} else {
+		object_size = PAGE_ENTRY;  // 4096
+	}
+
+	size_t amount_of_objects = (bytes + object_size - 1) / object_size;
 
 	slab_header_t* header = first_slab;
-	size_t chunk_number = 0;
+
 	while (header != NULL) {
 		if (header->object_size != object_size) {
 			header = header->next_slab;
@@ -346,42 +428,40 @@ void* kalloc(size_t bytes) {
 		}
 
 		size_t consecutive_chunks = 0;
-		chunk_number = 0;
-		for (size_t i = 0; i < header->chunk_count / 8; i++) {
-			if (consecutive_chunks == 0) chunk_number = i * 8;
-			for (int j = 1; j <= 8; j++) {
-				if (!GET_BIT(BITLIST_BASE(header)[i], j)) {
-					if (consecutive_chunks == 0) chunk_number = (i * 8) + j;
+		size_t start_chunk = 0;
 
-					consecutive_chunks++;
+		// Iterate through all chunks linearly
+		for (size_t chunk = 1; chunk <= header->chunk_count; chunk++) {
+			size_t byte_idx = (chunk - 1) / 8;
+			size_t bit_idx = ((chunk - 1) % 8) + 1;
 
-					if (consecutive_chunks == amount_of_objects) {
-						for (size_t k = 0; k < amount_of_objects; k++) {
-							setChunkUsed(header, chunk_number + k);
-						}
-						// printf("i: %llu -> j: %llu\nchunk#: %llu\n", i, j, chunk_number);
-						// printf("Header: 0x%llx -> bitlist_base: 0x%llx\n", header, BITLIST_BASE(header));
-						// printf("chunk count: %llu -> object_size: %llu\n", header->chunk_count, header->object_size);
-						// printf("chunk base: 0x%llx\n\n", header->chunk_base);
-						goto finish;
-					}
-				} else {
-					consecutive_chunks = 0;
+			if (!GET_BIT(BITLIST_BASE(header)[byte_idx], bit_idx)) {
+				if (consecutive_chunks == 0) {
+					start_chunk = chunk;
 				}
+				consecutive_chunks++;
+
+				if (consecutive_chunks == amount_of_objects) {
+					// Found enough consecutive chunks
+					for (size_t k = 0; k < amount_of_objects; k++) {
+						setChunkUsed(header, start_chunk + k);
+					}
+
+					uintptr_t ptr = header->chunk_base + ((start_chunk - 1) * object_size);
+					if (amount_of_objects > 1) {
+						addSpan(ptr, amount_of_objects);
+					}
+					return (void*) ptr;
+				}
+			} else {
+				consecutive_chunks = 0;
 			}
 		}
+
 		header = header->next_slab;
 	}
 
-finish:
-	if (header == NULL) {
-		initSlab(object_size);
-		return kalloc(bytes);
-	} else {
-		//printf("chunk #: %llu\n", (chunk_number - 1));
-		uintptr_t ptr = (header->chunk_base + ((chunk_number - 1) * object_size));
-		if (amount_of_objects > 1)
-			addSpan(ptr, amount_of_objects);
-		return (void*) ptr;
-	}
+	// No space found, create new slab
+	initSlab(object_size);
+	return kalloc(bytes);
 }

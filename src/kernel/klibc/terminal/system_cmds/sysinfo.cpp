@@ -86,14 +86,18 @@ void printUptime() {
 // We only want to check the raw kernel end then add the pages after
 void printMemInfo() {
 	const mmap_info* info = Memory::Info::getMMapInfo();
-	uint64_t k_end = (uint64_t) &kernel_end - KERNEL_VIRTUAL_BASE;
-	size_t used = (Memory::Info::getUsedPageCount() * PAGE_2MB_SIZE) + k_end;
-	if (used < 10000000) { // 10 MiB
-		used = (used / 1024); // Make it in KiB
-		printValue("Memory: ", "%lluKiB / %lluMiB\n", used, (info->usable / 1024) / 1024);
+	size_t used_bytes = Memory::Info::getTotalUsedBytes();
+	size_t usable_bytes = info->usable;
+
+	// Convert to appropriate units
+	if (used_bytes < 10485760) { // Less than 10 MiB, show in KiB
+		size_t used_kib = used_bytes / 1024;
+		size_t usable_mib = usable_bytes / 1024 / 1024;
+		printValue("Memory: ", "%llu KiB / %llu MiB\n", used_kib, usable_mib);
 	} else {
-		used = (used / 1024) / 1024; // Make it in MiB
-		printValue("Memory: ", "%lluMiB / %lluMiB\n", used, (info->usable / 1024) / 1024);
+		size_t used_mib = used_bytes / 1024 / 1024;
+		size_t usable_mib = usable_bytes / 1024 / 1024;
+		printValue("Memory: ", "%llu MiB / %llu MiB\n", used_mib, usable_mib);
 	}
 }
 

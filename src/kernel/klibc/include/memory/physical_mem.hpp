@@ -39,17 +39,21 @@ typedef struct {
 	size_t total;
 	size_t usable;
 	size_t reserved;
+	size_t free_pages;
 } mmap_info;
 
 namespace Memory {
 	void PhysicalMemInit();
 
 	namespace Info {
+		size_t getTotalFreeBytes();
+		size_t getTotalUsedBytes();
 		size_t getFreePageCount();
 		size_t getUsedPageCount();
-		uintptr_t getPhysKernelEnd();
 		const mmap_info* getMMapInfo();
+		uintptr_t getPhysKernelEnd();
 	}
+
 
 	uintptr_t PhysicalAlloc2MB();
 	uintptr_t PhysicalAlloc2MBSequential(size_t amount);

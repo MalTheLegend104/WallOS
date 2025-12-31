@@ -18,6 +18,8 @@ extern "C" {
 	int meminfo_help(int argc, char** argv);
 }
 
+extern size_t mem_map_size;
+
 const mmap_info* memory_info;
 
 void printTotal() {
@@ -25,7 +27,10 @@ void printTotal() {
 	printf("Total Memory:\n");
 	set_to_last();
 	set_colors(VGA_COLOR_PURPLE, VGA_DEFAULT_BG);
-	printf("\t%llu bytes\n\t%llu KiB\n\t%llu MiB\n", memory_info->total, memory_info->total / 1024, (memory_info->total / 1024) / 1024);
+	printf("\t%llu bytes\n\t%llu KiB\n\t%llu MiB\n",
+		memory_info->total,
+		memory_info->total / 1024,
+		memory_info->total / 1024 / 1024);
 	set_to_last();
 }
 
@@ -34,7 +39,10 @@ void printUsable() {
 	printf("Usable Memory:\n");
 	set_to_last();
 	set_colors(VGA_COLOR_GREEN, VGA_DEFAULT_BG);
-	printf("\t%llu bytes\n\t%llu KiB\n\t%llu MiB\n", memory_info->usable, memory_info->usable / 1024, (memory_info->usable / 1024) / 1024);
+	printf("\t%llu bytes\n\t%llu KiB\n\t%llu MiB\n",
+		memory_info->usable,
+		memory_info->usable / 1024,
+		memory_info->usable / 1024 / 1024);
 	set_to_last();
 }
 
@@ -43,17 +51,22 @@ void printReserved() {
 	printf("Reserved Memory:\n");
 	set_to_last();
 	set_colors(VGA_COLOR_RED, VGA_DEFAULT_BG);
-	printf("\t%llu bytes\n\t%llu KiB\n\t%llu MiB\n", memory_info->reserved, memory_info->reserved / 1024, (memory_info->reserved / 1024) / 1024);
+	printf("\t%llu bytes\n\t%llu KiB\n\t%llu MiB\n",
+		memory_info->reserved,
+		memory_info->reserved / 1024,
+		memory_info->reserved / 1024 / 1024);
 	set_to_last();
 }
 
 void printMapSize() {
-	uint64_t memory_map_size = Memory::Info::getPhysKernelEnd() - ((uintptr_t) (&kernel_end) - KERNEL_VIRTUAL_BASE);
 	set_colors(VGA_COLOR_LIGHT_GREY, VGA_DEFAULT_BG);
 	printf("System Memory Map Size:\n");
 	set_to_last();
 	set_colors(VGA_COLOR_DARK_GREY, VGA_DEFAULT_BG);
-	printf("\t%llu bytes\n\t%llu KiB\n\t%llu MiB\n", memory_map_size, memory_map_size / 1024, (memory_map_size / 1024) / 1024);
+	printf("\t%llu bytes\n\t%llu KiB\n\t%llu MiB\n",
+		mem_map_size,
+		mem_map_size / 1024,
+		mem_map_size / 1024 / 1024);
 	set_to_last();
 }
 
@@ -63,14 +76,42 @@ void printKernelSize() {
 	set_to_last();
 	set_colors(VGA_COLOR_CYAN, VGA_DEFAULT_BG);
 	uint64_t k_end = (uint64_t) &kernel_end - KERNEL_VIRTUAL_BASE;
-	printf("\t%llu bytes\n\t%llu KiB\n\t%llu MiB\n", k_end, k_end / 1024, (k_end / 1024) / 1024);
+	printf("\t%llu bytes\n\t%llu KiB\n\t%llu MiB\n",
+		k_end,
+		k_end / 1024,
+		k_end / 1024 / 1024);
 	set_to_last();
 }
 
 void printFreePhysical() {
-	size_t free_phys_pages = Memory::Info::getFreePageCount();
+	size_t free_bytes = Memory::Info::getTotalFreeBytes();
+	size_t free_pages = Memory::Info::getFreePageCount();
+
 	set_colors(VGA_COLOR_YELLOW, VGA_DEFAULT_BG);
-	printf("Free Physical Pages: %llu\n", free_phys_pages);
+	printf("Free Physical Memory:\n");
+	set_to_last();
+	set_colors(VGA_COLOR_YELLOW, VGA_DEFAULT_BG);
+	printf("\t%llu pages (4KB)\n", free_pages);
+	printf("\t%llu bytes\n\t%llu KiB\n\t%llu MiB\n",
+		free_bytes,
+		free_bytes / 1024,
+		free_bytes / 1024 / 1024);
+	set_to_last();
+}
+
+void printUsedPhysical() {
+	size_t used_bytes = Memory::Info::getTotalUsedBytes();
+	size_t used_pages = Memory::Info::getUsedPageCount();
+
+	set_colors(VGA_COLOR_LIGHT_BLUE, VGA_DEFAULT_BG);
+	printf("Used Physical Memory:\n");
+	set_to_last();
+	set_colors(VGA_COLOR_BLUE, VGA_DEFAULT_BG);
+	printf("\t%llu pages (4KB)\n", used_pages);
+	printf("\t%llu bytes\n\t%llu KiB\n\t%llu MiB\n",
+		used_bytes,
+		used_bytes / 1024,
+		used_bytes / 1024 / 1024);
 	set_to_last();
 }
 
@@ -86,7 +127,7 @@ bool printIndividual(int argc, char** argv) {
 		} else if (strcmp(argv[i], "-r") == 0 || strcmp(argv[i], "--reserved") == 0) {
 			printReserved();
 			printedSomething = true;
-		} else if (strcmp(argv[i], "--mmap-size") == 0) {
+		} else if (strcmp(argv[i], "-ms") == 0 || strcmp(argv[i], "--mmap-size") == 0) {
 			printMapSize();
 			printedSomething = true;
 		} else if (strcmp(argv[i], "-k") == 0 || strcmp(argv[i], "--kernel") == 0) {
@@ -94,6 +135,9 @@ bool printIndividual(int argc, char** argv) {
 			printedSomething = true;
 		} else if (strcmp(argv[i], "-fp") == 0 || strcmp(argv[i], "--free-physical") == 0) {
 			printFreePhysical();
+			printedSomething = true;
+		} else if (strcmp(argv[i], "-up") == 0 || strcmp(argv[i], "--used-physical") == 0) {
+			printUsedPhysical();
 			printedSomething = true;
 		}
 	}
@@ -104,26 +148,19 @@ int meminfo(int argc, char** argv) {
 	memory_info = Memory::Info::getMMapInfo();
 
 	if (argc > 1) {
-		if (printIndividual(argc, argv)) return 0;
+		if (printIndividual(argc, argv)) {
+			return 0;
+		}
 	}
 
-	/* Total Memory */
 	printTotal();
-
-	/* Usable Memory */
 	printUsable();
-
-	/* Reserved Memory */
 	printReserved();
-
-	/* System Memory Map Size */
 	printMapSize();
-
-	/* Raw Kernel Size */
 	printKernelSize();
-
-	/* Free Physical Pages */
 	printFreePhysical();
+	printUsedPhysical();
+
 	return 0;
 }
 
@@ -187,7 +224,18 @@ int meminfo_help(int argc, char** argv) {
 		} else if (strcmp(argv[1], "-fp") == 0 || strcmp(argv[1], "--free-physical") == 0) {
 			HelpEntry entry = {
 				"MemInfo (Free Physical Pages)",
-				"Prints the amount of free physical pages in memory.\n\nThis is mostly for debugging purposes, but may be interesting to users.\nThe system uses 2MB physical pages, multiplying this number by 2MB (0x200000), should give you roughly the usable memory.",
+				"Prints the amount of free physical memory.\n\nShows both the number of 4KB pages tracked by the buddy allocator and the total free bytes in various units (bytes, KiB, MiB).",
+				NULL,
+				0,
+				NULL,
+				0
+			};
+			printSpecificHelp(&entry);
+			return 0;
+		} else if (strcmp(argv[1], "-up") == 0 || strcmp(argv[1], "--used-physical") == 0) {
+			HelpEntry entry = {
+				"MemInfo (Used Physical Memory)",
+				"Prints the amount of used physical memory.\n\nShows both the number of 4KB pages in use and the total used bytes in various units (bytes, KiB, MiB). Calculated as usable memory minus free memory.",
 				NULL,
 				0,
 				NULL,
@@ -199,18 +247,15 @@ int meminfo_help(int argc, char** argv) {
 	}
 
 	const char* optional[] = {
-		"--total,",
-		"-t          -> Prints the amount of total system memory.\n",
-		"--usable",
-		"-u          -> Prints the amount of usable system memory.\n",
-		"--reserved,",
-		"-r          -> Prints the amount of reserved system memory.\n",
-		"--mmap-size -> Prints the size of the system memory map.\n",
-		"--kernel,",
-		"-k          -> Prints the size of the raw kernel.\n",
+		"--total, -t      -> Prints the amount of total system memory.\n",
+		"--usable, -u     -> Prints the amount of usable system memory.\n",
+		"--reserved,-r    -> Prints the amount of reserved system memory.\n",
+		"--mmap-size, -ms -> Prints the size of the system memory map.\n",
+		"--kernel, -k     -> Prints the size of the raw kernel.\n",
 		"--free-physical,",
-		"-fp         -> Prints the amount of free physical pages in memory.\n",
-
+		"-fp              -> Prints the amount of free physical memory.\n",
+		"--used-physical,",
+		"-up              -> Prints the amount of used physical memory.\n",
 		"If no flags are provided it will print all of the above.",
 	};
 	HelpEntry entry = {
@@ -219,7 +264,7 @@ int meminfo_help(int argc, char** argv) {
 		NULL,
 		0,
 		optional,
-		12
+		10
 	};
 	printSpecificHelp(&entry);
 
