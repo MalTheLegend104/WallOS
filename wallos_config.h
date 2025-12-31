@@ -14,4 +14,4 @@
  * uACPI is significantly less resource intensive and much quicker to run.
  */
 #define WALLOS_USE_ACPICA 1
-// #define WALLOS_USE_UACPI
+// #define WALLOS_USE_UACPI 1
