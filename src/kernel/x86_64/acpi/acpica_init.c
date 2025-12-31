@@ -1,3 +1,4 @@
+#ifdef WALLOS_USE_ACPICA
 #include <acpi.h>
 #include <panic.h>
 #include <stdio.h>
@@ -401,3 +402,5 @@ void initialize_acpi(void) {
 	// 	printf("FADT pointer addr: 0x%llx\n", fadt);
 	// }
 }
+
+#endif // WALLOS_USE_ACPICA

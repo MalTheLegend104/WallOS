@@ -11,9 +11,9 @@ include src/initrd/initrd.mk
 ARGS ?= -m 5G -M hpet=on -machine pc -cpu max
 # To add more devices, simply put them at any index 0-3, excluding 2.
 # Qemu mounts the cd drive at index 2 (secondary master drive)
-ARGS += -drive file=hda.img,if=ide,media=disk,format=raw,index=0 \
-        -drive file=hda2.img,if=ide,media=disk,format=raw,index=1 \
-        -drive file=hda3.img,if=ide,media=disk,format=raw,index=3
+# ARGS += -drive file=hda.img,if=ide,media=disk,format=raw,index=0 \
+#         -drive file=hda2.img,if=ide,media=disk,format=raw,index=1 \
+#         -drive file=hda3.img,if=ide,media=disk,format=raw,index=3
 
 # These make it much easier to change things whenever we are finally self hosted.
 WALLOS_C_COMPILER 	:= x86_64-wallos-gcc
@@ -47,10 +47,12 @@ export COLOR_CYAN
 export COLOR_MAGENTA
 export END_COLOR
 
+FORCED_INCLUDES = -include $(CURDIR)/wallos_debug_macros.h -include $(CURDIR)/wallos_config.h
+
 # Default things for all platforms. This includes things like LIBC, the WallOS, and compile flags.
 DEBUG_SYMBOLS   :=
-C_FLAGS 		:= -ffreestanding -std=gnu99 -Wall -Wextra -Wno-format -nostdlib -lgcc -mno-red-zone -O0 -mcmodel=kernel $(DEBUG_SYMBOLS)
-CPP_FLAGS 		:= -ffreestanding -std=c++11 -fno-rtti -Wall -Wextra -Wno-format -nostdlib -lgcc -mno-red-zone -O0 -mcmodel=kernel $(DEBUG_SYMBOLS)
+C_FLAGS 		:= -ffreestanding -std=gnu99 -Wall -Wextra -Wno-format -nostdlib -lgcc -mno-red-zone -O0 -mcmodel=kernel $(DEBUG_SYMBOLS) $(FORCED_INCLUDES)
+CPP_FLAGS 		:= -ffreestanding -std=c++11 -fno-rtti -Wall -Wextra -Wno-format -nostdlib -lgcc -mno-red-zone -O0 -mcmodel=kernel $(DEBUG_SYMBOLS) $(FORCED_INCLUDES)
 NASM_FLAGS 		:= $(DEBUG_SYMBOLS)
 LINKER_FLAGS 	:=
 
@@ -231,8 +233,8 @@ initrd_temp:
 
 
 qemu: all
-# 	qemu-system-x86_64 -cdrom dist/x86_64/WallOS.iso  -cpu max $(ARGS)
-	qemu-system-x86_64 -bios /usr/share/ovmf/OVMF.fd -cdrom dist/x86_64/WallOS.iso -vga virtio -cpu max $(ARGS)
+	qemu-system-x86_64 -cdrom dist/x86_64/WallOS.iso  -cpu max $(ARGS)
+# 	qemu-system-x86_64 -bios /usr/share/ovmf/OVMF.fd -cdrom dist/x86_64/WallOS.iso -vga virtio $(ARGS)
 
 clean: libs_clean initrd_clean
 	rm -rf build && echo "$(COLOR_GREEN)Cleaned build folder$(END_COLOR)"

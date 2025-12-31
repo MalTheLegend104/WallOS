@@ -92,6 +92,8 @@ extern "C" {
 	void deregisterKeyboardHook(void(*f)(uint8_t));
 	char kb_getc();
 	char* kb_gets();
+
+	void wait_for_esc();
 #ifdef __cplusplus
 }
 

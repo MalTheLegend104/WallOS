@@ -148,6 +148,7 @@ char scancode_to_char(uint8_t sc) {
 		case SC_ENTER: 				return '\n';
 		case SC_TAB: 				return '\t';
 		case SC_BACKSPACE: 			return '\b';
+		case SC_ESCAPE:				return '\e';
 		default: 					return '\0';
 	}
 }
@@ -211,6 +212,13 @@ char kb_getc() {
 			getc_gotten = true;
 			return scancode_to_char(currentState.last_scancode);
 		}
+	}
+}
+
+void wait_for_esc() {
+	while (true) {
+		if (kb_getc() == '\e') return;
+		WALLOS_HLT();
 	}
 }
 

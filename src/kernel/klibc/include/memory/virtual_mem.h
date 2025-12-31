@@ -23,8 +23,8 @@
 #define BIT_SIZE                   0x80ULL
 #define BIT_DIRTY                  0x40ULL
 #define BIT_ACCESS                 0x20ULL
-#define BIT_PCD                    0x10ULL
-#define BIT_PWT                    0x08ULL
+#define BIT_PCD                    0x10ULL // Page Cache Disable
+#define BIT_PWT                    0x08ULL // Page Write Through
 #define BIT_USR                    0x04ULL
 #define BIT_WRITE                  0x02ULL
 #define BIT_PRESENT                0x01ULL

@@ -1,3 +1,4 @@
+#ifdef WALLOS_USE_ACPICA
 #include <panic.h>
 #include <acpi.h>
 
@@ -372,3 +373,5 @@ ACPI_STATUS AcpiOsRemoveInterruptHandler(UINT32 InterruptNumber, ACPI_OSD_HANDLE
 	acpica_failure(__func__);
 	return AE_OK;
 }
+
+#endif //WALLOS_USE_ACPICA

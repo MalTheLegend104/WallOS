@@ -338,6 +338,13 @@ void kernel_main(unsigned int magic, multiboot_info* mbt_info) {
 	init_initrd();
 
 	// pmm_init();
+	// Things that need interrupts here (like keyboard, mouse, etc.)
+	// Everything that needs an IRQ should be done after the PIT as it messes with the mask
+	// If it requires allocations, add it after `initKernelAllocator()`
+	pit_init(1000);
+	keyboard_init();
+
+	// wait_for_esc();
 
 	Memory::PhysicalMemInit();
 
@@ -370,10 +377,6 @@ void kernel_main(unsigned int magic, multiboot_info* mbt_info) {
 
 	// panic_s("GOT BEFORE IDE DRIVES?????");
 	detect_ide_drives();
-	// Things that need interrupts here (like keyboard, mouse, etc.)
-	// Everything that needs an IRQ should be done after the PIT as it messes with the mask
-	pit_init(1000);
-	keyboard_init();
 
 	initKernelAllocator();
 
@@ -383,10 +386,17 @@ void kernel_main(unsigned int magic, multiboot_info* mbt_info) {
 
 	initialize_acpi();
 
+
 	// char* array[] = { (char*) "drive", (char*) "mount", (char*) "0" };
 	// drive_mount_cmd(3, array);
 
 	printf_serial("Ended kernel init... handing control to WallShell.\r\n");
+	set_colors(VGA_COLOR_PINK, VGA_DEFAULT_BG);
+	printf("Ended kernel init... Press `ESC` to hand control to WallShell.\r\n");
+	set_to_last();
+	// WALLOS_CLI_HLT();
+
+	wait_for_esc();
 
 	// char* args[] = { "acpi", "list" };
 	// acpi_command(2, args);
