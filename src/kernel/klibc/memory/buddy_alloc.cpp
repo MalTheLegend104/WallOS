@@ -509,7 +509,7 @@ void pmm_init() {
 		uintptr_t end = mmap->addr + mmap->len;
 
 		if (start > max_addr || mmap->len == 0) {
-			printf_serial("[PMM][WARN] Corrupt MMap entry detected (hopefully because of QEMU)! Base: 0x%llx Entry Count: %d\n", start, entry_count);
+			printf_serial("[PMM][WARN] Corrupt MMap entry detected (hopefully because of QEMU)! Base: 0x%llx Entry Count: %d\r\n", start, entry_count);
 			continue;
 		}
 
@@ -645,8 +645,8 @@ void Memory::PhysicalMemInit() {
 }
 
 uintptr_t Memory::PhysicalAlloc2MBSequential(size_t page_count) {
-	printf_serial("\n[PMM] PhysicalAlloc2MBSequential ENTER\n");
-	printf_serial("[PMM] requested page_count=%llu\n", page_count);
+	printf_serial("\r\n[PMM] PhysicalAlloc2MBSequential ENTER\r\n");
+	printf_serial("[PMM] requested page_count=%llu\r\n", page_count);
 
 	if (page_count == 0) {
 		return 0;
@@ -665,24 +665,24 @@ uintptr_t Memory::PhysicalAlloc2MBSequential(size_t page_count) {
 	}
 
 	if (needed_order > MAX_ORDER) {
-		printf_serial("[PMM] ERROR: requested size too large (order %u > MAX %u)\n",
+		printf_serial("[PMM] ERROR: requested size too large (order %u > MAX %u)\r\n",
 			needed_order, MAX_ORDER);
 		return 0;
 	}
 
-	printf_serial("[PMM] Allocating order-%u block (contains %llu x 2MB)\n",
+	printf_serial("[PMM] Allocating order-%u block (contains %llu x 2MB)\r\n",
 		needed_order, page_count);
 
 	uint32_t idx = buddy_alloc(needed_order);
 
 	if (idx == 0xFFFFFFFF) {
-		printf_serial("[PMM] ERROR: buddy_alloc failed for order-%u\n", needed_order);
+		printf_serial("[PMM] ERROR: buddy_alloc failed for order-%u\r\n", needed_order);
 		return 0;
 	}
 
 	uintptr_t result = idx_to_addr(idx);
 
-	printf_serial("[PMM] SUCCESS addr=0x%llx\n", result);
+	printf_serial("[PMM] SUCCESS addr=0x%llx\r\n", result);
 
 	return result;
 }

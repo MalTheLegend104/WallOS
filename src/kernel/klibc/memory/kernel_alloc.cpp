@@ -6,6 +6,7 @@
 #include <klibc/kprint.h>
 #include <memory/kernel_alloc.h>
 #include <memory/virtual_mem.h>
+#include <drivers/serial.h>
 
 
 #define SET_BIT(bitlist_entry, bit)   (bitlist_entry = bitlist_entry | (1 << (8 - bit)))
@@ -45,7 +46,7 @@ typedef struct slab_header_t {
 
 	uintptr_t chunk_base;
 	size_t chunk_count; // There will be this / 8 entries in bitlist
-} __attribute__((packed)) slab_header_t;
+} slab_header_t;
 
 slab_header_t* first_slab;
 slab_header_t* last_slab;
@@ -56,7 +57,7 @@ typedef struct allocated_span_t {
 	slab_header_t* slab_header;
 	allocated_span_t* prev;
 	allocated_span_t* next;
-} __attribute__((packed)) allocated_span_t;
+} allocated_span_t;
 
 slab_header_t* span_slab_start;
 slab_header_t* span_slab_end;
@@ -100,7 +101,8 @@ void createSpanList() {
 	uint64_t bls = calculateBitlistSize(sizeof(allocated_span_t));
 	header->chunk_count = bls * 8;
 	// Set all entries in the bitlist to zero.
-	memset((header + sizeof(header)), 0, bls);
+	// memset((header + sizeof(header)), 0, bls);
+	memset((uint8_t*) header + sizeof(slab_header_t), 0, bls);
 
 	// Calculate the base
 	uint64_t padding = calculatePadding(bls, sizeof(allocated_span_t));
@@ -112,7 +114,7 @@ void createSpanList() {
 	if (span_slab_start == NULL) {
 		span_slab_start = header;
 	} else {
-		span_slab_start->next_slab = header;
+		span_slab_end->next_slab = header;
 	}
 	span_slab_end = header;
 }
@@ -123,6 +125,7 @@ void createSpanList() {
  * @param object_size Amount of bytes per chunk.
  */
 void initSlab(uint64_t object_size) {
+	// printf_serial("[KALLOC] initSlab called with obj_size: 0x%llx\r\n", object_size);
 	uintptr_t base = Memory::NewKernelPage();
 	slab_header_t* header = (slab_header_t*) base;
 	header->object_size = object_size;
@@ -184,27 +187,27 @@ void initKernelAllocator() {
  * @param header Header containing the chunk
  * @param chunk chunk number in the slab
  */
-// void setChunkUsed(slab_header_t* header, size_t chunk) {
-// 	// We can divide the chunk by 8 to get which spot in the bitlist it is
-// 	size_t bitlist_spot = chunk / 8;
-// 	// Anything that's 8 % 8 = 0 will produce a number 1 too high
-// 	if (chunk % 8 == 0) bitlist_spot--;
-
-// 	// The bitlist is in squential order, so it starts filling at the highest bit of the uint8_t
-// 	// This means bit "8" is the final bit in 0b00000001
-// 	// The macro takes this into account.
-// 	uint8_t index = chunk % 8;
-// 	if (chunk % 8 == 0) index = 8;
-
-// 	SET_BIT(BITLIST_BASE(header)[bitlist_spot], index);
-// }
-
 void setChunkUsed(slab_header_t* header, size_t chunk) {
-	size_t zero_indexed_chunk = chunk - 1;
-	size_t byte_idx = zero_indexed_chunk / 8;
-	size_t bit_idx = zero_indexed_chunk % 8;
-	SET_BIT(BITLIST_BASE(header)[byte_idx], (bit_idx + 1));  // +1 for macro's 1-8 indexing
+	// We can divide the chunk by 8 to get which spot in the bitlist it is
+	size_t bitlist_spot = chunk / 8;
+	// Anything that's 8 % 8 = 0 will produce a number 1 too high
+	if (chunk % 8 == 0) bitlist_spot--;
+
+	// The bitlist is in squential order, so it starts filling at the highest bit of the uint8_t
+	// This means bit "8" is the final bit in 0b00000001
+	// The macro takes this into account.
+	uint8_t index = chunk % 8;
+	if (chunk % 8 == 0) index = 8;
+
+	SET_BIT(BITLIST_BASE(header)[bitlist_spot], index);
 }
+
+// void setChunkUsed(slab_header_t* header, size_t chunk) {
+// 	size_t zero_indexed_chunk = chunk - 1;
+// 	size_t byte_idx = zero_indexed_chunk / 8;
+// 	size_t bit_idx = zero_indexed_chunk % 8;
+// 	SET_BIT(BITLIST_BASE(header)[byte_idx], (bit_idx + 1));  // +1 for macro's 1-8 indexing
+// }
 
 /**
  * @brief Set if the chunk is free in the bitlist.
@@ -235,10 +238,10 @@ allocated_span_t* allocateSpan() {
 
 					setChunkUsed(header, chunk_number);
 
-					// printf("i: %llu -> j: %llu\nchunk#: %llu\n", i, j, chunk_number);
-					// printf("Header: 0x%llx -> bitlist_base: 0x%llx\n", header, BITLIST_BASE(header));
-					// printf("chunk count: %llu -> object_size: %llu\n", header->chunk_count, header->object_size);
-					// printf("chunk base: 0x%llx\n\n", header->chunk_base);
+					// printf_serial("i: %llu -> j: %llu\nchunk#: %llu\n", i, j, chunk_number);
+					// printf_serial("[KALLOC] Header: 0x%llx -> bitlist_base: 0x%llx\r\n", header, BITLIST_BASE(header));
+					// printf_serial("\tchunk count: %llu -> object_size: %llu\r\n", header->chunk_count, header->object_size);
+					// printf_serial("\tchunk base: 0x%llx\r\n", header->chunk_base);
 					goto span_finish;
 				}
 			}
@@ -251,10 +254,13 @@ span_finish:
 		createSpanList();
 		return allocateSpan();
 	} else {
-		//printf("chunk #: %llu\n", (chunk_number - 1));
 		allocated_span_t* ptr = (allocated_span_t*) (header->chunk_base + ((chunk_number - 1) * sizeof(allocated_span_t)));
+
+		// Safety: Zero out the metadata before returning it
+		memset(ptr, 0, sizeof(allocated_span_t));
+
 		ptr->slab_header = header;
-		return (allocated_span_t*) ptr;
+		return ptr;
 	}
 }
 
@@ -288,6 +294,8 @@ allocated_span_t* findSpan(uintptr_t ptr) {
 }
 
 void removeSpan(allocated_span_t* span) {
+	// printf_serial("removeSpan ptr:0x%llx size:0x%llx next:0x%llx hdr:0x%llx hdr_obj:0x%llx\r\n", span, span->size, span->next, span->slab_header, span->slab_header->object_size);
+
 	if (span->prev != NULL)
 		span->prev->next = span->next;
 	if (span->next != NULL)
@@ -299,7 +307,9 @@ void removeSpan(allocated_span_t* span) {
 	slab_header_t* header = span->slab_header;
 	size_t chunk = (size_t) ((uintptr_t) span - header->chunk_base) / header->object_size;
 	chunk++;
-	memset(span, 0, header->object_size);
+
+	// memset(span, 0, header->object_size);
+	memset(span, 0, sizeof(allocated_span_t));
 	setChunkFree(header, chunk);
 }
 

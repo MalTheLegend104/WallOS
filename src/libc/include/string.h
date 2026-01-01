@@ -30,6 +30,8 @@ extern "C" {
 	void* memset32(void*, uint32_t, size_t);
 	void memsetw(void* dest, unsigned short val, int count);
 
+	void* memmove(void* dest, const void* src, size_t n);
+
 #ifdef __cplusplus
 }
 #endif

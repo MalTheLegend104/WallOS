@@ -4,11 +4,15 @@
  */
 #pragma once
 
+#define WALLOS_SPIN_PAUSE()	asm volatile("pause")
+
 #define WALLOS_HLT()        asm volatile("hlt")
 #define WALLOS_CLI()        asm volatile("cli")
 #define WALLOS_STI()        asm volatile("sti")
 #define WALLOS_CLI_HLT()    do { WALLOS_CLI(); WALLOS_HLT(); } while (0)
 
 #define WALLOS_HANG() do { asm volatile("cli"); for (;;) asm volatile("hlt"); } while (0)
+
+#define WALLOS_RET_ADDR() __builtin_return_address(0)
 
 #define WALLOS_STATIC_ASSERT(cond, msg) typedef char static_assert_##msg[(cond) ? 1 : -1]

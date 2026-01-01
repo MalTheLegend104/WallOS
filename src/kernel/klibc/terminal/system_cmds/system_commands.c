@@ -201,4 +201,6 @@ void registerSystemCommands() {
 	registerCommand((Command) { meminfo, meminfo_help, "meminfo", NULL, 0 });
 	registerCommand((Command) { sysinfo, NULL, "sysinfo", NULL, 0 });
 	registerCommand((Command) { drive_command, drive_command_help, "drive", NULL, 0 });
+	registerCommand((Command) { shutdown_command, NULL, "shutdown", NULL, 0 });
+	registerCommand((Command) { reboot_command, NULL, "reboot", NULL, 0 });
 }

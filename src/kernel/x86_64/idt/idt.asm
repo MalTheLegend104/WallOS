@@ -16,6 +16,7 @@ PIT_CHANNEL0_PORT equ 0x40
 section .text
 global enablePS2
 global irq_enable
+global irq_disable
 global idt_load
 global disablePIC
 global enableAPIC

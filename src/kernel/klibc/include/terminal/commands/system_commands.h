@@ -18,6 +18,9 @@ extern "C" {
 
 	int drive_command(int argc, char** argv);
 	int drive_command_help(int argc, char** argv);
+
+	int shutdown_command(int argc, char** argv);
+	int reboot_command(int argc, char** argv);
 #ifdef __cplusplus
 }
 #endif

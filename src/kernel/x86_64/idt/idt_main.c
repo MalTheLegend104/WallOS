@@ -337,6 +337,11 @@ bool add_interrupt_handler_asm(uint8_t entry, void(*handler)(), uint8_t ist, uin
 	return true;
 }
 
+void remove_interrupt_handler(uint8_t entry) {
+	if (entry <= 32) return; // prevent myself from removing an important interrupt
+	set_idt_entry(&idt[entry], isr_stub_table[entry], 0, 0x8E);
+}
+
 void initIDT() {
 	puts_vga_color("Enabling Interrupts.\n", VGA_COLOR_LIGHT_CYAN, VGA_COLOR_BLACK);
 	// Set generic handlers for all interrupts

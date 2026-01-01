@@ -11,7 +11,10 @@
 #include <klibc/logger.h>
 #include <drivers/serial.h>	
 #include <memory/virtual_mem.h>
+#include <cpu_io.h>
 
+// There's a lot of unused params in here
+#pragma GCC diagnostic ignored "-Wunused-parameter" 
 
 // ------------------------------------------------------------------------------------------------
 // ------------------------------------------------------------------------------------------------
@@ -37,7 +40,9 @@ void uacpi_printf(vga_color color, const char* fmt, const char* str) {
 // Returns the PHYSICAL address of the RSDP structure via *out_rsdp_address.
 #include <klibc/multiboot.h>
 uacpi_status uacpi_kernel_get_rsdp(uacpi_phys_addr* out_rsdp_address) {
+	// printf_serial("[UACPI] uacpi_kernel_get_rsdp() called\r\n");
 	*out_rsdp_address = (uacpi_phys_addr) getAcpiRoot();
+	// printf_serial("[UACPI] uacpi_kernel_get_rsdp() returning 0x%llx\r\n", *out_rsdp_address);
 	return UACPI_STATUS_OK;
 }
 
@@ -66,17 +71,25 @@ uacpi_status uacpi_kernel_get_rsdp(uacpi_phys_addr* out_rsdp_address) {
  *              to uACPI.
  */
 void* uacpi_kernel_map(uacpi_phys_addr addr, uacpi_size len) {
-	if (addr >= KERNEL_VIRTUAL_BASE) return (void*) addr; // It's already mapped.
+	// printf_serial("[UACPI] uacpi_kernel_map(0x%llx, 0x%llx) called\r\n", addr, len);
+
+	if (addr >= KERNEL_VIRTUAL_BASE) {
+		printf_serial("[UACPI] uacpi_kernel_map() - already mapped, returning 0x%llx\r\n", addr);
+		return (void*) addr; // It's already mapped.
+	}
 
 	// Arbitrary Cutoff, 256 continuous MB.
 	if (len > 0x200000 * 128) {
+		printf_serial("[UACPI] uacpi_kernel_map() - length too large, checking signature\r\n");
 		// Map only the requested location, get the table header, return 0.
 		char* magic = (char*) mapKernelLocation(addr, 0x24);
 		printf("ACPICA: Target Signature: \"%c%c%c%c\"\n", magic[0], magic[1], magic[2], magic[3]);
+		printf_serial("[UACPI] uacpi_kernel_map() - returning NULL due to size\r\n");
 		return 0;
 	}
 
 	void* ret = (void*) mapKernelLocation(addr, len);
+	// printf_serial("[UACPI] uacpi_kernel_map() - returning 0x%llx\r\n", (uint64_t) ret);
 
 	// printf_serial("\r\nMAP REQUEST:\r\n\tRequest PHYS: 0x%llx\r\n\tRequest LEN:  0x%llx\r\n\tMapped Return: 0x%llx\r\n", PhysicalAddress, Length, ret);
 	// printf("\nMAP REQUEST:\n\tRequest PHYS: 0x%llx\n\tRequest LEN:  0x%llx\n\tMapped Return: 0x%llx\n", PhysicalAddress, Length, ret);
@@ -93,10 +106,12 @@ void* uacpi_kernel_map(uacpi_phys_addr addr, uacpi_size len) {
  *       as well as its true length.
  */
 void uacpi_kernel_unmap(void* addr, uacpi_size len) {
+	// printf_serial("[UACPI] uacpi_kernel_unmap(0x%llx, 0x%llx) called (no-op)\r\n", (uint64_t) addr, len);
 	// I dont really care about unmapping right now. 
 }
 
 void uacpi_kernel_log(uacpi_log_level lvl, const uacpi_char* str) {
+	// printf_serial("[UACPI] uacpi_kernel_log(%d) called\r\n", lvl);
 	switch (lvl) {
 		case UACPI_LOG_DEBUG: uacpi_printf(VGA_COLOR_GREEN, "[UACPI][DEBUG] %s", str); break;
 		case UACPI_LOG_TRACE: uacpi_printf(VGA_COLOR_LIGHT_GREEN, "[UACPI][TRACE] %s", str); break;
@@ -164,17 +179,21 @@ void uacpi_kernel_deinitialize(void);
  * configuration space of the device.
  */
 uacpi_status uacpi_kernel_pci_device_open(uacpi_pci_address address, uacpi_handle* out_handle) {
-	uacpi_failure(__func__);
+	printf_serial("[UACPI] uacpi_kernel_pci_device_open() called\r\n");
+	// uacpi_failure(__func__);
 	return UACPI_STATUS_UNIMPLEMENTED;
 }
 void uacpi_kernel_pci_device_close(uacpi_handle) {
-	uacpi_failure(__func__);
+	printf_serial("[UACPI] uacpi_kernel_pci_device_close() called\r\n");
+	// uacpi_failure(__func__);
 }
 
-uacpi_status kernel_pci_read(uacpi_handle device, uacpi_size offset, uacpi_u8* value, size_t bitwidth) {
+uacpi_status kernel_pci_read(uacpi_handle device, uacpi_size offset, void* value, size_t bitwidth) {
+	printf_serial("[UACPI] kernel_pci_read() called\r\n");
 	return UACPI_STATUS_UNIMPLEMENTED;
 }
-uacpi_status kernel_pci_write(uacpi_handle device, uacpi_size offset, uacpi_u8 value, size_t bitwidth) {
+uacpi_status kernel_pci_write(uacpi_handle device, uacpi_size offset, size_t value, size_t bitwidth) {
+	printf_serial("[UACPI] kernel_pci_write() called\r\n");
 	return UACPI_STATUS_UNIMPLEMENTED;
 }
 
@@ -182,22 +201,28 @@ uacpi_status kernel_pci_write(uacpi_handle device, uacpi_size offset, uacpi_u8 v
  * Read & write the configuration space of a previously open PCI device.
  */
 uacpi_status uacpi_kernel_pci_read8(uacpi_handle device, uacpi_size offset, uacpi_u8* value) {
+	printf_serial("[UACPI] uacpi_kernel_pci_read8() called\r\n");
 	return kernel_pci_read(device, offset, value, 8);
 }
 uacpi_status uacpi_kernel_pci_read16(uacpi_handle device, uacpi_size offset, uacpi_u16* value) {
+	printf_serial("[UACPI] uacpi_kernel_pci_read16() called\r\n");
 	return kernel_pci_read(device, offset, value, 16);
 }
 uacpi_status uacpi_kernel_pci_read32(uacpi_handle device, uacpi_size offset, uacpi_u32* value) {
+	printf_serial("[UACPI] uacpi_kernel_pci_read32() called\r\n");
 	return kernel_pci_read(device, offset, value, 32);
 }
 
 uacpi_status uacpi_kernel_pci_write8(uacpi_handle device, uacpi_size offset, uacpi_u8 value) {
+	printf_serial("[UACPI] uacpi_kernel_pci_write8() called\r\n");
 	return kernel_pci_write(device, offset, value, 8);
 }
 uacpi_status uacpi_kernel_pci_write16(uacpi_handle device, uacpi_size offset, uacpi_u16 value) {
+	printf_serial("[UACPI] uacpi_kernel_pci_write16() called\r\n");
 	return kernel_pci_write(device, offset, value, 16);
 }
 uacpi_status uacpi_kernel_pci_write32(uacpi_handle device, uacpi_size offset, uacpi_u32 value) {
+	printf_serial("[UACPI] uacpi_kernel_pci_write32() called\r\n");
 	return kernel_pci_write(device, offset, value, 32);
 }
 
@@ -209,11 +234,19 @@ uacpi_status uacpi_kernel_pci_write32(uacpi_handle device, uacpi_size offset, ua
  *       to access the SystemIO address space.
  */
 uacpi_status uacpi_kernel_io_map(uacpi_io_addr base, uacpi_size len, uacpi_handle* out_handle) {
-	uacpi_failure(__func__);
-	return UACPI_STATUS_UNIMPLEMENTED;
+	// printf_serial("[UACPI] uacpi_kernel_io_map(0x%x, 0x%llx) called\r\n", base, len);
+	if (!out_handle) return UACPI_STATUS_INVALID_ARGUMENT;
+
+	// For now, just use the base port as the handle
+	*out_handle = (uacpi_handle) (uintptr_t) base;
+	// printf_serial("[UACPI] uacpi_kernel_io_map() - returning handle 0x%llx\r\n", (uint64_t) *out_handle);
+	return UACPI_STATUS_OK;
 }
+
 void uacpi_kernel_io_unmap(uacpi_handle handle) {
-	uacpi_failure(__func__);
+	// printf_serial("[UACPI] uacpi_kernel_io_unmap(0x%llx) called (no-op)\r\n", (uint64_t) handle);
+	// Nothing to do for now; ports don't require unmapping
+	(void) handle;
 }
 
 /*
@@ -227,37 +260,42 @@ void uacpi_kernel_io_unmap(uacpi_handle handle) {
  * You are NOT allowed to break e.g. a 4-byte access into four 1-byte accesses.
  * Hardware ALWAYS expects accesses to be of the exact width.
  */
-
-uacpi_status kernel_io_read(uacpi_handle port, uacpi_size offset, uacpi_u8* out_value, size_t width) {
+uacpi_status kernel_io_read(uacpi_handle port, uacpi_size offset, void* out_value, size_t width) {
+	printf_serial("[UACPI] kernel_io_read(0x%llx, 0x%llx, %d bits) called\r\n", (uint64_t) port, offset, width);
 	switch (width) {
 		case 8:
-			*out_value = inb(port + offset);
+			*((uacpi_u8*) out_value) = inb((uint16_t) (port + offset));
 			break;
 		case 16:
-			*out_value = inw(port + offset);
+			*((uacpi_u16*) out_value) = inw((uint16_t) (port + offset));
 			break;
 		case 32:
-			*out_value = inl(port + offset);
+			*((uacpi_u32*) out_value) = inl((uint16_t) (port + offset));
 			break;
 		default:
+			printf_serial("[UACPI] kernel_io_read() - invalid width\r\n");
 			return UACPI_STATUS_INVALID_ARGUMENT;
 	}
+	printf_serial("[UACPI] kernel_io_read() - success\r\n");
 	return UACPI_STATUS_OK;
 }
-uacpi_status kernel_io_write(uacpi_handle port, uacpi_size offset, uacpi_u8 in_value, size_t width) {
+uacpi_status kernel_io_write(uacpi_handle port, uacpi_size offset, size_t in_value, size_t width) {
+	printf_serial("[UACPI] kernel_io_write(0x%llx, 0x%llx, 0x%llx, %d bits) called\r\n", (uint64_t) port, offset, in_value, width);
 	switch (width) {
 		case 8:
-			outb(port + offset, (uint8_t) in_value);
+			outb((uint16_t) (port + offset), (uint8_t) in_value);
 			break;
 		case 16:
-			outw(port + offset, (uint16_t) in_value);
+			outw((uint16_t) (port + offset), (uint16_t) in_value);
 			break;
 		case 32:
-			outl(port + offset, (uint32_t) in_value);
+			outl((uint16_t) (port + offset), (uint32_t) in_value);
 			break;
 		default:
+			printf_serial("[UACPI] kernel_io_write() - invalid width\r\n");
 			return UACPI_STATUS_INVALID_ARGUMENT;
 	}
+	printf_serial("[UACPI] kernel_io_write() - success\r\n");
 	return UACPI_STATUS_OK;
 }
 
@@ -281,35 +319,49 @@ uacpi_status uacpi_kernel_io_write32(uacpi_handle port, uacpi_size offset, uacpi
 	return kernel_io_write(port, offset, in_value, 32);
 }
 
+#include <memory/kernel_alloc.h>
+
 /*
  * Allocate a block of memory of 'size' bytes.
  * The contents of the allocated memory are unspecified.
  */
 void* uacpi_kernel_alloc(uacpi_size size) {
+	// printf_serial("[UACPI] uacpi_kernel_alloc(0x%llx) called\r\n", size);
 	void* ptr = kalloc(size);
+	// printf_serial("[UACPI] uacpi_kernel_alloc() - returning 0x%llx\r\n", (uint64_t) ptr);
 	return ptr;
 }
 
 void uacpi_kernel_free(void* mem) {
+	// printf_serial("[UACPI] uacpi_kernel_free(0x%llx) called\r\n", (uint64_t) mem);
 	if (!mem) return;
 	kfree(mem);
 }
+
+#include <system/timing.h>
 
 /*
  * Returns the number of nanosecond ticks elapsed since boot,
  * strictly monotonic.
  */
 uacpi_u64 uacpi_kernel_get_nanoseconds_since_boot(void) {
-	uacpi_failure(__func__);
-	return UACPI_STATUS_UNIMPLEMENTED;
+	printf_serial("[UACPI] uacpi_kernel_get_nanoseconds_since_boot() called\r\n");
+	// uacpi_failure(__func__);
+	// return UACPI_STATUS_UNIMPLEMENTED;
+	// ms -> us -> ns
+	// We only have ms accuracy
+	uacpi_u64 result = get_system_up_time() * 1000 * 1000;
+	printf_serial("[UACPI] uacpi_kernel_get_nanoseconds_since_boot() - returning %llu\r\n", result);
+	return result;
 }
 
 /*
  * Spin for N microseconds.
  */
 void uacpi_kernel_stall(uacpi_u8 usec) {
+	printf_serial("[UACPI] uacpi_kernel_stall(%u) called\r\n", usec);
 	uacpi_failure(__func__);
-	return UACPI_STATUS_UNIMPLEMENTED;
+	// return UACPI_STATUS_UNIMPLEMENTED;
 }
 
 #include <system/timing.h>
@@ -317,28 +369,253 @@ void uacpi_kernel_stall(uacpi_u8 usec) {
  * Sleep for N milliseconds.
  */
 void uacpi_kernel_sleep(uacpi_u64 msec) {
+	printf_serial("[UACPI] uacpi_kernel_sleep(%llu) called\r\n", msec);
 	sleep(msec);
+	printf_serial("[UACPI] uacpi_kernel_sleep() - complete\r\n");
 }
+
+#include <memory/semaphore.h>
+
+/*
+ * Handle a firmware request.
+ *
+ * Currently either a Breakpoint or Fatal operators.
+ */
+uacpi_status uacpi_kernel_handle_firmware_request(uacpi_firmware_request* req) {
+	printf_serial("[UACPI] uacpi_kernel_handle_firmware_request() called\r\n");
+	if (!req) return UACPI_STATUS_INVALID_ARGUMENT;
+
+	switch (req->type) {
+		case UACPI_FIRMWARE_REQUEST_TYPE_BREAKPOINT:
+			printf("[UACPI][FIRMWARE] Breakpoint requested by AML code.\n");
+			printf_serial("[UACPI][FIRMWARE] Breakpoint requested by AML code.\r\n");
+			WALLOS_CLI_HLT();
+			panic("Firmware requested breakpoint", 0);
+			break;
+
+		case UACPI_FIRMWARE_REQUEST_TYPE_FATAL:
+			printf("[UACPI][FIRMWARE] Fatal firmware request: code 0x%X\n", req->fatal.code);
+			printf_serial("[UACPI][FIRMWARE] Fatal firmware request: code 0x%X\r\n", req->fatal.code);
+			WALLOS_CLI_HLT();
+			break;
+
+		default:
+			printf("[UACPI][FIRMWARE] Unknown firmware request type %d\n", req->type);
+			printf_serial("[UACPI][FIRMWARE] Unknown firmware request type %d\r\n", req->type);
+			break;
+	}
+
+	return UACPI_STATUS_OK;
+}
+
+
+// ------------------------------------------------------------------------------------------------
+// ------------------------------------------------------------------------------------------------
+// Interrupts
+// ------------------------------------------------------------------------------------------------
+// ------------------------------------------------------------------------------------------------
+#include <system/idt.h>
+
+// Storage for uACPI interrupt handlers
+#define MAX_UACPI_IRQS 16
+
+// Things that uACPI requires the interrupt handlers to pass to the handler, and allows us to keep track of the interrupts
+struct uacpi_irq_info {
+	uacpi_interrupt_handler handler;
+	uacpi_handle ctx;
+	uacpi_u32 irq;
+	bool in_use;
+};
+static struct uacpi_irq_info uacpi_irq_table[MAX_UACPI_IRQS];
+
+// This first one is identical to the rest. This one is the "example" so you can actually see what's happening.
+__attribute__((interrupt)) __attribute__((__target__("general-regs-only"))) void uacpi_irq_wrapper_0(struct interrupt_frame* frame) {
+	if (uacpi_irq_table[0].in_use && uacpi_irq_table[0].handler) {
+		   /* Call the uACPI handler */
+		(void) uacpi_irq_table[0].handler(uacpi_irq_table[0].ctx);
+		/* uACPI returns HANDLED or UNHANDLED (and we don't really care about the status), but we still need to send EOI */
+	}
+	/* Send EOI to PIC(s) */
+	if (uacpi_irq_table[0].irq >= 8) {
+		outb(0xA0, 0x20); /* Send EOI to slave PIC first */
+	}
+	outb(0x20, 0x20); /* Send EOI to master PIC */
+}
+
+__attribute__((interrupt)) __attribute__((__target__("general-regs-only"))) void uacpi_irq_wrapper_1(struct interrupt_frame* frame) { if (uacpi_irq_table[1].in_use && uacpi_irq_table[1].handler) { (void) uacpi_irq_table[1].handler(uacpi_irq_table[1].ctx); } if (uacpi_irq_table[1].irq >= 8) { outb(0xA0, 0x20); } outb(0x20, 0x20); }
+__attribute__((interrupt)) __attribute__((__target__("general-regs-only"))) void uacpi_irq_wrapper_2(struct interrupt_frame* frame) { if (uacpi_irq_table[2].in_use && uacpi_irq_table[2].handler) { (void) uacpi_irq_table[2].handler(uacpi_irq_table[2].ctx); } if (uacpi_irq_table[2].irq >= 8) { outb(0xA0, 0x20); } outb(0x20, 0x20); }
+__attribute__((interrupt)) __attribute__((__target__("general-regs-only"))) void uacpi_irq_wrapper_3(struct interrupt_frame* frame) { if (uacpi_irq_table[3].in_use && uacpi_irq_table[3].handler) { (void) uacpi_irq_table[3].handler(uacpi_irq_table[3].ctx); } if (uacpi_irq_table[3].irq >= 8) { outb(0xA0, 0x20); } outb(0x20, 0x20); }
+__attribute__((interrupt)) __attribute__((__target__("general-regs-only"))) void uacpi_irq_wrapper_4(struct interrupt_frame* frame) { if (uacpi_irq_table[4].in_use && uacpi_irq_table[4].handler) { (void) uacpi_irq_table[4].handler(uacpi_irq_table[4].ctx); } if (uacpi_irq_table[4].irq >= 8) { outb(0xA0, 0x20); } outb(0x20, 0x20); }
+__attribute__((interrupt)) __attribute__((__target__("general-regs-only"))) void uacpi_irq_wrapper_5(struct interrupt_frame* frame) { if (uacpi_irq_table[5].in_use && uacpi_irq_table[5].handler) { (void) uacpi_irq_table[5].handler(uacpi_irq_table[5].ctx); } if (uacpi_irq_table[5].irq >= 8) { outb(0xA0, 0x20); } outb(0x20, 0x20); }
+__attribute__((interrupt)) __attribute__((__target__("general-regs-only"))) void uacpi_irq_wrapper_6(struct interrupt_frame* frame) { if (uacpi_irq_table[6].in_use && uacpi_irq_table[6].handler) { (void) uacpi_irq_table[6].handler(uacpi_irq_table[6].ctx); } if (uacpi_irq_table[6].irq >= 8) { outb(0xA0, 0x20); } outb(0x20, 0x20); }
+__attribute__((interrupt)) __attribute__((__target__("general-regs-only"))) void uacpi_irq_wrapper_7(struct interrupt_frame* frame) { if (uacpi_irq_table[7].in_use && uacpi_irq_table[7].handler) { (void) uacpi_irq_table[7].handler(uacpi_irq_table[7].ctx); } if (uacpi_irq_table[7].irq >= 8) { outb(0xA0, 0x20); } outb(0x20, 0x20); }
+__attribute__((interrupt)) __attribute__((__target__("general-regs-only"))) void uacpi_irq_wrapper_8(struct interrupt_frame* frame) { if (uacpi_irq_table[8].in_use && uacpi_irq_table[8].handler) { (void) uacpi_irq_table[8].handler(uacpi_irq_table[8].ctx); } if (uacpi_irq_table[8].irq >= 8) { outb(0xA0, 0x20); } outb(0x20, 0x20); }
+__attribute__((interrupt)) __attribute__((__target__("general-regs-only"))) void uacpi_irq_wrapper_9(struct interrupt_frame* frame) { if (uacpi_irq_table[9].in_use && uacpi_irq_table[9].handler) { (void) uacpi_irq_table[9].handler(uacpi_irq_table[9].ctx); } if (uacpi_irq_table[9].irq >= 8) { outb(0xA0, 0x20); } outb(0x20, 0x20); }
+__attribute__((interrupt)) __attribute__((__target__("general-regs-only"))) void uacpi_irq_wrapper_10(struct interrupt_frame* frame) { if (uacpi_irq_table[10].in_use && uacpi_irq_table[10].handler) { (void) uacpi_irq_table[10].handler(uacpi_irq_table[10].ctx); } if (uacpi_irq_table[10].irq >= 8) { outb(0xA0, 0x20); } outb(0x20, 0x20); }
+__attribute__((interrupt)) __attribute__((__target__("general-regs-only"))) void uacpi_irq_wrapper_11(struct interrupt_frame* frame) { if (uacpi_irq_table[11].in_use && uacpi_irq_table[11].handler) { (void) uacpi_irq_table[11].handler(uacpi_irq_table[11].ctx); } if (uacpi_irq_table[11].irq >= 8) { outb(0xA0, 0x20); } outb(0x20, 0x20); }
+__attribute__((interrupt)) __attribute__((__target__("general-regs-only"))) void uacpi_irq_wrapper_12(struct interrupt_frame* frame) { if (uacpi_irq_table[12].in_use && uacpi_irq_table[12].handler) { (void) uacpi_irq_table[12].handler(uacpi_irq_table[12].ctx); } if (uacpi_irq_table[12].irq >= 8) { outb(0xA0, 0x20); } outb(0x20, 0x20); }
+__attribute__((interrupt)) __attribute__((__target__("general-regs-only"))) void uacpi_irq_wrapper_13(struct interrupt_frame* frame) { if (uacpi_irq_table[13].in_use && uacpi_irq_table[13].handler) { (void) uacpi_irq_table[13].handler(uacpi_irq_table[13].ctx); } if (uacpi_irq_table[13].irq >= 8) { outb(0xA0, 0x20); } outb(0x20, 0x20); }
+__attribute__((interrupt)) __attribute__((__target__("general-regs-only"))) void uacpi_irq_wrapper_14(struct interrupt_frame* frame) { if (uacpi_irq_table[14].in_use && uacpi_irq_table[14].handler) { (void) uacpi_irq_table[14].handler(uacpi_irq_table[14].ctx); } if (uacpi_irq_table[14].irq >= 8) { outb(0xA0, 0x20); } outb(0x20, 0x20); }
+__attribute__((interrupt)) __attribute__((__target__("general-regs-only"))) void uacpi_irq_wrapper_15(struct interrupt_frame* frame) { if (uacpi_irq_table[15].in_use && uacpi_irq_table[15].handler) { (void) uacpi_irq_table[15].handler(uacpi_irq_table[15].ctx); } if (uacpi_irq_table[15].irq >= 8) { outb(0xA0, 0x20); } outb(0x20, 0x20); }
+
+
+// Array of wrapper function pointers
+static void (*uacpi_irq_wrappers[])(struct interrupt_frame*) = {
+	uacpi_irq_wrapper_0,
+	uacpi_irq_wrapper_1,
+	uacpi_irq_wrapper_2,
+	uacpi_irq_wrapper_3,
+	uacpi_irq_wrapper_4,
+	uacpi_irq_wrapper_5,
+	uacpi_irq_wrapper_6,
+	uacpi_irq_wrapper_7,
+	uacpi_irq_wrapper_8,
+	uacpi_irq_wrapper_9,
+	uacpi_irq_wrapper_10,
+	uacpi_irq_wrapper_11,
+	uacpi_irq_wrapper_12,
+	uacpi_irq_wrapper_13,
+	uacpi_irq_wrapper_14,
+	uacpi_irq_wrapper_15,
+};
+
+/*
+ * Install an interrupt handler at 'irq', 'ctx' is passed to the provided
+ * handler for every invocation.
+ *
+ * 'out_irq_handle' is set to a kernel-implemented value that can be used to
+ * refer to this handler from other API.
+ */
+uacpi_status uacpi_kernel_install_interrupt_handler(uacpi_u32 irq, uacpi_interrupt_handler handler, uacpi_handle ctx, uacpi_handle* out_irq_handle) {
+	// Validate IRQ number
+	if (irq > 15) {
+		logger(ERROR, "uACPI: IRQ %u out of range (0-15)\n", irq);
+		return UACPI_STATUS_INVALID_ARGUMENT;
+	}
+
+	// Find a free slot in our table
+	int slot = -1;
+	for (int i = 0; i < MAX_UACPI_IRQS; i++) {
+		if (!uacpi_irq_table[i].in_use) {
+			slot = i;
+			break;
+		}
+	}
+
+	if (slot == -1) {
+		logger(ERROR, "uACPI: No free IRQ handler slots\n");
+		return UACPI_STATUS_OUT_OF_MEMORY;
+	}
+
+	// Store the uACPI handler info
+	uacpi_irq_table[slot].handler = handler;
+	uacpi_irq_table[slot].ctx = ctx;
+	uacpi_irq_table[slot].irq = irq;
+	uacpi_irq_table[slot].in_use = true;
+
+	// Calculate IDT vector: IRQ 0-15 map to vectors 32-47 (0x20-0x2F)
+	uint8_t vector = 0x20 + irq;
+
+	logger(INFO, "uACPI: Installing handler for IRQ %u (vector 0x%x)\n", irq, vector);
+
+	// Install our wrapper in the IDT
+	add_interrupt_handler(vector, uacpi_irq_wrappers[slot], 0, 0x8E);
+
+	// Enable the IRQ in the PIC
+	irq_enable(irq);
+
+	// Return the slot index as the handle
+	*out_irq_handle = (uacpi_handle) (uintptr_t) slot;
+
+	return UACPI_STATUS_OK;
+}
+
+
+/*
+ * Uninstall an interrupt handler. 'irq_handle' is the value returned via
+ * 'out_irq_handle' during installation.
+ */
+uacpi_status uacpi_kernel_uninstall_interrupt_handler(uacpi_interrupt_handler handler, uacpi_handle irq_handle) {
+	int slot = (int) (uintptr_t) irq_handle;
+
+	if (slot < 0 || slot >= MAX_UACPI_IRQS || !uacpi_irq_table[slot].in_use) {
+		logger(ERROR, "uACPI: Invalid IRQ handle for uninstall\n");
+		return UACPI_STATUS_INVALID_ARGUMENT;
+	}
+
+	uacpi_u32 irq = uacpi_irq_table[slot].irq;
+
+	logger(INFO, "uACPI: Uninstalling handler for IRQ %u\n", irq);
+
+	// Disable the IRQ in the PIC
+	irq_disable(irq);
+
+	// Restore the generic handler
+	uint8_t vector = 0x20 + irq;
+//	set_idt_entry(&idt[vector], isr_stub_table[vector], 0, 0x8E);
+	remove_interrupt_handler(vector);
+
+	// Clear the slot
+	uacpi_irq_table[slot].in_use = false;
+	uacpi_irq_table[slot].handler = NULL;
+	uacpi_irq_table[slot].ctx = NULL;
+
+	return UACPI_STATUS_OK;
+}
+
+// ------------------------------------------------------------------------------------------------
+// ------------------------------------------------------------------------------------------------
+// Spinlocks, Mutex's, "Events", "Work"
+// ------------------------------------------------------------------------------------------------
+// ------------------------------------------------------------------------------------------------
+
+#include <memory/spinlock.h>
 
 /*
  * Create/free an opaque non-recursive kernel mutex object.
  */
-uacpi_handle uacpi_kernel_create_mutex(void);
-void uacpi_kernel_free_mutex(uacpi_handle);
+uacpi_handle uacpi_kernel_create_mutex(void) {
+	// printf_serial("[UACPI] uacpi_kernel_create_mutex() called\r\n");
+	semaphore_t* sem = semaphore_create(1, 1);
+	// printf_serial("[UACPI] uacpi_kernel_create_mutex() - returning 0x%llx\r\n", (uint64_t) sem);
+	return sem;
+}
+
+void uacpi_kernel_free_mutex(uacpi_handle handle) {
+	// printf_serial("[UACPI] uacpi_kernel_free_mutex(0x%llx) called\r\n", (uint64_t) handle);
+	if (!handle) return;
+	semaphore_destroy((semaphore_t*) handle);
+}
 
 /*
  * Create/free an opaque kernel (semaphore-like) event object.
  */
-uacpi_handle uacpi_kernel_create_event(void);
-void uacpi_kernel_free_event(uacpi_handle);
+uacpi_handle uacpi_kernel_create_event(void) {
+	printf_serial("[UACPI] uacpi_kernel_create_event() called\r\n");
+	uacpi_handle evt = semaphore_create(UINT32_MAX, 0); // Start at 0
+	printf_serial("[UACPI] uacpi_kernel_create_event() - returning 0x%llx\r\n", (uint64_t) evt);
+	return evt;
+}
+
+void uacpi_kernel_free_event(uacpi_handle handle) {
+	printf_serial("[UACPI] uacpi_kernel_free_event(0x%llx) called\r\n", (uint64_t) handle);
+	if (!handle) return;
+	semaphore_destroy((semaphore_t*) handle);
+}
 
 /*
  * Returns a unique identifier of the currently executing thread.
  *
  * The returned thread id cannot be UACPI_THREAD_ID_NONE.
  */
-uacpi_thread_id uacpi_kernel_get_thread_id(void);
-
+uacpi_thread_id uacpi_kernel_get_thread_id(void) {
+	// printf_serial("[UACPI] uacpi_kernel_get_thread_id() called\r\n");
+	// This ensures we keep a consistent value across threads. 
+	// GCC wasn't happy with just returning a single value.
+	// This has the bonus of being a "random" number (that's really always the same between runs)
+	static int dummy_thread;
+	return (uacpi_thread_id) &dummy_thread; // unique pointer for this thread
+}
 /*
  * Try to acquire the mutex with a millisecond timeout.
  *
@@ -355,9 +632,24 @@ uacpi_thread_id uacpi_kernel_get_thread_id(void);
  *                           calls with timeout=0)
  * 3. Any other value - signifies a host internal error and is treated as such
  */
-uacpi_status uacpi_kernel_acquire_mutex(uacpi_handle, uacpi_u16);
-void uacpi_kernel_release_mutex(uacpi_handle);
+uacpi_status uacpi_kernel_acquire_mutex(uacpi_handle handle, uacpi_u16 timeout_ms) {
+	// printf_serial("[UACPI] uacpi_kernel_acquire_mutex(0x%llx, %u) called\r\n", (uint64_t) handle, timeout_ms);
+	if (!handle) return UACPI_STATUS_INTERNAL_ERROR;
+	uint64_t timeout = (timeout_ms == 0xFFFF) ? UINT64_MAX : timeout_ms;
+	int status = semaphore_wait((semaphore_t*) handle, 1, timeout);
+	if (status == SEMAPHORE_TIMEOUT) {
+		// printf_serial("[UACPI] uacpi_kernel_acquire_mutex() - timeout\r\n");
+		return UACPI_STATUS_TIMEOUT;
+	}
+	// printf_serial("[UACPI] uacpi_kernel_acquire_mutex() - success\r\n");
+	return UACPI_STATUS_OK;
+}
 
+void uacpi_kernel_release_mutex(uacpi_handle handle) {
+	// printf_serial("[UACPI] uacpi_kernel_release_mutex(0x%llx) called\r\n", (uint64_t) handle);
+	if (!handle) return;
+	semaphore_signal((semaphore_t*) handle, 1);
+}
 /*
  * Try to wait for an event (counter > 0) with a millisecond timeout.
  * A timeout value of 0xFFFF implies infinite wait.
@@ -366,58 +658,51 @@ void uacpi_kernel_release_mutex(uacpi_handle);
  *
  * A successful wait is indicated by returning UACPI_TRUE.
  */
-uacpi_bool uacpi_kernel_wait_for_event(uacpi_handle, uacpi_u16);
+uacpi_bool uacpi_kernel_wait_for_event(uacpi_handle handle, uacpi_u16 timeout_ms) {
+	printf_serial("[UACPI] uacpi_kernel_wait_for_event(0x%llx, %u) called\r\n", (uint64_t) handle, timeout_ms);
+	if (!handle) return 0;
+	uint64_t timeout = (timeout_ms == 0xFFFF) ? UINT64_MAX : timeout_ms;
+	int status = semaphore_wait((semaphore_t*) handle, 1, timeout);
+	uacpi_bool result = status == SEMAPHORE_SUCCESS ? 1 : 0;
+	printf_serial("[UACPI] uacpi_kernel_wait_for_event() - returning %d\r\n", result);
+	return result;
+}
 
 /*
  * Signal the event object by incrementing its internal counter by 1.
  *
  * This function may be used in interrupt contexts.
  */
-void uacpi_kernel_signal_event(uacpi_handle);
+void uacpi_kernel_signal_event(uacpi_handle handle) {
+	printf_serial("[UACPI] uacpi_kernel_signal_event(0x%llx) called\r\n", (uint64_t) handle);
+	if (!handle) return;
+	semaphore_signal((semaphore_t*) handle, 1);
+}
+
 
 /*
  * Reset the event counter to 0.
  */
-void uacpi_kernel_reset_event(uacpi_handle);
-
-/*
- * Handle a firmware request.
- *
- * Currently either a Breakpoint or Fatal operators.
- */
-uacpi_status uacpi_kernel_handle_firmware_request(uacpi_firmware_request*);
-
-/*
- * Install an interrupt handler at 'irq', 'ctx' is passed to the provided
- * handler for every invocation.
- *
- * 'out_irq_handle' is set to a kernel-implemented value that can be used to
- * refer to this handler from other API.
- */
-uacpi_status uacpi_kernel_install_interrupt_handler(
-	uacpi_u32 irq, uacpi_interrupt_handler, uacpi_handle ctx,
-	uacpi_handle* out_irq_handle
-);
-
-/*
- * Uninstall an interrupt handler. 'irq_handle' is the value returned via
- * 'out_irq_handle' during installation.
- */
-uacpi_status uacpi_kernel_uninstall_interrupt_handler(
-	uacpi_interrupt_handler, uacpi_handle irq_handle
-);
+void uacpi_kernel_reset_event(uacpi_handle handle) {
+	printf_serial("[UACPI] uacpi_kernel_reset_event(0x%llx) called\r\n", (uint64_t) handle);
+	if (!handle) return;
+	// Consume all available units in semaphore
+	while (semaphore_wait((semaphore_t*) handle, 1, 0) == SEMAPHORE_SUCCESS);
+	printf_serial("[UACPI] uacpi_kernel_reset_event() - complete\r\n");
+}
 
 
-#include <memory/spinlock.h>
 /*
  * Create/free a kernel spinlock object.
  *
  * Unlike other types of locks, spinlocks may be used in interrupt contexts.
  */
 uacpi_handle uacpi_kernel_create_spinlock(void) {
+	// printf_serial("[UACPI] uacpi_kernel_create_spinlock() called\r\n");
 	return spinlock_create();
 }
 void uacpi_kernel_free_spinlock(uacpi_handle handle) {
+	// printf_serial("[UACPI] uacpi_kernel_unlock_spinlock(0x%llx) called\r\n", (uint64_t) handle);
 	spinlock_destroy(handle);
 }
 
@@ -430,16 +715,27 @@ void uacpi_kernel_free_spinlock(uacpi_handle handle) {
  *
  * Note that lock is infalliable.
  */
-uacpi_cpu_flags uacpi_kernel_lock_spinlock(uacpi_handle handle);
-void uacpi_kernel_unlock_spinlock(uacpi_handle, uacpi_cpu_flags);
+uacpi_cpu_flags uacpi_kernel_lock_spinlock(uacpi_handle handle) {
+	if (!handle) return 0;
+	spinlock_lock((spinlock_t*) handle);
+	return 0; // Flags are ignored in single-core for now
+}
+
+void uacpi_kernel_unlock_spinlock(uacpi_handle handle, uacpi_cpu_flags flags) {
+	if (!handle) return;
+	spinlock_unlock((spinlock_t*) handle);
+}
 
 /*
  * Schedules deferred work for execution.
  * Might be invoked from an interrupt context.
  */
-uacpi_status uacpi_kernel_schedule_work(
-	uacpi_work_type, uacpi_work_handler, uacpi_handle ctx
-);
+uacpi_status uacpi_kernel_schedule_work(uacpi_work_type type, uacpi_work_handler handler, uacpi_handle ctx) {
+	printf_serial("[UACPI] uacpi_kernel_schedule_work(type=%d) called\r\n", type);
+	printf("[UACPI] Warning: schedule_work called but not implemented\n");
+	return UACPI_STATUS_UNIMPLEMENTED;
+}
+
 
 /*
  * Waits for two types of work to finish:
@@ -448,6 +744,11 @@ uacpi_status uacpi_kernel_schedule_work(
  *
  * Note that the waits must be done in this order specifically.
  */
-uacpi_status uacpi_kernel_wait_for_work_completion(void);
+uacpi_status uacpi_kernel_wait_for_work_completion(void) {
+	printf("[UACPI] Warning: wait_for_work_completion called but not implemented\n");
+	printf_serial("[UACPI] uacpi_kernel_wait_for_work_completion() called\r\n");
+
+	return UACPI_STATUS_UNIMPLEMENTED;
+}
 
 #endif // WALLOS_USE_UACPI

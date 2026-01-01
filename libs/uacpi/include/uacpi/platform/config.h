@@ -124,7 +124,7 @@ UACPI_BUILD_BUG_ON_WITH_MSG(
  *   ECAM, etc., but doesn't yet have enough subsystems implemented in order
  *   to run a fully-featured AML interpreter.
  */
-#define UACPI_BAREBONES_MODE
+// #define UACPI_BAREBONES_MODE
 
 /*
  * =============

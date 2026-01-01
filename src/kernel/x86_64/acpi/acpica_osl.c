@@ -273,6 +273,34 @@ void AcpiOsStall(UINT32 Microseconds) {
 	acpica_failure(__func__);
 }
 
+ACPI_STATUS AcpiOsEnterSleep(UINT8 SleepState, UINT32 RegaValue, UINT32 RegbValue) {
+
+	// Log what's happening 
+	printf_serial("Entering sleep state S%u (PM1a=0x%X, PM1b=0x%X)\n", SleepState, RegaValue, RegbValue);
+
+	// Sleep state should be one of these
+	// We only use state 5 (full shutdown) right now.
+	switch (SleepState) {
+		case 1: // S1 - CPU sleep
+		case 2: // S2 - CPU sleep + some devices off
+		case 3: // S3 - Suspend to RAM
+			// You might want to flush caches, save state, etc.
+			break;
+
+		case 4: // S4 - Suspend to disk (hibernation)
+			// Save all memory to disk if you support hibernation
+			break;
+
+		case 5: // S5 - Soft off (shutdown)
+			// Final cleanup before power off
+			// Disable interrupts (should already be done)
+			asm volatile("cli");
+			break;
+	}
+
+	return AE_OK;
+}
+
 // // Mutexes and Spinlocks
 // ACPI_STATUS AcpiOsCreateMutex(ACPI_MUTEX* OutHandle) {
 // 	acpica_failure(__func__);
