@@ -139,8 +139,13 @@ coordinate_pair current = { 0, 0 };
 // 	apollo_print_char()
 // }
 
+
 void pixel_serial(apollo_pixel_type type) {
+	printf_serial("type: %d\t");
 	switch (type) {
+		case APOLLO_PIXEL_TYPE_ARGB8888:
+			printf_serial("ARGB8888");
+			break;
 		case APOLLO_PIXEL_TYPE_UNKNOWN:
 			printf_serial("Unknown Pixel Type");
 			break;
@@ -179,6 +184,9 @@ void pixel_serial(apollo_pixel_type type) {
 			break;
 	}
 }
+#endif // APOLLO_TEST
+
+#include <klibc/display.h>
 
 void framebuffer() {
 	multiboot_tag_framebuffer* e = MultibootManager::getFramebufferTag();
@@ -187,34 +195,34 @@ void framebuffer() {
 
 	if (e->common.framebuffer_type == 1) {
 		// TODO: actually get the pixel type.
-		framebuffer_info_t fb_info;
-		framebuffer_t fb;
-		print_fb_info();
+		// framebuffer_info_t fb_info;
+		// framebuffer_t fb;
+		// print_fb_info();
 
-		apollo_get_info(&fb_info);
+		// apollo_get_info(&fb_info);
 
-		printf_serial("here\r\n");
-		printf_serial("Framebuffer Info:\r\n");
-		printf_serial("\tWidth: %i\r\n", fb_info.width);
-		printf_serial("\tHeight: %i\r\n", fb_info.height);
-		printf_serial("\tPitch: %i\r\n", fb_info.pitch);
-		printf_serial("\tPixel Width: %i\r\n\t", fb_info.pixel_width);
-		pixel_serial(fb_info.type);
-		printf_serial("\r\n");
+		// printf_serial("Framebuffer Info:\r\n");
+		// printf_serial("\tWidth: %i\r\n", fb_info.width);
+		// printf_serial("\tHeight: %i\r\n", fb_info.height);
+		// printf_serial("\tPitch: %i\r\n", fb_info.pitch);
+		// printf_serial("\tPixel Width: %i\r\n\t", fb_info.pixel_width);
+		// pixel_serial(fb_info.type);
+		// printf_serial("\r\n");
 
-		printf_serial("Framebuffer total length: %llu bytes.\r\n", fb_info.height * fb_info.width * fb_info.pixel_width);
+		// printf_serial("Framebuffer total length: %llu bytes.\r\n", fb_info.height * fb_info.width * fb_info.pixel_width);
 
-		//fb.buffer = (uint8_t*) kalloc(fb_info.height * fb_info.width * fb_info.pixel_width);
-		fb.buffer = (uint8_t*) e->common.framebuffer_addr;
+		// //fb.buffer = (uint8_t*) kalloc(fb_info.height * fb_info.width * fb_info.pixel_width);
+		// fb.buffer = (uint8_t*) e->common.framebuffer_addr;
 
-		printf_serial("Double buffer location: %p\r\n", fb.buffer);
+		// printf_serial("Double buffer location: %p\r\n", fb.buffer);
 
-		fb.info = &fb_info;
+		// fb.info = &fb_info;
 
 		//apollo_color_t fg = { 0, 0xff, 0xff, 0xff, APOLLO_PIXEL_TYPE_ARGB8888 };
-		apollo_color_t fg = { 0, 0x1f, 0, 0x1f, APOLLO_PIXEL_TYPE_RGB16_565 };
-		apollo_color_t bg = { 0, 0, 0, 0, APOLLO_PIXEL_TYPE_RGBA32 };
-		apollo_font_color_t c = { fg, bg };
+		// apollo_color_t fg = { .alpha = 0, .red = 0, .green = 0x1f, .blue = 0x1f, .type = APOLLO_PIXEL_TYPE_RGB16_565 };
+		// apollo_color_t fg = { .alpha = 255, .red = 0, .green = 255, .blue = 255, .type = APOLLO_PIXEL_TYPE_ARGB8888 };
+		// apollo_color_t bg = { 0, 0, 0, 0, APOLLO_PIXEL_TYPE_RGBA32 };
+		// apollo_font_color_t c = { fg, bg };
 
 		//apollo_print_char(&fb, &apollo_8x8, 'a', (coordinate_pair) { 0, 0 }, c);
 
@@ -253,16 +261,20 @@ void framebuffer() {
 			0xcd, 0xbc, 0x0a, '\0'
 		};
 
-		apollo_print_string(&fb, &apollo_12x18, (const char*) a, (coordinate_pair) { 0, 0 }, c, true, true);
-		coordinate_pair pair[] = {
-			{0, 0},
-			{100, 100},
-			{100, 150}
-		};
+		// apollo_font_instance fi = { .font = &apollo_12x18, .x_scaling = 1, .y_scaling = 1 };
 
-		//apollo_draw_triangle(&fb, pair, fg);
-		//apollo_fill_buffer(&fb, fg);
-		apollo_draw_buffer(&fb);
+		// apollo_print_string(&fb, &fi, (const char*) a, (coordinate_pair) { 0, 0 }, c, true, true);
+		// coordinate_pair pair[] = {
+		// 	{0, 0},
+		// 	{100, 100},
+		// 	{100, 150}
+		// };
+
+		// //apollo_draw_triangle(&fb, pair, fg);
+		// //apollo_fill_buffer(&fb, fg);
+		// apollo_draw_buffer(&fb);
+
+		display_puts((const char*) a);
 
 		//__asm __volatile("cli\n\thlt");
 
@@ -272,7 +284,6 @@ void framebuffer() {
 	}
 
 }
-#endif // APOLLO_TEST
 
 #include <drivers/sata/pio.h>
 
@@ -280,8 +291,6 @@ void framebuffer() {
 #define JANKY_INITRD_LOADER
 #ifdef JANKY_INITRD_LOADER
 extern "C" {
-	// extern int drive_mount_cmd(int argc, char** argv);
-
 	extern uint64_t _initrd_start_;
 	extern uint64_t _initrd_end_;
 	uint64_t _initrd_size;
@@ -289,17 +298,12 @@ extern "C" {
 }
 
 void init_initrd() {
-	// size_t size = (size_t) _binary_initrd_img_size;
-	// const uint8_t* data = _binary_initrd_img_start;
-
 	_initrd_size = (size_t) &_initrd_end_ - (size_t) &_initrd_start_;
 	_initrd_data = (uint8_t*) &_initrd_start_;
 
 	printf_serial("Initrd start: 0x%llx\r\n", &_initrd_start_);
 	printf_serial("Initrd end: 0x%llx\r\n", &_initrd_end_);
 	printf_serial("Initrd size: %llu bytes\r\n", (uint64_t) &_initrd_end_ - (uint64_t) &_initrd_start_);
-
-	// now you can feed `data` and `size` into your FS code
 }
 #endif // JANKY_INITRD_LOADER
 
@@ -321,7 +325,21 @@ void kernel_main(unsigned int magic, multiboot_info* mbt_info) {
 
 	multiboot_tag_framebuffer* e = MultibootManager::getFramebufferTag();
 	Memory::mapFramebuffer((uintptr_t) e->common.framebuffer_addr, e->common.framebuffer_height * e->common.framebuffer_pitch);
-	//	framebuffer_init();
+
+	// framebuffer_init();
+	display_mode_t display_mode = DISPLAY_MODE_VGA_TEXT;
+	if (e->common.type == MULTIBOOT_FRAMEBUFFER_TYPE_RGB) display_mode = DISPLAY_MODE_FRAMEBUFFER;
+
+	display_init(display_mode);
+	// uint32_t width = (int) e->common.framebuffer_width;
+	// uint32_t height = (int) e->common.framebuffer_height;
+	// uint32_t pitch = (int) e->common.framebuffer_pitch;
+	// uint8_t pixel_width = e->common.framebuffer_bpp / 8;
+
+	// printf_serial(
+	// 	"[FB] Framebuffer info: \r\n\tWidth: %llu\r\n\tHeight: %llu\r\n\tPitch: %llu\r\n\tPixel Width: %llu\r\n",
+	// 	width, height, pitch, pixel_width
+	// );
 
 	// We get initrd from grub via a multiboot module tag.
 	// We *should* be reserving this memory so it doesn't get allocated to something else.
@@ -380,7 +398,7 @@ void kernel_main(unsigned int magic, multiboot_info* mbt_info) {
 
 	initKernelAllocator();
 
-	//framebuffer();
+	framebuffer();
 
 	Syscall::initialize();
 

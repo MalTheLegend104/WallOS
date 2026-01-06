@@ -23,7 +23,7 @@ static int g_fb_cursor_y = 0;
 // Color Conversion
 // ------------------------------------------------------------------------------------------------
 static apollo_color_t display_color_to_apollo(display_color_t color) {
-	apollo_color_t result = { 255, 0, 0, 0, APOLLO_PIXEL_TYPE_ARGB8888 };
+	apollo_color_t result = { .alpha = 255, .red = 0, .green = 0, .blue = 0, .type = APOLLO_PIXEL_TYPE_ARGB8888 };
 
 	switch (color) {
 		case DISPLAY_COLOR_BLACK:       result.red = 0;   result.green = 0;   result.blue = 0;   break;

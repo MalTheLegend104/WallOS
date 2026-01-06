@@ -12,6 +12,9 @@
  * They both require a pretty much identical interface.
  * ACPICA tends to be way better at helping diagnose system problems, uACPI doesn't supply great error information.
  * uACPI is significantly less resource intensive and much quicker to run.
+ *
+ * Only one of these can be built at a time (intentionally). I was considering letting them both exist,
+ * and still could "relatively" easily, but think it would just cause more problems than it's worth.
  */
-// #define WALLOS_USE_ACPICA 1
-#define WALLOS_USE_UACPI 1
+#define WALLOS_USE_ACPICA 1
+// #define WALLOS_USE_UACPI 1
