@@ -5,6 +5,5 @@
 #include <multiboot.h>
 
 void print_fb_info();
-void framebuffer_init();
 
 #endif

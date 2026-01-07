@@ -8,15 +8,6 @@
 #include <system/ktime.h>
 #include <klibc/kprint.h>
 
-// Color Definitions
-#define COLOR_DIR      VGA_COLOR_LIGHT_CYAN
-#define COLOR_FILE     VGA_COLOR_LIGHT_GREEN
-#define COLOR_METADATA VGA_COLOR_LIGHT_GREY
-#define COLOR_ERROR    VGA_COLOR_RED
-#define COLOR_DEFAULT  VGA_DEFAULT_FG
-#define COLOR_BRANCH   VGA_COLOR_DARK_GREY
-#define COLOR_SIZE     VGA_COLOR_LIGHT_GREY
-
 // FatFs Global Objects
 FATFS fs_objects[FF_VOLUMES]; // Array of FATFS structures for each drive (0-3)
 bool drive_mounted[FF_VOLUMES] = { false };
@@ -119,16 +110,14 @@ int drive_ls_cmd(int argc, char** argv) {
 	DIR dir;
 	FILINFO fno;
 
-	set_colors(VGA_COLOR_WHITE, VGA_DEFAULT_BG);
+	display_set_colors(PRINT_COLOR_WHITE, PRINT_DEFAULT_BG);
 	printf("Listing directory: %s\n", path);
 	printf("----------------------------------------\n");
-	set_to_last();
+	display_set_colors_default();
 
 	res = f_opendir(&dir, path);
 	if (res != FR_OK) {
-		set_colors(COLOR_ERROR, VGA_DEFAULT_BG);
-		printf("Error opening directory. FatFs code: %d\n", res);
-		set_to_last();
+		printf_color(PRINT_COLOR_RED, PRINT_DEFAULT_BG, "Error opening directory. FatFs code: %d\n", res);
 		return 0;
 	}
 
@@ -138,39 +127,35 @@ int drive_ls_cmd(int argc, char** argv) {
 		if (res != FR_OK || fno.fname[0] == 0) break;
 		if (strcmp(fno.fname, ".") == 0 || strcmp(fno.fname, "..") == 0) continue;
 
-		vga_color item_color = (fno.fattrib & AM_DIR) ? COLOR_DIR : COLOR_FILE;
+		vga_color item_color = (fno.fattrib & AM_DIR) ? VGA_COLOR_LIGHT_CYAN : VGA_COLOR_LIGHT_GREEN;
 
 		// Print Attribute
 		if (flags & LS_FLAG_ATTRIB) {
-			set_colors(COLOR_METADATA, VGA_DEFAULT_BG);
-			printf("%s", (fno.fattrib & AM_DIR) ? "[D] " : "[-] ");
-			set_to_last();
+			printf_color(PRINT_COLOR_LIGHT_GREY, PRINT_DEFAULT_BG, "%s", (fno.fattrib & AM_DIR) ? "[D] " : "[-] ");
 		}
 
 		// Print Size
 		if (flags & LS_FLAG_SIZE) {
-			set_colors(COLOR_METADATA, VGA_DEFAULT_BG);
+			display_set_colors(PRINT_COLOR_LIGHT_GREY, PRINT_DEFAULT_BG);
 			if (!(fno.fattrib & AM_DIR)) {
 				print_file_size(fno.fsize);
 				printf("\t");
 			} else {
 				printf("<DIR>\t");
 			}
-			set_to_last();
+			display_set_colors_default();
 		}
 
 		// Print Time
 		if (flags & LS_FLAG_TIME) {
-			set_colors(COLOR_METADATA, VGA_DEFAULT_BG);
+			display_set_colors(PRINT_COLOR_LIGHT_GREY, PRINT_DEFAULT_BG);
 			print_fattime(fno.fdate, fno.ftime);
 			printf("\t");
-			set_to_last();
+			display_set_colors_default();
 		}
 
 		// Print Filename
-		set_colors(item_color, VGA_DEFAULT_BG);
-		printf("%s\n", fno.fname);
-		set_to_last();
+		printf_color(item_color, PRINT_DEFAULT_BG, "%s\n", fno.fname);
 	}
 
 	f_closedir(&dir);
@@ -210,9 +195,9 @@ static void print_tree_recursive(char* path, const char* indent_prefix) {
 	strcpy(current_path_copy, path);
 	res = f_opendir(&dir, current_path_copy);
 	if (res != FR_OK) {
-		set_colors(VGA_COLOR_RED, VGA_DEFAULT_BG);
+		display_set_colors(PRINT_COLOR_RED, PRINT_DEFAULT_BG);
 		printf("%s└── READ ERROR (%d)\n", indent_prefix, res);
-		set_to_last();
+		display_set_colors_default();
 		return;
 	}
 
@@ -259,10 +244,9 @@ static void print_tree_recursive(char* path, const char* indent_prefix) {
 		strcpy(next_indent_prefix, indent_prefix);
 		strcat(next_indent_prefix, next_indent_segment);
 
-		// Print Current Entry 
-		set_colors(COLOR_BRANCH, VGA_DEFAULT_BG);
-		printf("%s%s", indent_prefix, branch_prefix);
-		set_to_last();
+		// Print Current Entry
+		printf_color(PRINT_COLOR_DARK_GREY, PRINT_DEFAULT_BG, "%s%s", indent_prefix, branch_prefix);
+
 
 		// Path Construction for Next Level (same logic as before)
 		strcpy(next_path, path);
@@ -274,22 +258,20 @@ static void print_tree_recursive(char* path, const char* indent_prefix) {
 		// Output and Recurse
 		if (fno.fattrib & AM_DIR) {
 			// Directory: Print the name, then recurse
-			set_colors(COLOR_DIR, VGA_DEFAULT_BG);
-			printf("%s\n", fno.fname);
-			set_to_last();
+			printf_color(PRINT_COLOR_LIGHT_CYAN, PRINT_DEFAULT_BG, "%s\n", fno.fname);
+
 			print_tree_recursive(next_path, next_indent_prefix);
 		} else {
 			// File: Print name and size
-			set_colors(COLOR_FILE, VGA_DEFAULT_BG);
-			printf("%s", fno.fname);
-			set_to_last();
+			printf_color(PRINT_COLOR_LIGHT_GREEN, PRINT_DEFAULT_BG, "%s", fno.fname);
+
 
 			// Print size metadata in a separate color
-			set_colors(COLOR_SIZE, VGA_DEFAULT_BG);
+			display_set_colors(PRINT_COLOR_LIGHT_GREY, PRINT_DEFAULT_BG);
 			printf(" (");
 			print_file_size(fno.fsize);
 			printf(")\n");
-			set_to_last();
+			display_set_colors_default();
 		}
 	}
 
@@ -311,9 +293,8 @@ int drive_tree_cmd(int argc, char** argv) {
 	printf("========================================\n");
 
 	// Print the root node explicitly
-	set_colors(COLOR_BRANCH, VGA_DEFAULT_BG);
-	printf("[ROOT] %s\n", mutable_path);
-	set_to_last();
+	printf_color(PRINT_COLOR_DARK_GREY, PRINT_DEFAULT_BG, "[ROOT] %s\n", mutable_path);
+
 
 	// Initial call: Start recursion from the root path with an empty indent prefix.
 	// We pass the root path again, and the root itself will handle the rest.

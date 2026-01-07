@@ -283,7 +283,7 @@ void Memory::mapFramebuffer(uintptr_t base_addr, size_t size) {
 	// We need to map the memory region provided into both physical and virtual memory.
 	Memory::reserveMemory(base_addr, size);
 
-	printf_serial("Framebuffer is at 0x%llx, at size 0x%llx\r\n", base_addr, size);
+	// printf_serial("Framebuffer is at 0x%llx, at size 0x%llx\r\n", base_addr, size);
 	// The framebuffer should be in kernel memory
 
 	// amount of 2mb sections this takes up

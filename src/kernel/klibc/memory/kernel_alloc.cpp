@@ -158,10 +158,9 @@ void initSlab(uint64_t object_size) {
  * @brief Initializes the kernel allocator. Creates a 2, 4, 8, and 4096 cache.
  */
 void initKernelAllocator() {
-	set_colors(VGA_COLOR_LIGHT_GREEN, VGA_DEFAULT_BG);
-	printf("Initializing Kernel Slab Allocator.\n");
-	set_to_last();
-	set_colors(VGA_COLOR_GREEN, VGA_DEFAULT_BG);
+	printf_color(PRINT_COLOR_LIGHT_GREEN, PRINT_DEFAULT_BG, "Initializing Kernel Slab Allocator.\n");
+
+	display_set_colors(PRINT_COLOR_GREEN, PRINT_DEFAULT_BG);
 
 	initSlab(WORD);
 	printf("\t%u Byte Header Initialized.\n", WORD);
@@ -178,7 +177,7 @@ void initKernelAllocator() {
 	createSpanList();
 	printf("\t%u Byte Header Initialized.\n", sizeof(allocated_span_t));
 
-	set_to_last();
+	display_set_colors_default();
 }
 
 /**

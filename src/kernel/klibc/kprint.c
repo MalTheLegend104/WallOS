@@ -361,6 +361,9 @@ void initScreen() {
 	puts_vga_color("\n\nIntializing OS.\n", VGA_COLOR_PINK, VGA_COLOR_BLACK);
 }
 
+
+#include <klibc/display.h>
+
 /**
  * @brief Prints the logo to the screen.
  */
@@ -400,9 +403,10 @@ void print_logo() {
 		0xcd, 0xcd, 0xcd, 0xcd, 0xcd, 0xcd, 0xbc, 0xc8, 0xcd, 0xcd,
 		0xcd, 0xcd, 0xcd, 0xcd, 0xbc, 0x20, 0xc8, 0xcd, 0xcd, 0xcd,
 		0xcd, 0xcd, 0xbc, 0x20, 0xc8, 0xcd, 0xcd, 0xcd, 0xcd, 0xcd,
-		0xcd, 0xbc, 0x0a
+		0xcd, 0xbc, 0x0a, '\0'
 	};
-	set_colors(VGA_COLOR_LIGHT_CYAN, VGA_COLOR_BLACK);
-	putuc_vga(a, (sizeof(a) / sizeof(a[0])));
-	set_to_last();
+	// set_colors(VGA_COLOR_LIGHT_CYAN, VGA_COLOR_BLACK);
+	// putuc_vga(a, (sizeof(a) / sizeof(a[0])));
+	// set_to_last();
+	printf_color(PRINT_COLOR_LIGHT_CYAN, PRINT_DEFAULT_BG, "%s", a);
 }

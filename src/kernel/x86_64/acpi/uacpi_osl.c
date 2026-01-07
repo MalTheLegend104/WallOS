@@ -32,9 +32,7 @@ void uacpi_failure(const char* str) {
 }
 
 void uacpi_printf(vga_color color, const char* fmt, const char* str) {
-	set_colors(color, VGA_DEFAULT_BG);
-	printf(fmt, str);
-	set_to_last();
+	printf_color(color, PRINT_DEFAULT_BG, fmt, str);
 }
 
 // Returns the PHYSICAL address of the RSDP structure via *out_rsdp_address.

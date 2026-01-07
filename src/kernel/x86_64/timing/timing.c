@@ -30,9 +30,7 @@ void incriment_sys_time() {
 void pit_init(uint16_t frequency_ms) {
 	system_execution_time = 0;
 
-	set_colors(VGA_COLOR_LIGHT_CYAN, VGA_COLOR_BLACK);
-	printf("Install Timer at %dHz\n", frequency_ms);
-	set_to_last();
+	printf_color(PRINT_COLOR_LIGHT_CYAN, PRINT_COLOR_BLACK, "Install Timer at %dHz\n", frequency_ms);
 
 	// Channel 0 Mode 2 for the most accuracy.
 	// It aint perfect but it's close enough

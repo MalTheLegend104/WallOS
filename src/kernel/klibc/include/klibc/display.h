@@ -88,7 +88,7 @@ extern "C" {
 	 * @param fg Foreground color
 	 * @param bg Background color
 	 */
-	void display_set_colors(display_color_t fg, display_color_t bg);
+	void display_set_colors(int fg, int bg);
 
 	/**
 	 * @brief Reset colors to default (light grey on black)
@@ -99,7 +99,7 @@ extern "C" {
 	 * @brief Print a single character
 	 * @param c Character to print
 	 */
-	void display_putc(char c);
+	void display_putc(unsigned char c);
 
 	/**
 	 * @brief Print a single character without filtering (no newline processing)
@@ -120,6 +120,30 @@ extern "C" {
 	 * @param bg Background color
 	 */
 	void display_puts_color(const char* str, display_color_t fg, display_color_t bg);
+
+
+	/* Both of these printf wrappers use ints rather than display_color_t because it makes them infinitely easier to `extern` when needed. */
+	/**
+	 * @brief Printf wrapper that lets you set the text colors.
+	 *
+	 * @param fg Foreground color
+	 * @param bg Background color
+	 * @param fmt Format string
+	 * @param ... args
+	 * @return int
+	 */
+	int printf_color(int fg, int bg, const char* fmt, ...);
+
+	/**
+	 * @brief vprintf wrapper that lets you set the text colors
+	 *
+	 * @param fg Foreground color
+	 * @param bg Background color
+	 * @param fmt Format string
+	 * @param arg args
+	 * @return int
+	 */
+	int vprintf_color(int fg, int bg, const char* fmt, va_list arg);
 
 	/**
 	 * @brief Enable cursor display

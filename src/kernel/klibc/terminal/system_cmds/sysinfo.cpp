@@ -20,15 +20,12 @@ extern "C" {
 }
 
 void printValue(const char* title, const char* format, ...) {
-	set_colors(VGA_COLOR_PINK, VGA_DEFAULT_BG);
-	printf(title);
-	set_to_last();
-	set_colors(VGA_COLOR_LIGHT_GREY, VGA_DEFAULT_BG);
+	printf_color(PRINT_COLOR_PINK, PRINT_DEFAULT_BG, title);
+
 	va_list arg;
 	va_start(arg, format);
-	vprintf(format, arg);
+	vprintf_color(PRINT_COLOR_LIGHT_GREY, PRINT_DEFAULT_BG, format, arg);
 	va_end(arg);
-	set_to_last();
 }
 
 void printUptime() {
@@ -52,11 +49,10 @@ void printUptime() {
 
 	size_t seconds = time / 0x3E8; // 0x3E8 = 1000
 	time %= 0x3E8;
-	set_colors(VGA_COLOR_PINK, VGA_DEFAULT_BG);
-	printf("Uptime: ");
-	set_to_last();
+	printf_color(PRINT_COLOR_PINK, PRINT_DEFAULT_BG, "Uptime: ");
 
-	set_colors(VGA_COLOR_LIGHT_GREY, VGA_DEFAULT_BG);
+
+	display_set_colors(PRINT_COLOR_LIGHT_GREY, PRINT_DEFAULT_BG);
 	if (years > 0) {
 		printf("%lldy ", years);
 	}
@@ -76,7 +72,7 @@ void printUptime() {
 		printf("%llds ", seconds);
 	}
 	printf("%lldms \n", time);
-	set_to_last();
+	display_set_colors_default();
 }
 
 // The first physical page begins after the kernel, rounded up.

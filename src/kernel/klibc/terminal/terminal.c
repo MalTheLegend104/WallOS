@@ -6,6 +6,7 @@
 #include <drivers/keyboard.h>
 #include <klibc/kprint.h>
 #include <klibc/logger.h>
+#include <klibc/display.h>
 
 char previousCommands[PREVIOUS_COMMAND_BUF_SIZE][MAX_COMMAND_BUF];
 size_t previous_commands_size = 0;
@@ -62,11 +63,12 @@ bool startsWith(const char* str, const char* prefix) {
 }
 
 void helpSearch(char* str) {
-	set_colors(VGA_COLOR_YELLOW, VGA_DEFAULT_BG);
-	printf("List of commands starting with \"%s\":\n", str);
-	set_to_last();
+	printf_color(PRINT_COLOR_YELLOW, PRINT_DEFAULT_BG, "List of commands starting with \"%s\":\n", str);
+
+
 	for (int i = 0; i < MAX_COMMAND_COUNT; i++) {
-		set_colors(VGA_COLOR_LIGHT_GREEN, VGA_DEFAULT_BG);
+		display_set_colors(PRINT_COLOR_LIGHT_GREEN, PRINT_DEFAULT_BG);
+
 		if (commands[i].commandName && startsWith(commands[i].commandName, str)) {
 			printf("\t%s\n", commands[i].commandName);
 		}
@@ -77,10 +79,10 @@ void helpSearch(char* str) {
 				printf("\t%s (A)\n", commands[i].aliases[alias_idx]);
 			}
 		}
-		set_to_last();
+		display_set_colors_default();
 	}
 }
-#pragma GCC diagnostic ignored "-Wunused-parameter" 
+#pragma GCC diagnostic ignored "-Wunused-parameter"
 int helpHelp(int argc, char** argv) {
 	const char* optional[] = {
 				"-s <string> -> Lists all commands and aliases that start with <string>."
@@ -112,9 +114,9 @@ int helpMain(int argc, char** argv) {
 		if (argc > 1) {
 			if ((strcmp(argv[0], "-s") == 0) || (strcmp(argv[0], "-search") == 0)) {
 				if (argc == 1) {
-					set_colors(VGA_COLOR_LIGHT_RED, VGA_DEFAULT_BG);
-					printf("Search flag must be followed by an arguement.\n");
-					set_to_last();
+					printf_color(PRINT_COLOR_LIGHT_RED, PRINT_DEFAULT_BG, "Search flag must be followed by an arguement.\n");
+
+
 				} else {
 					helpSearch(argv[1]);
 					return 0;
@@ -128,9 +130,9 @@ int helpMain(int argc, char** argv) {
 			if (commands[i].commandName && strcmp(commands[i].commandName, argv[0]) == 0) {
 				// No help function for command.
 				if (!commands[i].helpCommand) {
-					set_colors(VGA_COLOR_LIGHT_RED, VGA_DEFAULT_BG);
-					printf("Command \"%s\" does not have a help function.\n", argv[0]);
-					set_to_last();
+					printf_color(PRINT_COLOR_LIGHT_RED, PRINT_DEFAULT_BG, "Command \"%s\" does not have a help function.\n", argv[0]);
+
+
 					return 0;
 				}
 
@@ -138,9 +140,9 @@ int helpMain(int argc, char** argv) {
 				int result = commands[i].helpCommand(argc, argv);
 				if (result != 0) {
 					// If the command function returns a non-zero value, it may indicate an error
-					set_colors(VGA_COLOR_LIGHT_RED, VGA_DEFAULT_BG);
-					printf("Command exited with code: %d\n", result);
-					set_to_last();
+					printf_color(PRINT_COLOR_LIGHT_RED, PRINT_DEFAULT_BG, "Command exited with code: %d\n", result);
+
+
 				}
 				return 0;
 			}
@@ -150,9 +152,9 @@ int helpMain(int argc, char** argv) {
 				if (commands[i].aliases[alias_idx] && strcmp(commands[i].aliases[alias_idx], argv[0]) == 0) {
 					// No help function for command.
 					if (!commands[i].helpCommand) {
-						set_colors(VGA_COLOR_LIGHT_RED, VGA_DEFAULT_BG);
-						printf("Command \"%s\" does not have a help function.\n", argv[0]);
-						set_to_last();
+						printf_color(PRINT_COLOR_LIGHT_RED, PRINT_DEFAULT_BG, "Command \"%s\" does not have a help function.\n", argv[0]);
+
+
 						return 0;
 					}
 
@@ -160,43 +162,44 @@ int helpMain(int argc, char** argv) {
 					int result = commands[i].helpCommand(argc, argv);
 					if (result != 0) {
 						// If the command function returns a non-zero value, it may indicate an error
-						set_colors(VGA_COLOR_LIGHT_RED, VGA_DEFAULT_BG);
-						printf("Command exited with code: %d\n", result);
-						set_to_last();
+						printf_color(PRINT_COLOR_LIGHT_RED, PRINT_DEFAULT_BG, "Command exited with code: %d\n", result);
+
+
 					}
 					return 0;
 				}
 			}
 		}
 		// If the command is not found in the registered commands or their aliases
-		set_colors(VGA_COLOR_LIGHT_RED, VGA_DEFAULT_BG);
-		printf("Help command not found for: %s\n", argv[0]);
-		set_to_last();
+		printf_color(PRINT_COLOR_LIGHT_RED, PRINT_DEFAULT_BG, "Help command not found for: %s\n", argv[0]);
+
+
 		return 0;
 	} else {
 		printf("\n");
-		set_colors(VGA_COLOR_CYAN, VGA_DEFAULT_BG);
-		printf("To get more info about a command, run `help <command_name>`\n");
-		set_to_last();
-		set_colors(VGA_COLOR_YELLOW, VGA_DEFAULT_BG);
-		printf("All commands:\n");
-		set_to_last();
+		printf_color(PRINT_COLOR_CYAN, PRINT_DEFAULT_BG, "To get more info about a command, run `help <command_name>`\n");
 
-		set_colors(VGA_COLOR_LIGHT_GREEN, VGA_DEFAULT_BG);
+
+		printf_color(PRINT_COLOR_YELLOW, PRINT_DEFAULT_BG, "All commands:\n");
+
+
+
+		display_set_colors(PRINT_COLOR_LIGHT_GREEN, PRINT_DEFAULT_BG);
+
 		// List all available commands
 		for (int i = 0; i < MAX_COMMAND_COUNT; i++) {
 			if (commands[i].commandName) {
 				printf("  %s\n", commands[i].commandName);
 			}
 		}
-		set_to_last();
+		display_set_colors_default();
 		printf("\n");
 	}
 	return 0;
 }
 
 const char* historyAliases[] = { "hist" };
-#pragma GCC diagnostic ignored "-Wunused-parameter" 
+#pragma GCC diagnostic ignored "-Wunused-parameter"
 int historyHelp(int argc, char** argv) {
 	HelpEntryGeneral entry = {
 		"History",
@@ -211,11 +214,12 @@ int historyHelp(int argc, char** argv) {
 }
 
 int historyCommand(int argc, char** argv) {
-	set_colors(VGA_COLOR_YELLOW, VGA_DEFAULT_BG);
+	display_set_colors(PRINT_COLOR_YELLOW, PRINT_DEFAULT_BG);
+
 	for (size_t i = 0; i < previous_commands_size; i++) {
 		printf("%s\n", previousCommands[i]);
 	}
-	set_to_last();
+	display_set_colors_default();
 	return 0;
 }
 
@@ -264,9 +268,9 @@ void executeCommand(char* commandBuf) {
 			int result = commands[i].mainCommand(argc, argv);
 			if (result != 0) {
 				// If the command function returns a non-zero value, it may indicate an error
-				set_colors(VGA_COLOR_LIGHT_RED, VGA_DEFAULT_BG);
-				printf("Command exited with code: %d\n", result);
-				set_to_last();
+				printf_color(PRINT_COLOR_LIGHT_RED, PRINT_DEFAULT_BG, "Command exited with code: %d\n", result);
+
+
 			}
 			return;
 		}
@@ -278,9 +282,9 @@ void executeCommand(char* commandBuf) {
 				int result = commands[i].mainCommand(argc, argv);
 				if (result != 0) {
 					// If the command function returns a non-zero value, it may indicate an error
-					set_colors(VGA_COLOR_LIGHT_RED, VGA_DEFAULT_BG);
-					printf("Command exited with code: %d\n", result);
-					set_to_last();
+					printf_color(PRINT_COLOR_LIGHT_RED, PRINT_DEFAULT_BG, "Command exited with code: %d\n", result);
+
+
 				}
 				return;
 			}
@@ -288,9 +292,9 @@ void executeCommand(char* commandBuf) {
 	}
 
 	// If the command is not found in the registered commands or their aliases
-	set_colors(VGA_COLOR_LIGHT_RED, VGA_DEFAULT_BG);
-	printf("Command not found: \"%s\"\n", argv[0]);
-	set_to_last();
+	printf_color(PRINT_COLOR_LIGHT_RED, PRINT_DEFAULT_BG, "Command not found: \"%s\"\n", argv[0]);
+
+
 }
 
 bool addAtPos(char* buf, size_t size, char c, size_t pos) {
@@ -305,9 +309,9 @@ bool addAtPos(char* buf, size_t size, char c, size_t pos) {
 
 void terminalMain() {
 	registerSystemCommands();
-	set_colors(VGA_COLOR_PINK, VGA_DEFAULT_BG);
-	printf("Initalizing Terminal...");
-	set_to_last();
+	printf_color(PRINT_COLOR_PINK, PRINT_DEFAULT_BG, "Initalizing Terminal...");
+
+
 	// Help and History have to be defined in this file.
 	// They both require access to the command buffers.
 	registerCommand((Command) { helpMain, helpHelp, "help", 0, 0 });
@@ -341,7 +345,7 @@ void terminalMain() {
 		if (state.escaped) {
 			switch (state.last_scancode) {
 				case SC_KEYPAD_2: // Down
-					clear_current_row();
+					display_clear_row();
 					if (position_in_previous > 0) {
 						position_in_previous--;
 						memset(commandBuf, 0, MAX_COMMAND_BUF);
@@ -356,7 +360,7 @@ void terminalMain() {
 					// Implement moving left across current command
 					continue;
 				case SC_KEYPAD_8: // Up
-					clear_current_row();
+					display_clear_row();
 					if (position_in_previous == 0) {
 						memset(oldCommand, 0, MAX_COMMAND_BUF);
 						memcpy(oldCommand, commandBuf, MAX_COMMAND_BUF);
@@ -422,7 +426,8 @@ void terminalMain() {
 			const char* list[50]; // List of current possible commands
 			int list_size = 0;
 			for (int i = 0; i < MAX_COMMAND_COUNT; i++) {
-				set_colors(VGA_COLOR_LIGHT_GREEN, VGA_DEFAULT_BG);
+				display_set_colors(PRINT_COLOR_LIGHT_GREEN, PRINT_DEFAULT_BG);
+
 				if (commands[i].commandName && startsWith(commands[i].commandName, commandBuf)) {
 					list[list_size] = commands[i].commandName;
 					list_size++;
@@ -445,7 +450,7 @@ void terminalMain() {
 						}
 					}
 				}
-				set_to_last();
+				display_set_colors_default();
 			}
 			if (list_size == 1) {
 				// Print the rest of the command
@@ -458,21 +463,22 @@ void terminalMain() {
 				tab_pressed = false;
 			} else if (tab_pressed) {
 				if (list_size == 0) {
-					set_colors(VGA_COLOR_LIGHT_RED, VGA_DEFAULT_BG);
-					printf("\nNo command starting with: %s\n", commandBuf);
-					set_to_last();
+					printf_color(PRINT_COLOR_LIGHT_RED, PRINT_DEFAULT_BG, "\nNo command starting with: %s\n", commandBuf);
+
+
 					// Clear the buffer
 					memset(commandBuf, 0, MAX_COMMAND_BUF * sizeof(char));
 					commandBuf[0] = '\0';
 					newCommand = true;
 				} else if (list_size > 1) {
 					// Print out all commands
-					set_colors(VGA_COLOR_YELLOW, VGA_DEFAULT_BG);
+					display_set_colors(PRINT_COLOR_YELLOW, PRINT_DEFAULT_BG);
 					printf("\n");
+
 					for (int i = 0; i < list_size; i++) {
 						printf("%s\n", list[i]);
 					}
-					set_to_last();
+					display_set_colors_default();
 					// Reprint the command line
 					printf("> %s", commandBuf);
 				}
@@ -485,7 +491,7 @@ void terminalMain() {
 			strcat_c(commandBuf, current, MAX_COMMAND_BUF);
 		}
 
-		// Eventually we have a shutdown command or smth. 
+		// Eventually we have a shutdown command or smth.
 	}
 }
 
@@ -496,43 +502,47 @@ void terminalMain() {
  */
 void printGeneralHelp(HelpEntryGeneral* entry) {
 	// Command Name
-	set_colors(VGA_COLOR_LIGHT_RED, VGA_DEFAULT_BG);
+	display_set_colors(PRINT_COLOR_LIGHT_RED, PRINT_DEFAULT_BG);
+
 	if (entry->commandName)
 		printf("\n%s\n", entry->commandName);
-	set_to_last();
+	display_set_colors_default();
 
 	// Description
-	set_colors(VGA_COLOR_CYAN, VGA_DEFAULT_BG);
+	display_set_colors(PRINT_COLOR_CYAN, PRINT_DEFAULT_BG);
+
 	if (entry->description)
 		printf("%s\n", entry->description);
-	set_to_last();
+	display_set_colors_default();
 
 	// Commands
 	if (entry->commands_count > 0) {
-		set_colors(VGA_COLOR_YELLOW, VGA_DEFAULT_BG);
-		printf("\nCommands:\n");
-		set_to_last();
+		printf_color(PRINT_COLOR_YELLOW, PRINT_DEFAULT_BG, "\nCommands:\n");
 
-		set_colors(VGA_COLOR_GREEN, VGA_DEFAULT_BG);
+
+
+		display_set_colors(PRINT_COLOR_GREEN, PRINT_DEFAULT_BG);
+
 		for (int i = 0; i < entry->commands_count; i++) {
 			if (entry->commands[i])
 				printf("  %s\n", entry->commands[i]);
 		}
-		set_to_last();
+		display_set_colors_default();
 	}
 
 	// Aliases
 	if (entry->aliases_count > 0) {
-		set_colors(VGA_COLOR_YELLOW, VGA_DEFAULT_BG);
-		printf("\nAliases:\n");
-		set_to_last();
+		printf_color(PRINT_COLOR_YELLOW, PRINT_DEFAULT_BG, "\nAliases:\n");
 
-		set_colors(VGA_COLOR_GREEN, VGA_DEFAULT_BG);
+
+
+		display_set_colors(PRINT_COLOR_GREEN, PRINT_DEFAULT_BG);
+
 		for (int i = 0; i < entry->aliases_count; i++) {
 			if (entry->aliases[i])
 				printf("  %s\n", entry->aliases[i]);
 		}
-		set_to_last();
+		display_set_colors_default();
 	}
 	printf("\n");
 }
@@ -544,43 +554,47 @@ void printGeneralHelp(HelpEntryGeneral* entry) {
  */
 void printSpecificHelp(HelpEntry* entry) {
 	// Command Name
-	set_colors(VGA_COLOR_LIGHT_RED, VGA_DEFAULT_BG);
+	display_set_colors(PRINT_COLOR_LIGHT_RED, PRINT_DEFAULT_BG);
+
 	if (entry->commandName)
 		printf("\n%s\n", entry->commandName);
-	set_to_last();
+	display_set_colors_default();
 
 	// Description
-	set_colors(VGA_COLOR_CYAN, VGA_DEFAULT_BG);
+	display_set_colors(PRINT_COLOR_CYAN, PRINT_DEFAULT_BG);
+
 	if (entry->description)
 		printf("%s\n", entry->description);
-	set_to_last();
+	display_set_colors_default();
 
 	// Commands
 	if (entry->required_count > 0) {
-		set_colors(VGA_COLOR_YELLOW, VGA_DEFAULT_BG);
-		printf("Required:\n");
-		set_to_last();
+		printf_color(PRINT_COLOR_YELLOW, PRINT_DEFAULT_BG, "Required:\n");
 
-		set_colors(VGA_COLOR_GREEN, VGA_DEFAULT_BG);
+
+
+		display_set_colors(PRINT_COLOR_GREEN, PRINT_DEFAULT_BG);
+
 		for (int i = 0; i < entry->required_count; i++) {
 			if (entry->required[i])
 				printf("  %s\n", entry->required[i]);
 		}
-		set_to_last();
+		display_set_colors_default();
 	}
 
 	// Aliases
 	if (entry->optional_count > 0) {
-		set_colors(VGA_COLOR_YELLOW, VGA_DEFAULT_BG);
-		printf("\nOptional:\n");
-		set_to_last();
+		printf_color(PRINT_COLOR_YELLOW, PRINT_DEFAULT_BG, "\nOptional:\n");
 
-		set_colors(VGA_COLOR_GREEN, VGA_DEFAULT_BG);
+
+
+		display_set_colors(PRINT_COLOR_GREEN, PRINT_DEFAULT_BG);
+
 		for (int i = 0; i < entry->optional_count; i++) {
 			if (entry->optional[i])
 				printf("  %s\n", entry->optional[i]);
 		}
-		set_to_last();
+		display_set_colors_default();
 	}
 	printf("\n");
 }

@@ -23,96 +23,85 @@ extern size_t mem_map_size;
 const mmap_info* memory_info;
 
 void printTotal() {
-	set_colors(VGA_COLOR_PINK, VGA_DEFAULT_BG);
-	printf("Total Memory:\n");
-	set_to_last();
-	set_colors(VGA_COLOR_PURPLE, VGA_DEFAULT_BG);
-	printf("\t%llu bytes\n\t%llu KiB\n\t%llu MiB\n",
+	printf_color(PRINT_COLOR_PINK, PRINT_DEFAULT_BG, "Total Memory:\n");
+
+	printf_color(PRINT_COLOR_PURPLE, PRINT_DEFAULT_BG, "\t%llu bytes\n\t%llu KiB\n\t%llu MiB\n",
 		memory_info->total,
 		memory_info->total / 1024,
 		memory_info->total / 1024 / 1024);
-	set_to_last();
+
 }
 
 void printUsable() {
-	set_colors(VGA_COLOR_LIGHT_GREEN, VGA_DEFAULT_BG);
-	printf("Usable Memory:\n");
-	set_to_last();
-	set_colors(VGA_COLOR_GREEN, VGA_DEFAULT_BG);
-	printf("\t%llu bytes\n\t%llu KiB\n\t%llu MiB\n",
+	printf_color(PRINT_COLOR_LIGHT_GREEN, PRINT_DEFAULT_BG, "Usable Memory:\n");
+
+	printf_color(PRINT_COLOR_GREEN, PRINT_DEFAULT_BG, "\t%llu bytes\n\t%llu KiB\n\t%llu MiB\n",
 		memory_info->usable,
 		memory_info->usable / 1024,
 		memory_info->usable / 1024 / 1024);
-	set_to_last();
+
 }
 
 void printReserved() {
-	set_colors(VGA_COLOR_LIGHT_RED, VGA_DEFAULT_BG);
-	printf("Reserved Memory:\n");
-	set_to_last();
-	set_colors(VGA_COLOR_RED, VGA_DEFAULT_BG);
-	printf("\t%llu bytes\n\t%llu KiB\n\t%llu MiB\n",
+	printf_color(PRINT_COLOR_LIGHT_RED, PRINT_DEFAULT_BG, "Reserved Memory:\n");
+
+	printf_color(PRINT_COLOR_RED, PRINT_DEFAULT_BG, "\t%llu bytes\n\t%llu KiB\n\t%llu MiB\n",
 		memory_info->reserved,
 		memory_info->reserved / 1024,
 		memory_info->reserved / 1024 / 1024);
-	set_to_last();
+
 }
 
 void printMapSize() {
-	set_colors(VGA_COLOR_LIGHT_GREY, VGA_DEFAULT_BG);
-	printf("System Memory Map Size:\n");
-	set_to_last();
-	set_colors(VGA_COLOR_DARK_GREY, VGA_DEFAULT_BG);
-	printf("\t%llu bytes\n\t%llu KiB\n\t%llu MiB\n",
+	printf_color(PRINT_COLOR_LIGHT_GREY, PRINT_DEFAULT_BG, "System Memory Map Size:\n");
+
+	printf_color(PRINT_COLOR_DARK_GREY, PRINT_DEFAULT_BG, "\t%llu bytes\n\t%llu KiB\n\t%llu MiB\n",
 		mem_map_size,
 		mem_map_size / 1024,
 		mem_map_size / 1024 / 1024);
-	set_to_last();
+
 }
 
 void printKernelSize() {
-	set_colors(VGA_COLOR_LIGHT_CYAN, VGA_DEFAULT_BG);
-	printf("Raw Kernel Size:\n");
-	set_to_last();
-	set_colors(VGA_COLOR_CYAN, VGA_DEFAULT_BG);
+	printf_color(PRINT_COLOR_LIGHT_CYAN, PRINT_DEFAULT_BG, "Raw Kernel Size:\n");
+
+	display_set_colors(PRINT_COLOR_CYAN, PRINT_DEFAULT_BG);
 	uint64_t k_end = (uint64_t) &kernel_end - KERNEL_VIRTUAL_BASE;
 	printf("\t%llu bytes\n\t%llu KiB\n\t%llu MiB\n",
 		k_end,
 		k_end / 1024,
 		k_end / 1024 / 1024);
-	set_to_last();
+	display_set_colors_default();
 }
 
 void printFreePhysical() {
 	size_t free_bytes = Memory::Info::getTotalFreeBytes();
 	size_t free_pages = Memory::Info::getFreePageCount();
 
-	set_colors(VGA_COLOR_YELLOW, VGA_DEFAULT_BG);
-	printf("Free Physical Memory:\n");
-	set_to_last();
-	set_colors(VGA_COLOR_YELLOW, VGA_DEFAULT_BG);
+	printf_color(PRINT_COLOR_YELLOW, PRINT_DEFAULT_BG, "Free Physical Memory:\n");
+
+	display_set_colors(PRINT_COLOR_YELLOW, PRINT_DEFAULT_BG);
 	printf("\t%llu pages (4KB)\n", free_pages);
 	printf("\t%llu bytes\n\t%llu KiB\n\t%llu MiB\n",
 		free_bytes,
 		free_bytes / 1024,
 		free_bytes / 1024 / 1024);
-	set_to_last();
+	display_set_colors_default();
 }
 
 void printUsedPhysical() {
 	size_t used_bytes = Memory::Info::getTotalUsedBytes();
 	size_t used_pages = Memory::Info::getUsedPageCount();
 
-	set_colors(VGA_COLOR_LIGHT_BLUE, VGA_DEFAULT_BG);
-	printf("Used Physical Memory:\n");
-	set_to_last();
-	set_colors(VGA_COLOR_BLUE, VGA_DEFAULT_BG);
+	printf_color(PRINT_COLOR_LIGHT_BLUE, PRINT_DEFAULT_BG, "Used Physical Memory:\n");
+
+	display_set_colors(PRINT_COLOR_BLUE, PRINT_DEFAULT_BG);
 	printf("\t%llu pages (4KB)\n", used_pages);
 	printf("\t%llu bytes\n\t%llu KiB\n\t%llu MiB\n",
 		used_bytes,
 		used_bytes / 1024,
 		used_bytes / 1024 / 1024);
-	set_to_last();
+	display_set_colors_default();
 }
 
 bool printIndividual(int argc, char** argv) {

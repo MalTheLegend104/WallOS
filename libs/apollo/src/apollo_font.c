@@ -8,6 +8,8 @@
 
 #define GET_BIT(byte, bit) ((byte & (1 << bit)) >> bit)
 
+extern int printf_serial(const char* restrict format, ...);
+
 void apollo_print_char(framebuffer_t* fb, const apollo_font_instance* font_inst, int c, coordinate_pair p, apollo_font_color_t color) {
 	if (fb == NULL || fb->info == NULL || font_inst == NULL || font_inst->font == NULL) return;
 
@@ -15,8 +17,8 @@ void apollo_print_char(framebuffer_t* fb, const apollo_font_instance* font_inst,
 	uint8_t x_scale = font_inst->x_scaling;
 	uint8_t y_scale = font_inst->y_scaling;
 
-	if (c > font->max_char) return;
-	if (c < 0) { printf("negative\n"); return; }
+	if (c > font->max_char) { printf_serial("above max char?\r\n"); return; }
+	if (c < 0) { printf_serial("negative\r\n"); return; }
 
 	apollo_color_t foreground = color.foreground;
 	if (foreground.type != fb->info->type) {
@@ -38,7 +40,6 @@ void apollo_print_char(framebuffer_t* fb, const apollo_font_instance* font_inst,
 	if (p.x + scaled_width > fb->info->width) return;
 	// Writing past height is a buffer overflow
 	if (p.y + scaled_height > fb->info->height) return;
-
 
 	uint8_t* pixel = apollo_get_point(fb, p);
 	bool not_exact = false;
@@ -74,8 +75,8 @@ void apollo_print_char(framebuffer_t* fb, const apollo_font_instance* font_inst,
 			uint8_t* row_pixel = pixel;
 			for (int i = width_bytes - 1; i >= 0; i--) {
 				for (int w = 8; w > 0; w--) {
-					if (not_exact && i == 0) { if ((w - 1) - ignored <= 0) continue; }
-					if (not_exact && i == width_bytes - 1) { if ((w - 1) + ignored >= 8) continue; }
+					if (not_exact && i == width_bytes - 1) { if ((w - 1) + ignored > 7) continue; }
+					if (not_exact && i == 0) { if ((w - 1) < ignored) continue; }
 
 					apollo_color_t pixel_color;
 					if (GET_BIT(char_start[(h * width_bytes) + i], (w - 1)) == 1) {

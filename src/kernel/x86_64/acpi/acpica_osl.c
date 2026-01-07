@@ -143,9 +143,7 @@ void AcpiOsVprintf(const char* format, va_list args) {
 	va_list args_copy;
 	va_copy(args_copy, args);
 
-	set_colors(VGA_COLOR_GREEN, VGA_DEFAULT_BG);
-	vprintf(format, args);
-	set_to_last();
+	vprintf_color(PRINT_COLOR_GREEN, PRINT_DEFAULT_BG, format, args);
 
 	printf_serial("\r\n");
 	vprintf_serial(format, args_copy);
@@ -160,9 +158,8 @@ void AcpiOsPrintf(const char* format, ...) {
 	va_start(arg, format);
 	va_copy(arg_copy, arg);
 
-	set_colors(VGA_COLOR_GREEN, VGA_DEFAULT_BG);
-	vprintf(format, arg);
-	set_to_last();
+	vprintf_color(PRINT_COLOR_GREEN, PRINT_DEFAULT_BG, format, arg);
+
 	printf_serial("\r\n");
 	vprintf_serial(format, arg_copy);
 

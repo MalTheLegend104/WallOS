@@ -460,18 +460,18 @@ void pmm_init() {
 	// Calculate system size
 	uintptr_t max_addr = scan_memory_map(mmap_tag);
 
-	printf_serial("Max address for buddy alloc: 0x%llx\r\n", max_addr);
-	printf("Max address for buddy alloc: 0x%llx\n", max_addr);
+	printf_serial("[PMM] Max address for buddy alloc: 0x%llx\r\n", max_addr);
+	printf("[PMM] Max address for buddy alloc: 0x%llx\n", max_addr);
 
-	printf_serial("Page count for buddy alloc: 0x%llx\r\n", max_addr);
-	printf("Page count for buddy alloc: 0x%llx\n", max_addr);
+	printf_serial("[PMM] Page count for buddy alloc: 0x%llx\r\n", max_addr);
+	printf("[PMM] Page count for buddy alloc: 0x%llx\n", max_addr);
 
 	if (max_addr == NULL) panic_s("Failed to parse multiboot memory map.");
 
 	// Calculate mem_map size
 	mem_map_size = total_system_pages * sizeof(Page);
 
-	printf_serial("Size needed for buddy alloc mem_map: 0x%llx\r\n", mem_map_size);
+	printf_serial("[PMM] Size needed for buddy alloc mem_map: 0x%llx\r\n", mem_map_size);
 
 	// Find suitable location for mem_map
 	mem_map = find_free_region_internal(mmap_tag, mem_map_size);

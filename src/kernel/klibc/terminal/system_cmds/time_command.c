@@ -86,7 +86,7 @@ int time_command(int argc, char** argv) {
 				size_t seconds = time / 0x3E8; // 0x3E8 = 1000
 				time %= 0x3E8;
 
-				set_colors(VGA_COLOR_CYAN, VGA_DEFAULT_BG);
+				display_set_colors(PRINT_COLOR_CYAN, PRINT_DEFAULT_BG);
 				printf("Total Execution Time: %dms\n", totalms);
 				printf("System has been up for:\n");
 				if (years > 0) {
@@ -109,7 +109,7 @@ int time_command(int argc, char** argv) {
 				}
 				printf("%lld Milliseconds.\n", time);
 
-				set_to_last();
+				display_set_colors_default();
 				return 0;
 			} else if (strcmp(argv[i], "-sdf") == 0 || strcmp(argv[i], "--set-date-format") == 0) {
 				if (i == argc - 1) {
@@ -142,7 +142,7 @@ int time_command(int argc, char** argv) {
 
 	read_cmos_date(&day, &month, &year);
 	read_cmos_time(&hours, &minutes, &seconds);
-	set_colors(VGA_COLOR_LIGHT_CYAN, VGA_DEFAULT_BG);
+	display_set_colors(PRINT_COLOR_LIGHT_CYAN, PRINT_DEFAULT_BG);
 
 	if (current_time_format == HOURS_12) {
 		if (hours > 12) {
@@ -167,7 +167,7 @@ int time_command(int argc, char** argv) {
 			break;
 	}
 
-	set_to_last();
+	display_set_colors_default();
 
 	return 0;
 }

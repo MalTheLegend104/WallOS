@@ -36,9 +36,8 @@ void init_failure(const char* str) {
 }
 
 void acpi_tables(void) {
-	set_colors(VGA_COLOR_GREEN, VGA_DEFAULT_BG);
-	printf("Trying to initialize ACPI tables...\r\n");
-	set_to_last();
+	printf_color(PRINT_COLOR_GREEN, PRINT_DEFAULT_BG, "Trying to initialize ACPI tables...\r\n");
+
 
 	// uACPI's initialization phase handles table discovery and loading
 	uacpi_status status = uacpi_initialize(0);
@@ -48,10 +47,8 @@ void acpi_tables(void) {
 		init_failure("Failed to initialize tables.");
 	}
 
-	set_colors(VGA_COLOR_GREEN, VGA_DEFAULT_BG);
 	printf_serial("Successfully loaded tables.\r\n");
-	printf("Successfully loaded tables.\n");
-	set_to_last();
+	printf_color(PRINT_COLOR_GREEN, PRINT_DEFAULT_BG, "Successfully loaded tables.\n");
 }
 
 void initialize_acpi(void) {

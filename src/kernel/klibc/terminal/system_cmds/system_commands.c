@@ -5,6 +5,8 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include <klibc/display.h>
+
 // A lot of these dont use argc or argv
 #pragma GCC diagnostic ignored "-Wunused-parameter" 
 
@@ -13,7 +15,7 @@
 // ------------------------------------------------------------------------------------------------
 const char* clear_aliases[] = { "clr" };
 int clear_command(int argc, char** argv) {
-	clearVGABuf();
+	display_clear();
 	printf("\n");
 	return 0;
 }
@@ -157,14 +159,14 @@ int panic_help(int argc, char** argv) {
 int logo_command(int argc, char** argv) {
 	if (argc > 1) {
 		if (strcmp(argv[1], "-nsi") == 0 || strcmp(argv[1], "--no-sysinfo") == 0) {
-			clearVGABuf();
+			display_clear();
 			print_logo();
 			time_command(0, NULL); // Print the time and date beneath the logo
 			printf("\n");
 			return 0;
 		}
 	}
-	clearVGABuf();
+	display_clear();
 	print_logo();
 	time_command(0, NULL); // Print the time and date beneath the logo
 	printf("\n");

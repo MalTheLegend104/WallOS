@@ -5,12 +5,14 @@
 #include <stdbool.h>
 #include <stddef.h>
 
+#include <print_type.h>
+
 #define EOF (-1)
 
 #ifdef __cplusplus
 extern "C" {
 #endif
-	extern void putc_vga(const unsigned char c);
+
 	int vprintf(const char* format, va_list arg);
 	int printf(const char* format, ...);
 	int puts(const char* string);

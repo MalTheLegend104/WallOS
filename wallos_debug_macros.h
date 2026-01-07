@@ -13,6 +13,8 @@
 
 #define WALLOS_HANG() do { asm volatile("cli"); for (;;) asm volatile("hlt"); } while (0)
 
+/* I find myself constantly needing to extern this for debugging in libraries. */
+
 #define WALLOS_RET_ADDR() __builtin_return_address(0)
 
 #define WALLOS_STATIC_ASSERT(cond, msg) typedef char static_assert_##msg[(cond) ? 1 : -1]

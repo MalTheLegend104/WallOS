@@ -859,3 +859,267 @@ apollo_color_t apollo_get_color(size_t color, apollo_pixel_type type) {
 	// clang-tidy still complains.
 	return (apollo_color_t) { 0, 0, 0, 0, APOLLO_PIXEL_TYPE_UNKNOWN };
 }
+
+void apollo_set_rect(framebuffer_t* fb, coordinate_pair pair, pair_type type, int width, int height, const apollo_color_t color) {
+	if (fb == NULL || fb->info == NULL) return;
+
+	apollo_color_t current_color = color;
+	if (current_color.type != fb->info->type) {
+		apollo_switch_color(fb->info->type, &current_color);
+	}
+
+	int start_x = pair.x;
+	int start_y = pair.y;
+
+	// Convert everything to top left
+	switch (type) {
+		case PAIR_CENTER:
+			start_x = pair.x - (width / 2);
+			start_y = pair.y - (height / 2);
+			break;
+		case PAIR_TOP_RIGHT:
+			start_x = pair.x - width;
+			start_y = pair.y;
+			break;
+		case PAIR_BOTTOM_LEFT:
+			start_x = pair.x;
+			start_y = pair.y - height;
+			break;
+		case PAIR_BOTTOM_RIGHT:
+			start_x = pair.x - width;
+			start_y = pair.y - height;
+			break;
+		default: break;
+	}
+
+	if (type == PAIR_CENTER) {
+		if (width % 2 != 0) width++;
+		if (height % 2 != 0) height++;
+	}
+
+	uint8_t* pixel = apollo_get_point(fb, (coordinate_pair) { start_x, start_y });
+	const int row_width = width * fb->info->pixel_width;
+	const int pitch_offset = fb->info->pitch - row_width;
+
+	// Pre-compute pixel value based on type for maximum efficiency
+	switch (fb->info->type) {
+		case APOLLO_PIXEL_TYPE_UNKNOWN:
+			// Do nothing
+			break;
+
+		case APOLLO_PIXEL_TYPE_RGB32:
+			for (int i = 0; i < height; i++) {
+				for (int j = 0; j < width; j++) {
+					pixel[0] = current_color.red;
+					pixel[1] = current_color.green;
+					pixel[2] = current_color.blue;
+					pixel[3] = 0;
+					pixel += 4;
+				}
+				pixel += pitch_offset;
+			}
+			break;
+
+		case APOLLO_PIXEL_TYPE_ARGB8888:
+			for (int i = 0; i < height; i++) {
+				for (int j = 0; j < width; j++) {
+					pixel[0] = current_color.blue;
+					pixel[1] = current_color.green;
+					pixel[2] = current_color.red;
+					pixel[3] = current_color.alpha;
+					pixel += 4;
+				}
+				pixel += pitch_offset;
+			}
+			break;
+
+		case APOLLO_PIXEL_TYPE_RGBA32:
+			for (int i = 0; i < height; i++) {
+				for (int j = 0; j < width; j++) {
+					pixel[0] = current_color.red;
+					pixel[1] = current_color.green;
+					pixel[2] = current_color.blue;
+					pixel[3] = current_color.alpha;
+					pixel += 4;
+				}
+				pixel += pitch_offset;
+			}
+			break;
+
+		case APOLLO_PIXEL_TYPE_BGR32:
+			for (int i = 0; i < height; i++) {
+				for (int j = 0; j < width; j++) {
+					pixel[0] = current_color.blue;
+					pixel[1] = current_color.green;
+					pixel[2] = current_color.red;
+					pixel[3] = 0;
+					pixel += 4;
+				}
+				pixel += pitch_offset;
+			}
+			break;
+
+		case APOLLO_PIXEL_TYPE_BGRA32:
+			for (int i = 0; i < height; i++) {
+				for (int j = 0; j < width; j++) {
+					pixel[0] = current_color.blue;
+					pixel[1] = current_color.green;
+					pixel[2] = current_color.red;
+					pixel[3] = current_color.alpha;
+					pixel += 4;
+				}
+				pixel += pitch_offset;
+			}
+			break;
+
+		case APOLLO_PIXEL_TYPE_RGB24:
+			for (int i = 0; i < height; i++) {
+				for (int j = 0; j < width; j++) {
+					pixel[0] = current_color.red;
+					pixel[1] = current_color.green;
+					pixel[2] = current_color.blue;
+					pixel += 3;
+				}
+				pixel += pitch_offset;
+			}
+			break;
+
+		case APOLLO_PIXEL_TYPE_BGR24:
+			for (int i = 0; i < height; i++) {
+				for (int j = 0; j < width; j++) {
+					pixel[0] = current_color.blue;
+					pixel[1] = current_color.green;
+					pixel[2] = current_color.red;
+					pixel += 3;
+				}
+				pixel += pitch_offset;
+			}
+			break;
+
+		case APOLLO_PIXEL_TYPE_RGB16_565: {
+				uint16_t color_val = ((current_color.red & 0x1F) << 11) |
+					((current_color.green & 0x3F) << 5) |
+					(current_color.blue & 0x1F);
+				for (int i = 0; i < height; i++) {
+					for (int j = 0; j < width; j++) {
+						*(uint16_t*) pixel = color_val;
+						pixel += 2;
+					}
+					pixel += pitch_offset;
+				}
+				break;
+			}
+
+		case APOLLO_PIXEL_TYPE_RGB16_555: {
+				uint16_t color_val = ((current_color.red & 0x1F) << 10) |
+					((current_color.green & 0x1F) << 5) |
+					(current_color.blue & 0x1F);
+				for (int i = 0; i < height; i++) {
+					for (int j = 0; j < width; j++) {
+						*(uint16_t*) pixel = color_val;
+						pixel += 2;
+					}
+					pixel += pitch_offset;
+				}
+				break;
+			}
+
+		case APOLLO_PIXEL_TYPE_BGR16_565: {
+				uint16_t color_val = ((current_color.blue & 0x1F) << 11) |
+					((current_color.green & 0x3F) << 5) |
+					(current_color.red & 0x1F);
+				for (int i = 0; i < height; i++) {
+					for (int j = 0; j < width; j++) {
+						*(uint16_t*) pixel = color_val;
+						pixel += 2;
+					}
+					pixel += pitch_offset;
+				}
+				break;
+			}
+
+		case APOLLO_PIXEL_TYPE_BGR16_555: {
+				uint16_t color_val = ((current_color.blue & 0x1F) << 10) |
+					((current_color.green & 0x1F) << 5) |
+					(current_color.red & 0x1F);
+				for (int i = 0; i < height; i++) {
+					for (int j = 0; j < width; j++) {
+						*(uint16_t*) pixel = color_val;
+						pixel += 2;
+					}
+					pixel += pitch_offset;
+				}
+				break;
+			}
+
+		case APOLLO_PIXEL_TYPE_ARGB4444: {
+				uint8_t byte0 = ((current_color.alpha & 0xF) << 4) | (current_color.red & 0xF);
+				uint8_t byte1 = ((current_color.green & 0xF) << 4) | (current_color.blue & 0xF);
+				for (int i = 0; i < height; i++) {
+					for (int j = 0; j < width; j++) {
+						pixel[0] = byte0;
+						pixel[1] = byte1;
+						pixel += 2;
+					}
+					pixel += pitch_offset;
+				}
+				break;
+			}
+
+		case APOLLO_PIXEL_TYPE_ABGR4444: {
+				uint8_t byte0 = ((current_color.alpha & 0xF) << 4) | (current_color.blue & 0xF);
+				uint8_t byte1 = ((current_color.green & 0xF) << 4) | (current_color.red & 0xF);
+				for (int i = 0; i < height; i++) {
+					for (int j = 0; j < width; j++) {
+						pixel[0] = byte0;
+						pixel[1] = byte1;
+						pixel += 2;
+					}
+					pixel += pitch_offset;
+				}
+				break;
+			}
+
+		case APOLLO_PIXEL_TYPE_RGBA4444: {
+				uint8_t byte0 = ((current_color.red & 0xF) << 4) | (current_color.green & 0xF);
+				uint8_t byte1 = ((current_color.blue & 0xF) << 4) | (current_color.alpha & 0xF);
+				for (int i = 0; i < height; i++) {
+					for (int j = 0; j < width; j++) {
+						pixel[0] = byte0;
+						pixel[1] = byte1;
+						pixel += 2;
+					}
+					pixel += pitch_offset;
+				}
+				break;
+			}
+
+		case APOLLO_PIXEL_TYPE_BGRA4444: {
+				uint8_t byte0 = ((current_color.blue & 0xF) << 4) | (current_color.green & 0xF);
+				uint8_t byte1 = ((current_color.red & 0xF) << 4) | (current_color.alpha & 0xF);
+				for (int i = 0; i < height; i++) {
+					for (int j = 0; j < width; j++) {
+						pixel[0] = byte0;
+						pixel[1] = byte1;
+						pixel += 2;
+					}
+					pixel += pitch_offset;
+				}
+				break;
+			}
+
+		case APOLLO_PIXEL_TYPE_RGB332: {
+				uint8_t color_val = ((current_color.red & 0x7) << 5) |
+					((current_color.green & 0x7) << 2) |
+					(current_color.blue & 0x3);
+				for (int i = 0; i < height; i++) {
+					for (int j = 0; j < width; j++) {
+						pixel[0] = color_val;
+						pixel += 1;
+					}
+					pixel += pitch_offset;
+				}
+				break;
+			}
+	}
+}

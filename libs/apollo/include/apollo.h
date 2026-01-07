@@ -229,6 +229,19 @@ extern "C" {
 	void apollo_fill_rect(framebuffer_t* fb, coordinate_pair pair, pair_type type, int width, int height, apollo_color_t color);
 
 	/**
+	 * @brief Sets the provided rectangle to the provided color. This is meant to serve as a quick rectangle fill without overhead of per-pixel logic.
+	 *
+	 * @param fb Framebuffer to write to.
+	 * @param pair Coordinate pair at the origin (defined by type).
+	 * @param type Type of coordinate pair provided.
+	 * @param width Width of the rectangle.
+	 * @param height Height of the rectangle.
+	 * @param color Color of the rectangle.
+	 */
+	void apollo_set_rect(framebuffer_t* fb, coordinate_pair pair, pair_type type, int width, int height, const apollo_color_t color);
+
+
+	/**
 	 * @brief Draws and fills a rectangle.
 	 * @param fb Framebuffer to write to.
 	 * @param pair Coordinate pair at the origin (defined by type).

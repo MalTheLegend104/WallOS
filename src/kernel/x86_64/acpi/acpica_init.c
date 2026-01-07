@@ -359,9 +359,8 @@ static ACPI_TABLE_DESC TableArray[ACPI_MAX_INIT_TABLES];
 #include <drivers/serial.h>
 
 void acpi_tables(void) {
-	set_colors(VGA_COLOR_GREEN, VGA_DEFAULT_BG);
-	printf("Trying to initalize ACPI tables...\r\n");
-	set_to_last();
+	printf_color(PRINT_COLOR_GREEN, PRINT_DEFAULT_BG, "Trying to initalize ACPI tables...\r\n");
+
 	const ACPI_STATUS status = AcpiInitializeTables(TableArray, ACPI_MAX_INIT_TABLES, FALSE);
 	if (ACPI_FAILURE(status)) {
 		printf_serial("Status: %d\r\n", status);
@@ -369,10 +368,8 @@ void acpi_tables(void) {
 		init_failure("Failed to initialize tables.");
 	}
 
-	set_colors(VGA_COLOR_GREEN, VGA_DEFAULT_BG);
 	printf_serial("Successfully loaded tables.\r\n");
-	printf("Successfully loaded tables.\n");
-	set_to_last();
+	printf_color(PRINT_COLOR_GREEN, PRINT_DEFAULT_BG, "Successfully loaded tables.\n");
 }
 
 void initialize_acpi(void) {

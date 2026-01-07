@@ -31,7 +31,7 @@ int puts(const char* string) {
 }
 
 void os_putchar(int c) {
-	putc_vga(c);
+	display_putc(c);
 }
 
 void os_putwchar(wchar_t c) {
