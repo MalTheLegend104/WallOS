@@ -11,7 +11,7 @@
 // ------------------------------------------------------------------------------------------------
 // Clear command
 // ------------------------------------------------------------------------------------------------
-const char* clear_aliases[] = { "clr" };
+const char* clear_aliases[] = { "clr", "cls" };
 int clear_command(int argc, char** argv) {
 	clearVGABuf();
 	printf("\n");
@@ -24,7 +24,7 @@ int clear_help(int argc, char** argv) {
 		NULL,
 		0,
 		clear_aliases,
-		1
+		2 
 	};
 	printGeneralHelp(&entry);
 	return 0;
