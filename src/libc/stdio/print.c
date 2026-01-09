@@ -26,6 +26,9 @@ typedef enum {
 	BASE_OCTAL = 8
 } base_type;
 
+// We need to flush the display once we're done printing (in framebuffer mode).
+extern void display_flush();
+
 int puts(const char* string) {
 	return printf("%s", string);
 }
@@ -697,7 +700,7 @@ int vprintf(const char* restrict format, va_list list) {
 								}
 						}
 						break;
-					}
+			}
 #endif // WALLOS_ENABLE_PRINTF_N
 				// ------------------------------------------------------------------------------------------------
 				// Flags
@@ -925,8 +928,8 @@ int vprintf(const char* restrict format, va_list list) {
 						written++;
 						break;
 					}
-			}
-		} else {
+		}
+	} else {
 			os_putchar(*current);
 			written++;
 		}
@@ -944,7 +947,8 @@ int vprintf(const char* restrict format, va_list list) {
 			padding = 0;
 			current++;
 		}
-	}
+}
 
+	display_flush();
 	return (int) written;
 }

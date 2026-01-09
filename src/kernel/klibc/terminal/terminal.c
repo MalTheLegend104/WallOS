@@ -306,7 +306,7 @@ bool addAtPos(char* buf, size_t size, char c, size_t pos) {
 	return true;
 }
 
-
+extern void display_flush();
 void terminalMain() {
 	registerSystemCommands();
 	printf_color(PRINT_COLOR_PINK, PRINT_DEFAULT_BG, "Initalizing Terminal...");
@@ -318,6 +318,7 @@ void terminalMain() {
 	registerCommand((Command) { historyCommand, historyHelp, "history", historyAliases, 1 });
 	sleep(1000);
 	executeCommand("logo");  // This is where the cursor first gets enabled
+	display_flush();
 
 	char oldCommand[MAX_COMMAND_BUF];
 	oldCommand[0] = '\0';

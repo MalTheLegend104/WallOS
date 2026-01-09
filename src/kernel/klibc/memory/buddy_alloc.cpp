@@ -450,6 +450,17 @@ found:
 }
 
 
+/* Principles of init.
+ * Instead of mapping while we go, we're going to determine how much we actually have at first.
+ * We calculate how much memory we have, determine how long the linked list will need to be,
+ * find a good chunk of memory that will fit our list, request a CONTINUOUS mapping from the VMM.
+ * Once we have the location, we can go back through and actually fill in the list.
+ * The function to actually init the list will be a copy of buddy_free(), where everything is input at order 0 and the merging is dealt with automatically.
+ * The init list function will set relevant flags for memory regions.
+ *
+ * We also calculate the total_system_pages, which covers everything from address 0 to the end of physical memory.
+ * When initializing memory, we'll map all possible pages, and just set the reserved or unusable chunks as not free (and they'll never get added to the freelist)
+ */
 void pmm_init() {
 	struct multiboot_tag_mmap* mmap_tag = MultibootManager::getMMap();
 
@@ -575,39 +586,13 @@ void pmm_init() {
 	mark_and_allocate_region((uintptr_t) (&kernel_start), buddy_phys_kernel_end, PMM_PAGE_KERNEL);
 	mark_and_allocate_region(mem_map_phys, mem_map_phys + mem_map_size, PMM_PAGE_KERNEL);
 
+	for (int i = 0; i < reservedChunks; i++) {
+		mark_and_allocate_region(reservedMemory[i].addr, reservedMemory[i].addr + reservedMemory[i].size, PMM_PAGE_KERNEL);
+		printf_serial("[PMM] Marking reserved region as kernel memory.\r\n\tADDR: 0x%llx\r\n\tSIZE: 0x%llx\r\n", reservedMemory[i].addr, reservedMemory[i].addr + reservedMemory[i].size);
+	}
+
 	return;
 }
-
-// void Memory::PhysicalMemInit() {
-
-// }
-
-
-// size_t Memory::Info::getFreePageCount();
-// size_t Memory::Info::getUsedPageCount();
-// const mmap_info* Memory::Info::getMMapInfo();
-
-// uintptr_t Memory::PhysicalAlloc2MB();
-// uintptr_t Memory::PhysicalAlloc2MBSequential(size_t amount);
-
-// uintptr_t Memory::PhysicalMarkAllocated(uintptr_t base_addr, uintptr_t final_addr);
-
-// void Memory::PhysicalDeAlloc2MB(uintptr_t phys_addr);
-
-
-
-/* Principles of init.
- * Instead of mapping while we go, we're going to determine how much we actually have at first.
- * We calculate how much memory we have, determine how long the linked list will need to be,
- * find a good chunk of memory that will fit our list, request a CONTINUOUS mapping from the VMM.
- * Once we have the location, we can go back through and actually fill in the list.
- * The function to actually init the list will be a copy of buddy_free(), where everything is input at order 0 and the merging is dealt with automatically.
- * The init list function will set relevant flags for memory regions.
- *
- * We also calculate the total_system_pages, which covers everything from address 0 to the end of physical memory.
- * When initializing memory, we'll map all possible pages, and just set the reserved or unusable chunks as not free (and they'll never get added to the freelist)
- */
-
 
 const mmap_info* Memory::Info::getMMapInfo() { return &mem_info; }
 

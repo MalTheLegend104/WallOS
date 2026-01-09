@@ -157,6 +157,23 @@ int pci_command(int argc, char** argv) {
 	return 0;
 }
 
+/**
+ * This allows write-combining.
+ * This is mainly for the framebuffer (but likely helps us elsewhere).
+ */
+void init_pat() {
+	uint32_t low, high;
+	// Read IA32_PAT MSR (0x277)
+	asm volatile("rdmsr" : "=a"(low), "=d"(high) : "c"(0x277));
+
+	// We modify Slot 7 (top 8 bits of the high 32-bit register)
+	// Clear bits 56-63 and set them to 0x01 (Write-Combining)
+	high &= ~(0xFFULL << 24);
+	high |= (0x01ULL << 24);
+
+	asm volatile("wrmsr" : : "a"(low), "d"(high), "c"(0x277));
+}
+
 void kernel_main(unsigned int magic, multiboot_info* mbt_info) {
 	// ------------------------------------------------------------------------------------------------
 	// Very early init
@@ -164,6 +181,8 @@ void kernel_main(unsigned int magic, multiboot_info* mbt_info) {
 	// ------------------------------------------------------------------------------------------------
 	// If we have VGA Text Mode, we set it up before everything else.
 	// If we don't we have to wait for framebuffer init (which relies on a lot of this early init).
+	init_pat();
+
 	initScreen();
 	init_serial();
 	printf_serial("Welcome to WallOS!\r\n");
@@ -236,6 +255,9 @@ void kernel_main(unsigned int magic, multiboot_info* mbt_info) {
 	// ------------------------------------------------------------------------------------------------
 	initKernelAllocator();
 
+	// The last thing this requires is the allocator.
+	display_init_late();
+
 	// ------------------------------------------------------------------------------------------------
 	// Drive detection (and eventual virtual FS setup)
 	// ------------------------------------------------------------------------------------------------
@@ -265,7 +287,7 @@ void kernel_main(unsigned int magic, multiboot_info* mbt_info) {
 
 	// framebuffer();
 
-	printf("");
+	// printf("");
 	wait_for_esc();
 
 	// After we're done checking features, we need to set up our terminal.

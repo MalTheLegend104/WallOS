@@ -61,6 +61,12 @@ extern "C" {
 	bool display_init(display_mode_t mode);
 
 	/**
+	 * @brief Late display init that switches to a higher performance mode after all required subsystems are enabled.
+	 */
+	void display_init_late();
+	void display_flush();
+
+	/**
 	 * @brief Get the current display mode
 	 * @return Current display mode
 	 */

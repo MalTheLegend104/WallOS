@@ -279,36 +279,62 @@ uintptr_t physToVirt(uint64_t pml4_index, uint64_t pdp_index, uint64_t pde_index
  * @param base_addr The physical memory address of the framebuffer.
  * @param size The size of the framebuffer in bytes.
  */
+// void Memory::mapFramebuffer(uintptr_t base_addr, size_t size) {
+// 	// We need to map the memory region provided into both physical and virtual memory.
+// 	Memory::reserveMemory(base_addr, size);
+
+// 	// printf_serial("Framebuffer is at 0x%llx, at size 0x%llx\r\n", base_addr, size);
+// 	// The framebuffer should be in kernel memory
+
+// 	// amount of 2mb sections this takes up
+// 	size_t mb_pages_taken = (size + PAGE_2MB_SIZE) / PAGE_2MB_SIZE;
+
+// 	// clear the lower 21 bytes of the ptr so we can map the virutal pages
+// 	uintptr_t addr = base_addr & ~0x1FFFFF;
+// 	// for the amount of pages taken by the map, we're going to map each page to virtual memory.
+
+// 	for (size_t i = 0; i < mb_pages_taken; i++) {
+// 		int pml4_index = GET_PML4_INDEX(addr);
+// 		int pdp_index = GET_PDPT_INDEX(addr);
+// 		int pde_index = GET_PAGE_DIR_INDEX(addr);
+
+// 		// Extract the addresses from the pages.
+// 		uint64_t* pdp_t = (uint64_t*) getFrame(pml4[pml4_index]);
+// 		uint64_t* pde_t = (uint64_t*) getFrame(pdp_t[pdp_index]);
+
+// 		set_page_frame(&(pde_t[pde_index]), addr);
+// 		pde_t[pde_index] |= BIT_SIZE | BIT_WRITE | BIT_PRESENT;
+
+// 		addr += PAGE_2MB_SIZE;
+// 	}
+
+// 	return;
+// }
+
+#define BIT_PAT_LARGE 0x1000ULL 
+
 void Memory::mapFramebuffer(uintptr_t base_addr, size_t size) {
-	// We need to map the memory region provided into both physical and virtual memory.
 	Memory::reserveMemory(base_addr, size);
 
-	// printf_serial("Framebuffer is at 0x%llx, at size 0x%llx\r\n", base_addr, size);
-	// The framebuffer should be in kernel memory
-
-	// amount of 2mb sections this takes up
-	size_t mb_pages_taken = (size + PAGE_2MB_SIZE) / PAGE_2MB_SIZE;
-
-	// clear the lower 21 bytes of the ptr so we can map the virutal pages
+	size_t mb_pages_taken = (size + PAGE_2MB_SIZE - 1) / PAGE_2MB_SIZE;
 	uintptr_t addr = base_addr & ~0x1FFFFF;
-	// for the amount of pages taken by the map, we're going to map each page to virtual memory.
 
 	for (size_t i = 0; i < mb_pages_taken; i++) {
 		int pml4_index = GET_PML4_INDEX(addr);
 		int pdp_index = GET_PDPT_INDEX(addr);
 		int pde_index = GET_PAGE_DIR_INDEX(addr);
 
-		// Extract the addresses from the pages.
 		uint64_t* pdp_t = (uint64_t*) getFrame(pml4[pml4_index]);
 		uint64_t* pde_t = (uint64_t*) getFrame(pdp_t[pdp_index]);
 
 		set_page_frame(&(pde_t[pde_index]), addr);
-		pde_t[pde_index] |= BIT_SIZE | BIT_WRITE | BIT_PRESENT;
+
+		// Apply flags: 
+		// BIT_PWT | BIT_PCD | BIT_PAT_LARGE selects Slot 7 in the PAT.
+		pde_t[pde_index] |= BIT_SIZE | BIT_WRITE | BIT_PRESENT | BIT_PWT | BIT_PCD | BIT_PAT_LARGE;
 
 		addr += PAGE_2MB_SIZE;
 	}
-
-	return;
 }
 
 /**
