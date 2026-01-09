@@ -109,7 +109,7 @@ extern "C" {
 	/* Power off the system (S5) */
 	__attribute__((noreturn)) void acpi_shutdown(void);
 
-	/* Reboot the system via ACPI reset register */
+	/* Reboot the system via ACPI reset register (if present), or legacy ways otherwise. */
 	__attribute__((noreturn)) void acpi_reboot(void);
 
 	/* Enter a sleep state (S1-S4) */
