@@ -19,6 +19,25 @@
 // For the purposes of what we're doing right now, it shouldn't need these.
 // We only really use the ACPICA subsystem for table parsing right now.
 
+void acpi_vlogger(LogType type, const char* fmt, va_list args) {
+	switch (type) {
+		case LOG: 	printf("[ACPICA][LOG] ");	vprintf_color(PRINT_COLOR_DARK_GREY, PRINT_DEFAULT_BG, fmt, args); 	break;
+		case INFO: 	printf("[ACPICA][INFO] ");	vprintf_color(PRINT_COLOR_CYAN, PRINT_DEFAULT_BG, fmt, args); 		break;
+		case WARN: 	printf("[ACPICA][WARN] ");	vprintf_color(PRINT_COLOR_YELLOW, PRINT_DEFAULT_BG, fmt, args); 	break;
+		case ERROR: printf("[ACPICA][ERROR] ");	vprintf_color(PRINT_COLOR_LIGHT_RED, PRINT_DEFAULT_BG, fmt, args); 	break;
+		case FATAL: printf("[ACPICA][FATAL] ");	vprintf_color(PRINT_COLOR_RED, PRINT_DEFAULT_BG, fmt, args); 		break;
+
+		default: vprintf(fmt, args);	break;
+	}
+}
+
+void acpi_logger(LogType type, const char* fmt, ...) {
+	va_list args;
+	va_start(args, fmt);
+	vlogger(type, fmt, args);
+	va_end(args);
+}
+
 void acpica_failure(const char* str) {
 	const char* msg[] = { "ACPICA called a function stub: ", str };
 
@@ -39,11 +58,18 @@ ACPI_STATUS AcpiOsSignal(UINT32 function, void* info) {
 	return 0;
 }
 
+#include <system/timing.h>
 UINT64 AcpiOsGetTimer(void) {
 	// acpica_failure(__func__);
-	printf("ACPICA: %s called.\n", __func__);
+	acpi_logger(INFO, "ACPICA: %s called.\n", __func__);
 
-	return AE_NOT_IMPLEMENTED;
+	// We keep track of uptime in 1ms units.
+	// ACPICA wants it in 100ns units (why not just ns?)
+	// ms x 1000 = us
+	// us x 10 = 100ns
+	uint64_t result = get_system_up_time() * 1000 * 10;
+
+	return result;
 }
 
 ACPI_STATUS AcpiOsPhysicalTableOverride(ACPI_TABLE_HEADER* existingTable, ACPI_PHYSICAL_ADDRESS* newAddress, UINT32* newTableLength) {
@@ -55,7 +81,7 @@ ACPI_STATUS AcpiOsPhysicalTableOverride(ACPI_TABLE_HEADER* existingTable, ACPI_P
 
 ACPI_STATUS AcpiOsWritePort(ACPI_IO_ADDRESS Address, UINT32 Value, UINT32 Width) {
 	// Optional: Log for debugging
-	printf("ACPI_IO: Write 0x%X to Port 0x%llx\n", Value, (uint64_t) Address);
+	printf_serial("[ACPICA] ACPI_IO: Write 0x%X to Port 0x%llx\r\n", Value, (uint64_t) Address);
 
 	switch (Width) {
 		case 8:
@@ -91,7 +117,7 @@ ACPI_STATUS AcpiOsReadPort(ACPI_IO_ADDRESS Address, UINT32* Value, UINT32 Width)
 	}
 
 	// Optional: Log for debugging
-	printf("ACPI_IO: Read 0x%X from Port 0x%llx\n", *Value, (uint64_t) Address);
+	printf_serial("[ACPICA] ACPI_IO: Read 0x%X from Port 0x%llx\r\n", *Value, (uint64_t) Address);
 
 	return AE_OK;
 }
@@ -168,7 +194,7 @@ void AcpiOsPrintf(const char* format, ...) {
 }
 
 ACPI_STATUS AcpiOsInitialize() {
-	logger(INFO, "ACPICA called OS init.\n");
+	acpi_logger(INFO, "ACPICA called OS init.\n");
 	return AE_OK;
 }
 
@@ -203,7 +229,7 @@ void* AcpiOsMapMemory(ACPI_PHYSICAL_ADDRESS PhysicalAddress, ACPI_SIZE Length) {
 	if (Length > 0x200000 * 128) {
 		// Map only the requested location, get the table header, return 0.
 		char* magic = (char*) mapKernelLocation(PhysicalAddress, 0x24);
-		printf("ACPICA: Target Signature: \"%c%c%c%c\"\n", magic[0], magic[1], magic[2], magic[3]);
+		acpi_logger(WARN, "Very long memory map request. \n\t\tTarget Signature: \"%c%c%c%c\"\n", magic[0], magic[1], magic[2], magic[3]);
 		return 0;
 	}
 
@@ -229,7 +255,7 @@ ACPI_STATUS AcpiOsGetPhysicalAddress(void* LogicalAddress, ACPI_PHYSICAL_ADDRESS
 
 void* AcpiOsAllocate(ACPI_SIZE Size) {
 	void* ptr = kalloc(Size);
-	//logger(INFO, "ACPICA called OS Allocate for size: 0x%llx. Returning pointer: 0x%llx\n", Size, ptr);
+	//acpi_logger(INFO, "ACPICA called OS Allocate for size: 0x%llx. Returning pointer: 0x%llx\n", Size, ptr);
 
 	return ptr;
 }
@@ -388,15 +414,177 @@ void AcpiOsReleaseLock(ACPI_SPINLOCK Handle, ACPI_CPU_FLAGS Flags) {
 	spinlock_unlock(Handle);
 }
 
-// Interrupt Handling
-ACPI_STATUS AcpiOsInstallInterruptHandler(UINT32 InterruptLevel, ACPI_OSD_HANDLER Handler, void* Context) {
-	acpica_failure(__func__);
+
+
+// ------------------------------------------------------------------------------------------------
+// ------------------------------------------------------------------------------------------------
+// Interrupts
+// ------------------------------------------------------------------------------------------------
+// ------------------------------------------------------------------------------------------------
+#include <acpi.h>
+#include <system/idt.h>
+#include <klibc/logger.h>
+
+#define MAX_ACPI_IRQS        16
+#define MAX_HANDLERS_PER_IRQ 8
+
+struct acpi_irq_handler {
+	ACPI_OSD_HANDLER handler;
+	void* ctx;
+};
+
+struct acpi_irq_info {
+	bool installed;
+	size_t count;
+	struct acpi_irq_handler handlers[MAX_HANDLERS_PER_IRQ];
+};
+
+static struct acpi_irq_info acpi_irq_table[MAX_ACPI_IRQS];
+
+__attribute__((interrupt))
+__attribute__((__target__("general-regs-only")))
+void acpi_irq_wrapper_0(struct interrupt_frame* frame) {
+	bool handled = false;
+
+	struct acpi_irq_info* irq = &acpi_irq_table[0];
+
+	for (size_t i = 0; i < irq->count; i++) {
+		if (irq->handlers[i].handler(irq->handlers[i].ctx) == ACPI_INTERRUPT_HANDLED) handled = true;
+	}
+
+	/* EOI once, after all handlers. This one doesn't need to send anything to the slave PIC. */
+	outb(0x20, 0x20);
+}
+
+#define DEFINE_ACPI_IRQ_WRAPPER(n) \
+__attribute__((interrupt)) \
+__attribute__((__target__("general-regs-only"))) \
+void acpi_irq_wrapper_##n(struct interrupt_frame *frame) { \
+    bool handled = false; \
+    struct acpi_irq_info *irq = &acpi_irq_table[n]; \
+    for (size_t i = 0; i < irq->count; i++) { \
+        if (irq->handlers[i].handler(irq->handlers[i].ctx) == \
+            ACPI_INTERRUPT_HANDLED) { \
+            handled = true; \
+        } \
+    } \
+	(void) handled; \
+    if (n >= 8) outb(0xA0, 0x20); \
+    outb(0x20, 0x20); \
+}
+
+DEFINE_ACPI_IRQ_WRAPPER(1)
+DEFINE_ACPI_IRQ_WRAPPER(2)
+DEFINE_ACPI_IRQ_WRAPPER(3)
+DEFINE_ACPI_IRQ_WRAPPER(4)
+DEFINE_ACPI_IRQ_WRAPPER(5)
+DEFINE_ACPI_IRQ_WRAPPER(6)
+DEFINE_ACPI_IRQ_WRAPPER(7)
+DEFINE_ACPI_IRQ_WRAPPER(8)
+DEFINE_ACPI_IRQ_WRAPPER(9)
+DEFINE_ACPI_IRQ_WRAPPER(10)
+DEFINE_ACPI_IRQ_WRAPPER(11)
+DEFINE_ACPI_IRQ_WRAPPER(12)
+DEFINE_ACPI_IRQ_WRAPPER(13)
+DEFINE_ACPI_IRQ_WRAPPER(14)
+DEFINE_ACPI_IRQ_WRAPPER(15)
+
+static void (*acpi_irq_wrappers[])(struct interrupt_frame*) = {
+	acpi_irq_wrapper_0,
+	acpi_irq_wrapper_1,
+	acpi_irq_wrapper_2,
+	acpi_irq_wrapper_3,
+	acpi_irq_wrapper_4,
+	acpi_irq_wrapper_5,
+	acpi_irq_wrapper_6,
+	acpi_irq_wrapper_7,
+	acpi_irq_wrapper_8,
+	acpi_irq_wrapper_9,
+	acpi_irq_wrapper_10,
+	acpi_irq_wrapper_11,
+	acpi_irq_wrapper_12,
+	acpi_irq_wrapper_13,
+	acpi_irq_wrapper_14,
+	acpi_irq_wrapper_15,
+};
+
+ACPI_STATUS AcpiOsInstallInterruptHandler(UINT32 irq, ACPI_OSD_HANDLER handler, void* ctx) {
+	if (irq >= MAX_ACPI_IRQS || !handler) {
+		acpi_logger(ERROR, "ACPICA: Invalid IRQ %u\n", irq);
+		return AE_BAD_PARAMETER;
+	}
+
+	struct acpi_irq_info* info = &acpi_irq_table[irq];
+
+	if (info->count >= MAX_HANDLERS_PER_IRQ) {
+		acpi_logger(ERROR, "ACPICA: Too many handlers for IRQ %u\n", irq);
+		return AE_LIMIT;
+	}
+
+	/* Install IDT handler once */
+	if (!info->installed) {
+		uint8_t vector = 0x20 + irq;
+
+		acpi_logger(INFO, "ACPICA: Installing IRQ %u (vector 0x%x)\n", irq, vector);
+
+		add_interrupt_handler(vector, acpi_irq_wrappers[irq], 0, 0x8E);
+		irq_enable(irq);
+		info->installed = true;
+	}
+
+	info->handlers[info->count++] = (struct acpi_irq_handler){
+		.handler = handler,
+		.ctx = ctx
+	};
+
 	return AE_OK;
 }
 
-ACPI_STATUS AcpiOsRemoveInterruptHandler(UINT32 InterruptNumber, ACPI_OSD_HANDLER Handler) {
-	acpica_failure(__func__);
+ACPI_STATUS AcpiOsRemoveInterruptHandler(UINT32 irq, ACPI_OSD_HANDLER handler) {
+	if (irq >= MAX_ACPI_IRQS || !handler) {
+		acpi_logger(ERROR, "ACPICA: Invalid IRQ remove\n");
+		return AE_BAD_PARAMETER;
+	}
+
+	struct acpi_irq_info* info = &acpi_irq_table[irq];
+
+	for (size_t i = 0; i < info->count; i++) {
+		if (info->handlers[i].handler == handler) {
+
+			memmove(&info->handlers[i],
+				&info->handlers[i + 1],
+				(info->count - i - 1) *
+				sizeof(struct acpi_irq_handler));
+
+			info->count--;
+			break;
+		}
+	}
+
+	/* Disable IRQ if no handlers remain */
+	if (info->count == 0 && info->installed) {
+		uint8_t vector = 0x20 + irq;
+
+		acpi_logger(INFO, "ACPICA: Removing IRQ %u\n", irq);
+
+		irq_disable(irq);
+		remove_interrupt_handler(vector);
+		info->installed = false;
+	}
+
 	return AE_OK;
 }
+
+
+// // Interrupt Handling
+// ACPI_STATUS AcpiOsInstallInterruptHandler(UINT32 InterruptLevel, ACPI_OSD_HANDLER Handler, void* Context) {
+// 	acpica_failure(__func__);
+// 	return AE_OK;
+// }
+
+// ACPI_STATUS AcpiOsRemoveInterruptHandler(UINT32 InterruptNumber, ACPI_OSD_HANDLER Handler) {
+// 	acpica_failure(__func__);
+// 	return AE_OK;
+// }
 
 #endif //WALLOS_USE_ACPICA

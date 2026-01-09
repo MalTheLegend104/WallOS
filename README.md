@@ -43,19 +43,22 @@ src┐
 
 ## TODO
 
-1. Rewrite memory managers
-   - My current memory managers are rather... horrible. The virtual memory manager is in a *much* better state than the physical one, but they both need full rewrites.
-   - The physical memory manager has a ton of limitations that I constantly have to work around, and has been my biggest limitation for a long time.
-2. Framebuffer Graphics
-   - Quite literally the only thing preventing UEFI from working is the lack of VGA text mode.
-3. CPU Scheduler
+1. PCI device discovery
+2. CPU Scheduler
    - I really need the ability to spawn tasks in different threads. I don't even really care about this being a fully featured scheduler, I just want different threads.
-4. System Calls
+3. System Calls
    - These are already supported, at least in a "the infrastructure exists" kind of way.
      The ability to handle and registers handlers exists, there's just none that are implemented yet.
-5. Move terminal to userspace.
+4. Move terminal to userspace.
    - Scheduling and multitasking are necessary for me to do userspace apps, but I can still move the terminal to userspace.
    - This would also make developing and testing syscalls much easier.
+
+### Other
+
+> This is an unordered list of things that need to eventually be implemented, but aren't really in the way of anything.
+
+- Optimization of framebuffer on real hardware
+  - I have a feeling the problems I had were due to the interaction between the BIOS provided framebuffer and the GPU in my test system.
 
 ### Kernel
 
@@ -147,6 +150,11 @@ I hope to distribute a `docker` image to remove the pain of building eventually,
 - `qemu-system`
   - This package has been completely different in the past, and might not even be the correct package.
   - We need `qemu-system-x86_64`, you can look it up if `qemu-system` doesn't install it.
+
+There is a multitude of GRUB packages needed.
+
+- `grub-efi-amd64-bin`
+  - This is only required for UEFI builds.
 
 #### pacman
 

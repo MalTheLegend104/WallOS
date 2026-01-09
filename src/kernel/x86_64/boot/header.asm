@@ -17,14 +17,14 @@ header_start:
 ; Framebuffer stuff
 ; Remember we're at the mercy of grub and the bios
 ; We can request (and requesting does result in VBE mode) things but the request isn't guaranteed.
-; %if 0 ;we dont need this yet and im abusing nasm
+%if 0 ;we dont need this yet and im abusing nasm
 align 8
 mb2_tag_fb_start:
 	dw 5
 	; this is the type flag
 	; https://www.gnu.org/software/grub/manual/multiboot2/multiboot.html#Framebuffer-info to see the types
 	; type 1 results in  1024x768x32bit color framebuffer type 1 in qemu and bochs (totally didn't manually comb through hex to figure this out)
-	dw 1	
+	dw 0	
 	dd mb2_tag_fb_end - mb2_tag_fb_start
 	; dd 640 ; width in pixels
 	; dd 480 ; height in pixels
@@ -34,7 +34,7 @@ mb2_tag_fb_start:
 	dd 0
 	; It's not guaranteed to give us the framebuffer we want.
 mb2_tag_fb_end:
-; %endif
+%endif
 
 align 8
 mb2_tag_end_start:

@@ -19,7 +19,8 @@ static display_color_t g_current_fg = DISPLAY_DEFAULT_FG;
 static display_color_t g_current_bg = DISPLAY_DEFAULT_BG;
 
 // Framebuffer mode state
-static framebuffer_t g_fb;
+static framebuffer_t g_front_buffer;
+static framebuffer_t g_back_buffer;
 static framebuffer_info_t g_fb_info;
 static apollo_font_instance g_font_instance = { NULL, 1, 1 };
 static int g_fb_cursor_x = 0;
@@ -129,14 +130,14 @@ static void fb_scroll(void) {
 	size_t pitch = g_fb_info.pitch;
 
 	// Move all lines up
-	fast_memmove(g_fb.buffer,
-		g_fb.buffer + (pitch * font_height),
+	fast_memmove(g_front_buffer.buffer,
+		g_front_buffer.buffer + (pitch * font_height),
 		pitch * (g_fb_info.height - font_height));
 
 	// Clear bottom line
 	apollo_color_t bg = display_color_to_apollo(g_current_bg);
 	coordinate_pair bottom_left = { 0, g_fb_info.height - font_height };
-	apollo_set_rect(&g_fb, bottom_left, PAIR_TOP_LEFT,
+	apollo_set_rect(&g_front_buffer, bottom_left, PAIR_TOP_LEFT,
 		g_fb_info.width, font_height, bg);
 }
 
@@ -176,7 +177,7 @@ static void fb_putc_internal(uint8_t c) {
 				g_fb_cursor_x * char_width,
 				g_fb_cursor_y * char_height
 			};
-			apollo_set_rect(&g_fb, pos, PAIR_TOP_LEFT,
+			apollo_set_rect(&g_front_buffer, pos, PAIR_TOP_LEFT,
 				char_width, char_height,
 				colors.background);
 		}
@@ -200,7 +201,7 @@ static void fb_putc_internal(uint8_t c) {
 		g_fb_cursor_x * char_width,
 		g_fb_cursor_y * char_height
 	};
-	apollo_print_char(&g_fb, &g_font_instance, c, pos, colors);
+	apollo_print_char(&g_front_buffer, &g_font_instance, c, pos, colors);
 
 	g_fb_cursor_x++;
 	if (g_fb_cursor_x >= chars_per_line) {
@@ -338,17 +339,17 @@ static apollo_pixel_type apollo_pixel_type_from_multiboot(const struct multiboot
 #include <string.h>
 
 void apollo_draw_buffer(framebuffer_t* buffer) {
-	printf_serial("Framebuffer DEST: %p\r\nFramebuffer SRC:  %p\r\n", g_fb.buffer, buffer->buffer);
+	printf_serial("Framebuffer DEST: %p\r\nFramebuffer SRC:  %p\r\n", g_front_buffer.buffer, buffer->buffer);
 
-	memcpy(g_fb.buffer, buffer->buffer, g_fb.info->height * g_fb.info->width * g_fb.info->pixel_width);
+	memcpy(g_front_buffer.buffer, buffer->buffer, g_front_buffer.info->height * g_front_buffer.info->width * g_front_buffer.info->pixel_width);
 }
 
 void apollo_get_info(framebuffer_info_t* fb_info) {
-	fb_info->width = g_fb.info->width;
-	fb_info->height = g_fb.info->height;
-	fb_info->pitch = g_fb.info->pitch;
-	fb_info->pixel_width = g_fb.info->pixel_width;
-	fb_info->type = g_fb.info->type;
+	fb_info->width = g_front_buffer.info->width;
+	fb_info->height = g_front_buffer.info->height;
+	fb_info->pitch = g_front_buffer.info->pitch;
+	fb_info->pixel_width = g_front_buffer.info->pixel_width;
+	fb_info->type = g_front_buffer.info->type;
 }
 
 void init_framebuffer(framebuffer_t* framebuffer) {
@@ -395,17 +396,17 @@ const char* pixel_type_to_string(apollo_pixel_type type) {
 // ------------------------------------------------------------------------------------------------
 
 void print_apollo_info() {
-	if (g_fb.info == NULL) {
+	if (g_front_buffer.info == NULL) {
 		printf_serial("[FB] Framebuffer isn't initalized yet...\r\n");
 		return;
 	}
 
 	printf_serial("[FB] Apollo Info:\r\n");
-	printf_serial("\tWidth:  %d\r\n", g_fb.info->width);
-	printf_serial("\tHeight: %d\r\n", g_fb.info->height);
-	printf_serial("\tPitch:  %d\r\n", g_fb.info->pitch);
-	printf_serial("\tPixel Width: %d\r\n", g_fb.info->pixel_width);
-	printf_serial("\tPixel Type: %s\r\n", pixel_type_to_string(g_fb.info->type));
+	printf_serial("\tWidth:  %d\r\n", g_front_buffer.info->width);
+	printf_serial("\tHeight: %d\r\n", g_front_buffer.info->height);
+	printf_serial("\tPitch:  %d\r\n", g_front_buffer.info->pitch);
+	printf_serial("\tPixel Width: %d\r\n", g_front_buffer.info->pixel_width);
+	printf_serial("\tPixel Type: %s\r\n", pixel_type_to_string(g_front_buffer.info->type));
 }
 
 bool display_init(display_mode_t mode) {
@@ -415,9 +416,9 @@ bool display_init(display_mode_t mode) {
 		initScreen();
 		return true;
 	} else if (mode == DISPLAY_MODE_FRAMEBUFFER) {
-		g_fb.info = &g_fb_info;
+		g_front_buffer.info = &g_fb_info;
 
-		init_framebuffer(&g_fb);
+		init_framebuffer(&g_front_buffer);
 
 		g_fb_cursor_x = 0;
 		g_fb_cursor_y = 0;
@@ -426,12 +427,12 @@ bool display_init(display_mode_t mode) {
 		// g_font_instance.x_scaling = 1;
 		// g_font_instance.y_scaling = 1;
 
-		if (g_fb.buffer && g_font_instance.font) {
+		if (g_front_buffer.buffer && g_font_instance.font) {
 			print_fb_info();
 			print_apollo_info();
 
 			apollo_color_t bg = display_color_to_apollo(DISPLAY_COLOR_BLACK);
-			apollo_fill_buffer(&g_fb, bg);
+			apollo_fill_buffer(&g_front_buffer, bg);
 			return true;
 		}
 		return false;
@@ -455,7 +456,7 @@ void display_clear(void) {
 		update_cursor(0, 0);
 	} else {
 		apollo_color_t bg = display_color_to_apollo(g_current_bg);
-		apollo_fill_buffer(&g_fb, bg);
+		apollo_fill_buffer(&g_front_buffer, bg);
 		g_fb_cursor_x = 0;
 		g_fb_cursor_y = 0;
 	}
@@ -469,7 +470,7 @@ void display_clear_row(void) {
 		apollo_color_t bg = display_color_to_apollo(g_current_bg);
 		int char_height = g_font_instance.font->font_height * g_font_instance.y_scaling;
 		coordinate_pair pos = { 0, g_fb_cursor_y * char_height };
-		apollo_set_rect(&g_fb, pos, PAIR_TOP_LEFT,
+		apollo_set_rect(&g_front_buffer, pos, PAIR_TOP_LEFT,
 			g_fb_info.width, char_height, bg);
 		g_fb_cursor_x = 0;
 	}
@@ -624,7 +625,7 @@ void display_panic(const char* error) {
 	} else {
 		// Implement framebuffer panic screen
 		apollo_color_t pink = display_color_to_apollo(DISPLAY_COLOR_PINK);
-		apollo_fill_buffer(&g_fb, pink);
+		apollo_fill_buffer(&g_front_buffer, pink);
 
 		g_fb_cursor_x = 0;
 		g_fb_cursor_y = 0;
@@ -638,7 +639,7 @@ void display_panic_array(const char** errors, uint8_t length) {
 		pink_screen_sa(errors, length);
 	} else {
 		apollo_color_t pink = display_color_to_apollo(DISPLAY_COLOR_PINK);
-		apollo_fill_buffer(&g_fb, pink);
+		apollo_fill_buffer(&g_front_buffer, pink);
 
 		g_fb_cursor_x = 0;
 		g_fb_cursor_y = 0;

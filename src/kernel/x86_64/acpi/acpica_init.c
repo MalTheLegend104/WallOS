@@ -387,17 +387,23 @@ void initialize_acpi(void) {
 
 	logger(INFO, "ACPICA loaded tables.\n");
 
-	// Test example header.
-	// ACPI_TABLE_HEADER* table;
-	// status = AcpiGetTable(ACPI_SIG_FADT, 1, &table);
+	status = AcpiEnableSubsystem(ACPI_FULL_INITIALIZATION);
+	if (ACPI_FAILURE(status)) {
+		init_failure("Failed to enable ACPI subsystem.");
+	}
 
-	// if (ACPI_FAILURE(status)) {
-	// 	// Handle error
-	// } else {
-	// 	// Parse the FADT table
-	// 	ACPI_TABLE_FADT* fadt = (ACPI_TABLE_FADT*) table;
-	// 	printf("FADT pointer addr: 0x%llx\n", fadt);
-	// }
+
+	logger(INFO, "ACPICA enabled subsystem.\n");
+
+	status = AcpiInitializeObjects(ACPI_FULL_INITIALIZATION);
+	if (ACPI_FAILURE(status)) {
+		init_failure("Failed to initialize ACPI Objects.");
+	}
+
+
+	logger(INFO, "ACPICA driver fully initialized.\n");
 }
+
+
 
 #endif // WALLOS_USE_ACPICA

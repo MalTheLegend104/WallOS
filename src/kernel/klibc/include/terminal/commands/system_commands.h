@@ -1,6 +1,8 @@
 #ifndef SYSTEMCOMMANDS_H
 #define SYSTEMCOMMANDS_H
 
+#include <stdbool.h>
+
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -16,6 +18,7 @@ extern "C" {
 	int sysinfo(int argc, char** argv);
 	void sysinfo_boot();
 
+	bool mount_drive(int pdrv);
 	int drive_command(int argc, char** argv);
 	int drive_command_help(int argc, char** argv);
 

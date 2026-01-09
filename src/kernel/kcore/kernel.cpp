@@ -9,12 +9,14 @@
 
 #include <drivers/keyboard.h>
 #include <drivers/serial.h>
+#include <drivers/sata/pio.h>
 
 #include <klibc/kprint.h>
 #include <klibc/cpuid_calls.h>
 #include <klibc/logger.h>
 #include <klibc/features.hpp>
 #include <klibc/multiboot.h>
+#include <klibc/display.h>
 
 #include <memory/physical_mem.hpp>
 #include <memory/virtual_mem.h>
@@ -25,6 +27,10 @@
 #include <system/timing.h>
 
 #include <terminal/terminal.h>
+#include <terminal/commands/system_commands.h>
+
+#include <ff.h>
+
 
 /* Okay, this is where the fun begins. Literally and figuratively.
  * We mark these extern c because we need to call it from asm,
@@ -121,50 +127,6 @@ int syscall_command(int argc, char** argv) {
 	return ret;
 }
 
-#include <klibc/display.h>
-void framebuffer() {
-	uint8_t a[] = {
-		0x0A, 0xdb, 0xdb, 0xbb, 0x20, 0x20, 0x20, 0x20, 0xdb, 0xdb,
-		0xbb, 0x20, 0xdb, 0xdb, 0xdb, 0xdb, 0xdb, 0xbb, 0x20, 0xdb,
-		0xdb, 0xbb, 0x20, 0x20, 0x20, 0x20, 0x20, 0xdb, 0xdb, 0xbb,
-		0x20, 0x20, 0x20, 0x20, 0x20, 0x20, 0xdb, 0xdb, 0xdb, 0xdb,
-		0xdb, 0xdb, 0xbb, 0x20, 0xdb, 0xdb, 0xdb, 0xdb, 0xdb, 0xdb,
-		0xdb, 0xbb, 0x0a, 0xdb, 0xdb, 0xba, 0x20, 0x20, 0x20, 0x20,
-		0xdb, 0xdb, 0xba, 0xdb, 0xdb, 0xc9, 0xcd, 0xcd, 0xdb, 0xdb,
-		0xbb, 0xdb, 0xdb, 0xba, 0x20, 0x20, 0x20, 0x20, 0x20, 0xdb,
-		0xdb, 0xba, 0x20, 0x20, 0x20, 0x20, 0x20, 0xdb, 0xdb, 0xc9,
-		0xcd, 0xcd, 0xcd, 0xdb, 0xdb, 0xbb, 0xdb, 0xdb, 0xc9, 0xcd,
-		0xcd, 0xcd, 0xcd, 0xbc, 0x0a, 0xdb, 0xdb, 0xba, 0x20, 0xdb,
-		0xbb, 0x20, 0xdb, 0xdb, 0xba, 0xdb, 0xdb, 0xdb, 0xdb, 0xdb,
-		0xdb, 0xdb, 0xba, 0xdb, 0xdb, 0xba, 0x20, 0x20, 0x20, 0x20,
-		0x20, 0xdb, 0xdb, 0xba, 0x20, 0x20, 0x20, 0x20, 0x20, 0xdb,
-		0xdb, 0xba, 0x20, 0x20, 0x20, 0xdb, 0xdb, 0xba, 0xdb, 0xdb,
-		0xdb, 0xdb, 0xdb, 0xdb, 0xdb, 0xbb, 0x0a, 0xdb, 0xdb, 0xba,
-		0xdb, 0xdb, 0xdb, 0xbb, 0xdb, 0xdb, 0xba, 0xdb, 0xdb, 0xc9,
-		0xcd, 0xcd, 0xdb, 0xdb, 0xba, 0xdb, 0xdb, 0xba, 0x20, 0x20,
-		0x20, 0x20, 0x20, 0xdb, 0xdb, 0xba, 0x20, 0x20, 0x20, 0x20,
-		0x20, 0xdb, 0xdb, 0xba, 0x20, 0x20, 0x20, 0xdb, 0xdb, 0xba,
-		0xc8, 0xcd, 0xcd, 0xcd, 0xcd, 0xdb, 0xdb, 0xba, 0x0a, 0xc8,
-		0xdb, 0xdb, 0xdb, 0xc9, 0xdb, 0xdb, 0xdb, 0xc9, 0xbc, 0xdb,
-		0xdb, 0xba, 0x20, 0x20, 0xdb, 0xdb, 0xba, 0xdb, 0xdb, 0xdb,
-		0xdb, 0xdb, 0xdb, 0xdb, 0xbb, 0xdb, 0xdb, 0xdb, 0xdb, 0xdb,
-		0xdb, 0xdb, 0xbb, 0xc8, 0xdb, 0xdb, 0xdb, 0xdb, 0xdb, 0xdb,
-		0xc9, 0xbc, 0xdb, 0xdb, 0xdb, 0xdb, 0xdb, 0xdb, 0xdb, 0xba,
-		0x0a, 0x20, 0xc8, 0xcd, 0xcd, 0xbc, 0xc8, 0xcd, 0xcd, 0xbc,
-		0x20, 0xc8, 0xcd, 0xbc, 0x20, 0x20, 0xc8, 0xcd, 0xbc, 0xc8,
-		0xcd, 0xcd, 0xcd, 0xcd, 0xcd, 0xcd, 0xbc, 0xc8, 0xcd, 0xcd,
-		0xcd, 0xcd, 0xcd, 0xcd, 0xbc, 0x20, 0xc8, 0xcd, 0xcd, 0xcd,
-		0xcd, 0xcd, 0xbc, 0x20, 0xc8, 0xcd, 0xcd, 0xcd, 0xcd, 0xcd,
-		0xcd, 0xbc, 0x0a, '\0'
-	};
-
-	display_set_colors(DISPLAY_COLOR_LIGHT_CYAN, DISPLAY_DEFAULT_BG);
-	display_puts((const char*) a);
-	display_set_colors_default();
-}
-
-#include <drivers/sata/pio.h>
-
 /* TODO: Remove this when PMM is fixed. */
 #define JANKY_INITRD_LOADER
 #ifdef JANKY_INITRD_LOADER
@@ -188,6 +150,12 @@ void init_initrd() {
 extern void pmm_init();
 
 void kernel_main(unsigned int magic, multiboot_info* mbt_info) {
+	// ------------------------------------------------------------------------------------------------
+	// Very early init
+	// We *are not* guaranteed to have any graphics until after the framebuffer is set up.
+	// ------------------------------------------------------------------------------------------------
+	// If we have VGA Text Mode, we set it up before everything else.
+	// If we don't we have to wait for framebuffer init (which relies on a lot of this early init).
 	initScreen();
 	init_serial();
 	printf_serial("Welcome to WallOS!\r\n");
@@ -197,11 +165,15 @@ void kernel_main(unsigned int magic, multiboot_info* mbt_info) {
 	cpu_features f = cpuFeatures();
 	Features::checkFeatures(&f);
 	Features::enableFeatures();
+
+	// This inits the first 22 interrupts + the PIT interrupt (PIT is disabled at this point).
 	initIDT();
 
-	printf_serial("Kernel Mapping End: 0x%llx\r\nRSDP ADDR: 0x%llx\r\n\r\n", Memory::GetMappingEnd(), MultibootManager::getACPI()->rsdp);
+	// printf_serial("Kernel Mapping End: 0x%llx\r\nRSDP ADDR: 0x%llx\r\n\r\n", Memory::GetMappingEnd(), MultibootManager::getACPI()->rsdp);
 
-	/* Framebuffer init. Must come before PhysicalMemInit. */
+	// ------------------------------------------------------------------------------------------------
+	// Framebuffer
+	// ------------------------------------------------------------------------------------------------
 	multiboot_tag_framebuffer* e = MultibootManager::getFramebufferTag();
 	Memory::mapFramebuffer((uintptr_t) e->common.framebuffer_addr, e->common.framebuffer_height * e->common.framebuffer_pitch);
 
@@ -211,6 +183,9 @@ void kernel_main(unsigned int magic, multiboot_info* mbt_info) {
 
 	display_init(display_mode);
 
+	// ------------------------------------------------------------------------------------------------
+	// Initrd
+	// ------------------------------------------------------------------------------------------------
 	// We get initrd from grub via a multiboot module tag.
 	// We *should* be reserving this memory so it doesn't get allocated to something else.
 	// the physical allocator is a horrible mess from past me
@@ -223,53 +198,54 @@ void kernel_main(unsigned int magic, multiboot_info* mbt_info) {
 	// printf_serial("    Module Physical Size: %d bytes\r\n", module_tag->mod_end - module_tag->mod_start);
 	//Memory::reserveMemory(module_tag->mod_start, module_tag->mod_end - module_tag->mod_start);
 
+	// I need to move this to be a multiboot module...
+	// I mean this works fine and initrd is limited to 2MB so...
 	init_initrd();
+	/* initrd is always drive 0:
+	 * I don't entirely know if I want to keep that as an explicit path or
+	 * hide it in /initrd in the virtual FS whenever we get one set up.
+	 */
+	mount_drive(0);
 
-	// pmm_init();
-	// Things that need interrupts here (like keyboard, mouse, etc.)
+	// ------------------------------------------------------------------------------------------------
+	// Early Interrupt Handlers
+	// ------------------------------------------------------------------------------------------------
+	// Things that use interrupts but other init steps depend on should be set here.
+	// Everything else should come in the regular interrupt handler section.
 	// Everything that needs an IRQ should be done after the PIT as it messes with the mask
 	// If it requires allocations, add it after `initKernelAllocator()`
 	pit_init(1000);
 	keyboard_init();
 
-	// wait_for_esc();
-
+	// ------------------------------------------------------------------------------------------------
+	// Physical Memory & ACPI
+	// ------------------------------------------------------------------------------------------------
 	Memory::PhysicalMemInit();
-
 	acpi_tables();
 
-	printf_serial("Physical kernel end: 0x%llx\r\n", Memory::Info::getPhysKernelEnd());
-
-	/* This is all framebuffer stuff.
-	 * I'm not in too much of a rush about it, it was just a fun experiment
-	 * multiboot_tag_framebuffer* e = MultibootManager::getFramebufferTag();
-	 * pixelwidth = e->common.framebuffer_bpp;
-	 * pitch = e->common.framebuffer_pitch;
-	 * uintptr_t fb_addr = e->common.framebuffer_addr;
-	 * uint8_t* fb = (uint8_t*) fb_addr;
-	 * Memory::mapFramebuffer(fb_addr, e->common.framebuffer_height * e->common.framebuffer_pitch);
-	 * framebuf(0, 0);
-
-	 * int bpp = e->common.framebuffer_bpp;
-	 * for (int i = 0; i < 200; i++) {
-	 * 	for (int j = 0; j < 200; j++) {
-	 * 		//putpixel(fb, i, j, 0xffffff, bpp / 8, e->common.framebuffer_pitch);
-	 * 	}
-	 * }
-	 * for (int i = 0; i < 26; i++) {
-	 * 	//putchar(fb, e->common.framebuffer_pitch, 'a', i, 0, 0xFF0000, 0x000000);
-	 * }
-	 * init_ssfn();
-	 * print_logo_ssfn();
-	 */
-
-	// panic_s("GOT BEFORE IDE DRIVES?????");
-	detect_ide_drives();
-
+	// ------------------------------------------------------------------------------------------------
+	// Allocators
+	// ------------------------------------------------------------------------------------------------
 	initKernelAllocator();
 
+	// ------------------------------------------------------------------------------------------------
+	// Drive detection (and eventual virtual FS setup)
+	// ------------------------------------------------------------------------------------------------
+	// I have no better spot to put this so it goes here.
+	detect_ide_drives();
+
+	// ------------------------------------------------------------------------------------------------
+	// ------------------------------------------------------------------------------------------------
+	// Regular Interrupt Handlers
+	// ------------------------------------------------------------------------------------------------
+	// ------------------------------------------------------------------------------------------------
 	Syscall::initialize();
 
+	// ------------------------------------------------------------------------------------------------
+	// ------------------------------------------------------------------------------------------------
+	// ACPI
+	// ------------------------------------------------------------------------------------------------
+	// ------------------------------------------------------------------------------------------------
 	initialize_acpi();
 
 	// char* array[] = { (char*) "drive", (char*) "mount", (char*) "0" };
@@ -283,9 +259,6 @@ void kernel_main(unsigned int magic, multiboot_info* mbt_info) {
 
 	printf("");
 	wait_for_esc();
-
-	// char* args[] = { "acpi", "list" };
-	// acpi_command(2, args);
 
 	// After we're done checking features, we need to set up our terminal.
 	// Eventually this will be a userspace program. 

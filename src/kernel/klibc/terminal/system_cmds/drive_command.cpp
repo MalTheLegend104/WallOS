@@ -355,6 +355,27 @@ int drive_mount_cmd(int argc, char** argv) {
 	return 0;
 }
 
+#include <stdlib.h>
+/**
+ * @brief Manually mount a drive number. Mostly for initrd.
+ *
+ * @param pdrv Drive number
+ */
+bool mount_drive(int pdrv) {
+	if (drive_mounted[pdrv]) {
+		printf("Drive %d is already mounted.\n", pdrv);
+		return false;
+	}
+
+	char buf[10];
+	itoa(pdrv, buf, 10);
+	char* cmd[] = { "mount",  buf };
+
+	drive_mount_cmd(2, cmd);
+
+	return drive_mounted[pdrv];
+}
+
 // -------------------------------------------------------------------
 
 int drive_unmount_cmd(int argc, char** argv) {
