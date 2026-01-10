@@ -202,12 +202,16 @@ void kernel_main(unsigned int magic, multiboot_info* mbt_info) {
 	// Framebuffer
 	// ------------------------------------------------------------------------------------------------
 	multiboot_tag_framebuffer* e = MultibootManager::getFramebufferTag();
-	Memory::mapFramebuffer((uintptr_t) e->common.framebuffer_addr, e->common.framebuffer_height * e->common.framebuffer_pitch);
 
 	display_mode_t display_mode = DISPLAY_MODE_VGA_TEXT;
 	if (e->common.framebuffer_type == MULTIBOOT_FRAMEBUFFER_TYPE_RGB) display_mode = DISPLAY_MODE_FRAMEBUFFER;
 	if (e->common.framebuffer_type == MULTIBOOT_FRAMEBUFFER_TYPE_EGA_TEXT) display_mode = DISPLAY_MODE_VGA_TEXT;
 
+	Memory::mapFramebuffer(
+		(uintptr_t) e->common.framebuffer_addr,
+		e->common.framebuffer_height * e->common.framebuffer_pitch,
+		display_mode == DISPLAY_MODE_VGA_TEXT
+	);
 	display_init(display_mode);
 
 	// ------------------------------------------------------------------------------------------------

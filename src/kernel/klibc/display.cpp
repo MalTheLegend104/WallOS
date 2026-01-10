@@ -34,6 +34,8 @@ static apollo_font_instance font_instance = { NULL, 1, 1 };
 static int fb_cursor_x = 0;
 static int fb_cursor_y = 0;
 
+uintptr_t framebuffer_ptr;
+
 // ------------------------------------------------------------------------------------------------
 // Color Conversion
 // ------------------------------------------------------------------------------------------------
@@ -307,10 +309,16 @@ static apollo_pixel_type apollo_pixel_type_from_multiboot(const struct multiboot
 	 * 24-bit formats
 	 * ======================= */
 	if (bpp == 24 && rsize == 8 && gsize == 8 && bsize == 8) {
-		if (MATCH(16, 8, 8, 8, 0, 8))
-			return APOLLO_PIXEL_TYPE_RGB24;
+		// I think I had these backwards...
+		// if (MATCH(16, 8, 8, 8, 0, 8))
+		// 	return APOLLO_PIXEL_TYPE_RGB24;
+		// if (MATCH(0, 8, 8, 8, 16, 8))
+		// 	return APOLLO_PIXEL_TYPE_BGR24;
 
 		if (MATCH(0, 8, 8, 8, 16, 8))
+			return APOLLO_PIXEL_TYPE_RGB24;
+
+		if (MATCH(16, 8, 8, 8, 0, 8))
 			return APOLLO_PIXEL_TYPE_BGR24;
 	}
 
@@ -391,7 +399,8 @@ void init_framebuffer(framebuffer_t* framebuffer) {
 	framebuffer->info->type = apollo_pixel_type_from_multiboot(e);
 	// printf_serial("[FB] framebuffer pixel type: %d", internal_fb_info.type);
 
-	framebuffer->buffer = (uint8_t*) e->common.framebuffer_addr;
+	// framebuffer->buffer = (uint8_t*) e->common.framebuffer_addr;
+	framebuffer->buffer = (uint8_t*) framebuffer_ptr;
 
 	// This is the default
 	// I think I'm going to only have 3 included options, and use one based on the framebuffer size.

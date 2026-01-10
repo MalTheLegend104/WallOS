@@ -36,10 +36,14 @@ void init_failure(const char* str) {
 }
 
 void acpi_tables(void) {
+
+}
+
+void initialize_acpi(void) {
 	printf_color(PRINT_COLOR_GREEN, PRINT_DEFAULT_BG, "Trying to initialize ACPI tables...\r\n");
 
 
-	// uACPI's initialization phase handles table discovery and loading
+// uACPI's initialization phase handles table discovery and loading
 	uacpi_status status = uacpi_initialize(0);
 	if (uacpi_unlikely_error(status)) {
 		printf_serial("Status: %s\r\n", uacpi_status_to_string(status));
@@ -49,16 +53,13 @@ void acpi_tables(void) {
 
 	printf_serial("Successfully loaded tables.\r\n");
 	printf_color(PRINT_COLOR_GREEN, PRINT_DEFAULT_BG, "Successfully loaded tables.\n");
-}
-
-void initialize_acpi(void) {
 	// Note: uacpi_initialize() was already called in acpi_tables()
 	// So we check if it's already initialized or call it here if acpi_tables() wasn't called
 
 	logger(INFO, "uACPI Initialized.\n");
 
 	// Load the AML namespace (equivalent to AcpiLoadTables)
-	uacpi_status status = uacpi_namespace_load();
+	status = uacpi_namespace_load();
 	if (uacpi_unlikely_error(status)) {
 		init_failure("Failed to load namespace.");
 	}

@@ -4,8 +4,9 @@
 #include <memory/virtual_mem.h>
 #include <stdio.h>
 
+#ifdef WALLOS_USE_ACPICA
 ACPI_TABLE_MCFG* mcfg = NULL;
-
+#endif
 /**
  * Class and Subclass lookup
  */
@@ -81,6 +82,7 @@ const char* pci_get_class_info(uint8_t base_class, uint8_t sub_class) {
  * Handles both ECAM (MMIO) and Legacy (Port 0xCF8/0xCFC)
  */
 uint32_t pci_config_read32(uint16_t seg, uint8_t bus, uint8_t slot, uint8_t func, uint16_t offset) {
+#ifdef WALLOS_USE_ACPICA
 	if (mcfg) {
 		// Find the correct MCFG allocation for this segment and bus
 		int entry_count = (mcfg->Header.Length - sizeof(ACPI_TABLE_MCFG)) / sizeof(ACPI_MCFG_ALLOCATION);
@@ -111,12 +113,14 @@ uint32_t pci_config_read32(uint16_t seg, uint8_t bus, uint8_t slot, uint8_t func
 		((uint32_t) slot << 11) | ((uint32_t) func << 8) | (offset & 0xFC));
 	outl(0xCF8, address);
 	return inl(0xCFC);
+#endif
 }
 
 /**
  * Recursive Bus Scan
  */
 void pci_scan_bus(uint16_t seg, uint8_t bus) {
+#ifdef WALLOS_USE_ACPICA
 	for (uint8_t slot = 0; slot < 32; slot++) {
 		uint32_t id_reg = pci_config_read32(seg, bus, slot, 0, 0x00);
 		if ((id_reg & 0xFFFF) == 0xFFFF) continue;
@@ -148,12 +152,14 @@ void pci_scan_bus(uint16_t seg, uint8_t bus) {
 			if (func == 0 && !(header_type & 0x80)) break;
 		}
 	}
+#endif
 }
 
 /**
  * 3. Entry Point
  */
 void pci_init_discovery() {
+#ifdef WALLOS_USE_ACPICA
 	ACPI_STATUS status = AcpiGetTable((char*) "MCFG", 1, (ACPI_TABLE_HEADER**) &mcfg);
 
 	if (ACPI_SUCCESS(status)) {
@@ -166,4 +172,5 @@ void pci_init_discovery() {
 	} else {
 		pci_scan_bus(0, 0);
 	}
+#endif
 }

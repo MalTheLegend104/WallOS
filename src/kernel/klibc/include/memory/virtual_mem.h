@@ -16,6 +16,8 @@
 #define GET_PAGE_TABLE_INDEX(page)   (((page) >> 12) & 0x1FF)
 
 #define BIT_NX                     0x8000000000000000ULL // Highest bit, bit 63
+
+#define BIT_PAT_LARGE              0x1000ULL 
 #define BIT_11                     0x800ULL
 #define BIT_10                     0x400ULL
 #define BIT_9                      0x200ULL
@@ -28,6 +30,8 @@
 #define BIT_USR                    0x04ULL
 #define BIT_WRITE                  0x02ULL
 #define BIT_PRESENT                0x01ULL
+
+#define PDE_FLAGS_WC_2MB (BIT_PRESENT | BIT_WRITE | BIT_PWT | BIT_PCD | BIT_SIZE | BIT_PAT_LARGE)
 
 #define POS_NX                     63
 #define POS_11                     11
@@ -73,10 +77,11 @@ namespace Memory {
 
 	uintptr_t VirtToPhysBase(uintptr_t addr);
 	uintptr_t MapPreAllocMem(uintptr_t addr);
-	void mapFramebuffer(uintptr_t base_addr, size_t size);
+	void mapFramebuffer(uintptr_t base_addr, size_t size, bool text_mode);
 	uintptr_t MapKernelLocation(uintptr_t addr, size_t len);
 	uintptr_t MapSequentialKernelPages(size_t pages);
 	uintptr_t MapSequentialKernelPages(size_t pages, uintptr_t base_addr);
+	uintptr_t MapSequentialKernelPagesWithFlags(size_t pages, uintptr_t phys_base_addr, uint64_t flags);
 
 	void reserveMemory(uintptr_t base_addr, size_t size);
 

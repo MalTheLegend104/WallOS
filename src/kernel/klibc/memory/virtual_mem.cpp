@@ -272,6 +272,12 @@ uintptr_t physToVirt(uint64_t pml4_index, uint64_t pdp_index, uint64_t pde_index
 		+ (pde_index << PDE_OFFSET);
 }
 
+/* We have this defined in display.c
+ * It only gets used if we have an actual framebuffer, in place of the multiboot pointer.
+ * We should probably just return it from this function, then pass it to display_init(),
+ * but the global namespace is already polluted enough so ¯\_(ツ)_/¯
+ */
+extern "C" uintptr_t framebuffer_ptr;
 /**
  * @brief Maps a framebuffer into both physical and virtual memory.
  * The framebuffer gets identity mapped into memory.
@@ -279,62 +285,32 @@ uintptr_t physToVirt(uint64_t pml4_index, uint64_t pdp_index, uint64_t pde_index
  * @param base_addr The physical memory address of the framebuffer.
  * @param size The size of the framebuffer in bytes.
  */
-// void Memory::mapFramebuffer(uintptr_t base_addr, size_t size) {
-// 	// We need to map the memory region provided into both physical and virtual memory.
-// 	Memory::reserveMemory(base_addr, size);
-
-// 	// printf_serial("Framebuffer is at 0x%llx, at size 0x%llx\r\n", base_addr, size);
-// 	// The framebuffer should be in kernel memory
-
-// 	// amount of 2mb sections this takes up
-// 	size_t mb_pages_taken = (size + PAGE_2MB_SIZE) / PAGE_2MB_SIZE;
-
-// 	// clear the lower 21 bytes of the ptr so we can map the virutal pages
-// 	uintptr_t addr = base_addr & ~0x1FFFFF;
-// 	// for the amount of pages taken by the map, we're going to map each page to virtual memory.
-
-// 	for (size_t i = 0; i < mb_pages_taken; i++) {
-// 		int pml4_index = GET_PML4_INDEX(addr);
-// 		int pdp_index = GET_PDPT_INDEX(addr);
-// 		int pde_index = GET_PAGE_DIR_INDEX(addr);
-
-// 		// Extract the addresses from the pages.
-// 		uint64_t* pdp_t = (uint64_t*) getFrame(pml4[pml4_index]);
-// 		uint64_t* pde_t = (uint64_t*) getFrame(pdp_t[pdp_index]);
-
-// 		set_page_frame(&(pde_t[pde_index]), addr);
-// 		pde_t[pde_index] |= BIT_SIZE | BIT_WRITE | BIT_PRESENT;
-
-// 		addr += PAGE_2MB_SIZE;
-// 	}
-
-// 	return;
-// }
-
-#define BIT_PAT_LARGE 0x1000ULL 
-
-void Memory::mapFramebuffer(uintptr_t base_addr, size_t size) {
+void Memory::mapFramebuffer(uintptr_t base_addr, size_t size, bool text_mode) {
+	// Reserve the physical memory region to prevent other allocations from using it.
+	// There's a very good chance we're already in a "reserved" region for MMIO
 	Memory::reserveMemory(base_addr, size);
 
-	size_t mb_pages_taken = (size + PAGE_2MB_SIZE - 1) / PAGE_2MB_SIZE;
-	uintptr_t addr = base_addr & ~0x1FFFFF;
-
-	for (size_t i = 0; i < mb_pages_taken; i++) {
-		int pml4_index = GET_PML4_INDEX(addr);
-		int pdp_index = GET_PDPT_INDEX(addr);
-		int pde_index = GET_PAGE_DIR_INDEX(addr);
-
-		uint64_t* pdp_t = (uint64_t*) getFrame(pml4[pml4_index]);
-		uint64_t* pde_t = (uint64_t*) getFrame(pdp_t[pdp_index]);
-
-		set_page_frame(&(pde_t[pde_index]), addr);
-
-		// Apply flags: 
-		// BIT_PWT | BIT_PCD | BIT_PAT_LARGE selects Slot 7 in the PAT.
-		pde_t[pde_index] |= BIT_SIZE | BIT_WRITE | BIT_PRESENT | BIT_PWT | BIT_PCD | BIT_PAT_LARGE;
-
-		addr += PAGE_2MB_SIZE;
+	// If it's VGA text mode, we don't need to do anything else, 
+	// it's already identity mapped (and the mapping will be ignored anyway).
+	if (text_mode) {
+		printf_serial("[VMM] Framebuffer is VGA Text Mode. No mapping required.\r\n");
+		return;
 	}
+
+	// Calculate the number of 2MB pages required for this framebuffer.
+	// Ensure we account for the size and any alignment offset from the base address.
+	size_t mb_pages_taken = (size + PAGE_2MB_SIZE - 1) / PAGE_2MB_SIZE;
+
+	// Align the physical base address to the start of a 2MB page.
+	uintptr_t phys_addr = base_addr & ~0x1FFFFF;
+
+	// We get allocate the virtual address sequentially, with the correct flags to enable write caching to *try* to speed up framebuffer writes.
+	uintptr_t virt_addr = Memory::MapSequentialKernelPagesWithFlags(mb_pages_taken, phys_addr, PDE_FLAGS_WC_2MB);
+
+	// Read the above comment on this variable
+	framebuffer_ptr = virt_addr;
+
+	printf_serial("[VMM] Framebuffer mapped: Phys 0x%llx -> Virt 0x%llx\r\n", phys_addr, virt_addr);
 }
 
 /**
@@ -524,6 +500,87 @@ uintptr_t Memory::MapSequentialKernelPages(size_t pages, uintptr_t phys_base_add
 }
 
 /**
+ * @brief Map sequential pages of virtual memory.
+ * This assumes you've already provided/allocated the base address of the sequential physical pages you require.
+ *
+ * @param pages Amount of pages to map
+ * @param phys_base_addr Base address of the physical pages.
+ * If you have more than one page, it will automatically add 2MB_PAGE_SIZE to the base for each sequential page.
+ * @param flags The flags to apply to the page, as defined in virtual_mem.h
+ * @return uintptr_t The base virtual memory address corresponding to the provided physical addresses.
+ */
+uintptr_t Memory::MapSequentialKernelPagesWithFlags(size_t pages, uintptr_t phys_base_addr, uint64_t flags) {
+	// This is essentially an exact copy of the other sequential mapping
+	// This one just assumes you have already asked the physical allocator for the pages rather than allocating it's own.
+
+	/* First attempt. Check kpdp[510] and kpdp[511] for empty entry. */
+	int i = 510;
+	while (i <= TABLE_ENTRIES) {
+		if (i == 512) i = 1; /* Second attempt. Check the rest of kpdp. */
+		if (i == 509) break; // Break the loop after we loop through the entire kpdp
+		uint64_t* pde_t = (uint64_t*) getFrame(kpdp[i]);
+		// Each pdp entry has 512 pde entries.
+		// Each pde entry corresponds to 1GB of virtual addresses.
+		// Each entry in a pde is a 2MB page.
+		// If I ever get around to 4KB pages, each pde contains 512 pte, each of which is 4kb pages
+
+		uint64_t pde_base_index = 0;
+		size_t current_streak = 0;
+
+		// If the pde entry isn't present, we need to create a new pde or load one from disk
+		if (TABLE_ENTRY_EMPTY(kpdp, i)) {
+			// TODO: use kernel allocator to alloc new tables
+			continue; // For now we're going to just continue.
+		}
+		for (int j = 0; j < TABLE_ENTRIES; j++) {
+			if (TABLE_ENTRY_EMPTY(pde_t, j)) {
+				// For simplicity's sake, I am not allocating across tables.
+				// I wont allocate the end of pde[1] into the beginning of pde[2]
+				// This would complicate this code to be much more messy, which I dont want to deal with right now.
+				if (current_streak == 0) {
+					pde_base_index = j;
+				}
+
+				current_streak++;
+
+				if (current_streak == pages) {
+					uintptr_t base_addr = phys_base_addr;
+					if (!base_addr) {
+						// panic_s("Out of physical memory.");
+						return 0;
+					}
+
+					for (size_t k = 0; k < pages; k++) {
+						set_page_frame(&(pde_t[pde_base_index + k]), base_addr + (PAGE_2MB_SIZE * k));
+						pde_t[pde_base_index + k] |= flags;
+					}
+
+					// TODO make this use invlpg instead of this
+					// This forces a full tlb flush
+					asm volatile("mov %%rax, %%cr3" ::"a"((uint64_t) pml4 - KERNEL_VIRTUAL_BASE));
+
+					// The new virtual address must be assembled. It's a lil janky.
+					// pml4 index is 511
+					// pdp index is `i`
+					// pde index is `j`
+					// the rest is the base pointer to the address.
+					return physToVirt(511, i, pde_base_index, 0, PAGE_2MB_SIZE);
+				}
+			} else {
+				current_streak = 0;
+				pde_base_index = 0;
+			}
+		}
+		i++;
+	}
+
+	// If we still haven't found something we got a problem.
+	// This will eventually be solved with swap space or something similar.
+	panic_s("Kernel has run out of virtual memory space.");
+	return 0; // Keep GCC happy. This is irrelevant.
+}
+
+/**
  * @brief Maps the provided address into the kernel address space.
  *
  * The entire 2MB page around the address will be mapped. The length is to check how many pages it takes up.
@@ -538,13 +595,15 @@ uintptr_t Memory::MapKernelLocation(uintptr_t addr, size_t len) {
 	size_t addr_offset = addr & 0x1FFFFF;
 	uintptr_t final_addr = addr + len;
 
-	uintptr_t base_page_addr = addr & ~0x1FFFFF; // Clear the lower bytes of the addr to get the base page pointer
-	uintptr_t final_page_addr = final_addr & ~0x1FFFFF;
+	// Calculate the start of the first 2MB page
+	uintptr_t base_page_addr = addr & ~0x1FFFFF;
 
-	int page_count = 1;
-	if (final_page_addr != base_page_addr) {
-		page_count = (final_page_addr - base_page_addr) / PAGE_2MB_SIZE;
-	}
+	// Calculate the start of the last 2MB page (by aligning the end address DOWN)
+	uintptr_t final_page_addr = (final_addr - 1) & ~0x1FFFFF;
+
+	// The number of pages is the distance between the first and last page, 
+	// divided by page size, plus 1 for the first page itself.
+	int page_count = ((final_page_addr - base_page_addr) / PAGE_2MB_SIZE) + 1;
 
 	// printf_serial("\tBase Page Addr: 0x%llx\r\n\tFinal Page Addr: 0x%llx\r\n\tBase Offset: 0x%llx\r\n", base_page_addr, final_page_addr, addr_offset);
 
