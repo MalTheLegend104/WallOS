@@ -324,24 +324,27 @@ ACPI_STATUS AcpiOsEnterSleep(UINT8 SleepState, UINT32 RegaValue, UINT32 RegbValu
 	return AE_OK;
 }
 
-// // Mutexes and Spinlocks
-// ACPI_STATUS AcpiOsCreateMutex(ACPI_MUTEX* OutHandle) {
-// 	acpica_failure(__func__);
-// 	return AE_OK;
-// }
+// Mutexes and Spinlocks
+// Mutexes (using the Semaphore primitives)
+ACPI_STATUS AcpiOsCreateMutex(ACPI_MUTEX* OutHandle) {
+	// A Mutex is a semaphore with Max 1, Initial 1
+	return AcpiOsCreateSemaphore(1, 1, (ACPI_SEMAPHORE*) OutHandle);
+}
 
-// void AcpiOsDeleteMutex(ACPI_MUTEX Handle) {
-// 	acpica_failure(__func__);
-// }
+void AcpiOsDeleteMutex(ACPI_MUTEX Handle) {
+	// Directly use the semaphore delete logic
+	AcpiOsDeleteSemaphore((ACPI_SEMAPHORE) Handle);
+}
 
-// ACPI_STATUS AcpiOsAcquireMutex(ACPI_MUTEX Handle, UINT16 Timeout) {
-// 	acpica_failure(__func__);
-// 	return AE_OK;
-// }
+ACPI_STATUS AcpiOsAcquireMutex(ACPI_MUTEX Handle, UINT16 Timeout) {
+	// Mutexes always wait for 1 unit
+	return AcpiOsWaitSemaphore((ACPI_SEMAPHORE) Handle, 1, Timeout);
+}
 
-// void AcpiOsReleaseMutex(ACPI_MUTEX Handle) {
-// 	acpica_failure(__func__);
-// }
+void AcpiOsReleaseMutex(ACPI_MUTEX Handle) {
+	// Signal 1 unit back to the semaphore
+	AcpiOsSignalSemaphore((ACPI_SEMAPHORE) Handle, 1);
+}
 
 #include <memory/semaphore.h>
 
@@ -366,8 +369,6 @@ ACPI_STATUS AcpiOsDeleteSemaphore(ACPI_SEMAPHORE Handle) {
 }
 
 ACPI_STATUS AcpiOsWaitSemaphore(ACPI_SEMAPHORE Handle, UINT32 Units, UINT16 Timeout) {
-	// TODO: remove this after testing.
-	//return AE_OK;
 	if (Handle == NULL) return AE_BAD_PARAMETER;
 
 	uint64_t time = Timeout;

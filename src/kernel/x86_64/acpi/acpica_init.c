@@ -359,17 +359,9 @@ static ACPI_TABLE_DESC TableArray[ACPI_MAX_INIT_TABLES];
 #include <drivers/serial.h>
 
 void acpi_tables(void) {
-	printf_color(PRINT_COLOR_GREEN, PRINT_DEFAULT_BG, "Trying to initalize ACPI tables...\r\n");
+	// printf_color(PRINT_COLOR_GREEN, PRINT_DEFAULT_BG, "Early ACPICA init...\r\n");
 
-	const ACPI_STATUS status = AcpiInitializeTables(TableArray, ACPI_MAX_INIT_TABLES, FALSE);
-	if (ACPI_FAILURE(status)) {
-		printf_serial("Status: %d\r\n", status);
-		printf("ACPICA Status: %d\r\n", status);
-		init_failure("Failed to initialize tables.");
-	}
 
-	printf_serial("Successfully loaded tables.\r\n");
-	printf_color(PRINT_COLOR_GREEN, PRINT_DEFAULT_BG, "Successfully loaded tables.\n");
 }
 
 void initialize_acpi(void) {
@@ -379,6 +371,17 @@ void initialize_acpi(void) {
 	}
 
 	logger(INFO, "ACPICA Initialized.\n");
+	printf_color(PRINT_COLOR_GREEN, PRINT_DEFAULT_BG, "Trying to initalize ACPI tables...\r\n");
+
+	status = AcpiInitializeTables(TableArray, ACPI_MAX_INIT_TABLES, FALSE);
+	if (ACPI_FAILURE(status)) {
+		printf_serial("Status: %d\r\n", status);
+		printf("ACPICA Status: %d\r\n", status);
+		init_failure("Failed to initialize tables.");
+	}
+
+	printf_serial("Successfully loaded tables.\r\n");
+	printf_color(PRINT_COLOR_GREEN, PRINT_DEFAULT_BG, "Successfully loaded tables.\n");
 
 	status = AcpiLoadTables();
 	if (ACPI_FAILURE(status)) {
