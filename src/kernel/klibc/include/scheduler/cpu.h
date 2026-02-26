@@ -1,4 +1,5 @@
-#pragma once
+#ifndef SCHEDULER_CPU_H
+#define SCHEDULER_CPU_H
 
 #include <stdint.h>
 #include <memory/spinlock.h>
@@ -46,3 +47,15 @@ cpu_t* cpu_current(void);
  *
  */
 void idle_task_main(void);
+
+/**
+ * @brief Tells the architecture implementation to "initialize" all the CPUs.
+ * This should be called before all other calls to any other cpu_* functions.
+ *
+ * It is expected that this only "loads" the CPUs, which includes:
+ * Setting up each CPU to a state where it can be loaded with a task.
+ * Timers set up. Can be global (PIT) or per CPU (APIC).
+ */
+void arch_init_cpus();
+
+#endif /* SCHEDULER_CPU_H */ // carlos was here - carlos

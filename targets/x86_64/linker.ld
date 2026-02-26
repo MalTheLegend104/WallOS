@@ -16,6 +16,16 @@ SECTIONS
 		. = ALIGN(4096);
 	}
 
+	.bootstrap.text {
+		*(.bootstrap.text)
+		. = ALIGN(4096);
+	}
+
+	.bootstrap.data {
+		*(.bootstrap.data)
+		. = ALIGN(4096);
+	}
+
 	. += KERNAL_VIRTUAL_BASE;
 
 	.text ALIGN(4096) : AT(ADDR(.text) - KERNAL_VIRTUAL_BASE) {

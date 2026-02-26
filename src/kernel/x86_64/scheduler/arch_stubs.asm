@@ -25,7 +25,7 @@ arch_switch_context:
     mov [rdi +48], rsp
 
     ; Save return address (RIP) into from->rip
-    lea rax, [rel 1f]      ; label after jump
+    lea rax, [lab]      ; label after jump
     mov [rdi +56], rax
 
     ; ----------------------------
@@ -44,5 +44,5 @@ arch_switch_context:
     ; Jump to saved instruction pointer
     jmp [rsi +56]
 
-1:  ; label for storing RIP in 'from'
+lab:  ; label for storing RIP in 'from'
     ret  ; we never actually execute this
