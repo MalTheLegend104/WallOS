@@ -11,3 +11,5 @@
 
 /src/output/
 /libs/output/
+targets/x86_64/iso/boot/initrd.img
+tools/wallos_netboot/boot/grub/net_settings.cfg

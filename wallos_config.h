@@ -18,3 +18,19 @@
  */
 #define WALLOS_USE_ACPICA 1
 // #define WALLOS_USE_UACPI 1
+
+#if !defined(WALLOS_USE_ACPICA) && !defined(WALLOS_USE_UACPI)
+#error "Must have one ACPI subsystem enabled."
+#elif defined(WALLOS_USE_ACPICA) && defined(WALLOS_USE_UACPI)
+#error "Must have only one ACPI subsystem enabled, not both."
+#endif
+
+
+/* Scheduler configuration
+ *
+ */
+
+// This limits the amount of space (statically allocated) used by the scheduler.
+// I see ZERO reason WallOS will run on anything with more than 16 cores.
+// If it does, this is easy to change and recompile.
+#define WALLOS_SYSTEM_MAX_CPU 32

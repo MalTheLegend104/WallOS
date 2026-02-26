@@ -580,6 +580,10 @@ uintptr_t Memory::MapSequentialKernelPagesWithFlags(size_t pages, uintptr_t phys
 	return 0; // Keep GCC happy. This is irrelevant.
 }
 
+uintptr_t mapSequentialKernelPagesWithFlags(size_t pages, uintptr_t phys_base_addr, uint64_t flags) {
+	return Memory::MapSequentialKernelPagesWithFlags(pages, phys_base_addr, flags);
+}
+
 /**
  * @brief Maps the provided address into the kernel address space.
  *

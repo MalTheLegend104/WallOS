@@ -307,7 +307,6 @@ void set_idt_entry_err(struct idt_entry* entry, void (*handler)(struct interrupt
 
 extern void idt_load(struct idt_descriptor* idt_desc);
 extern void disablePIC();
-extern void enableAPIC();
 extern void enablePS2();
 extern void reEnableIRQ1();
 

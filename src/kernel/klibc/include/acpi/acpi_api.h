@@ -4,10 +4,14 @@
 #include <stdbool.h>
 #include <stdint.h>
 #include <stddef.h>
+#include <acpi/acpi_generic_tables.h>
 
 #ifdef __cplusplus
 extern "C" {
 #endif	
+
+	MADTTable* get_madt();
+	HPETTable* get_hpet();
 
 	// This is meant to provide an abstraction over uacpi and ACPICA to allow them to do the same basic things
 	// We mostly just need them both for device discovery and shutdown/restart

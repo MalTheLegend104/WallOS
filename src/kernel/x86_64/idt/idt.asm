@@ -121,24 +121,6 @@ irq_disable:
         out     0xa1,   al
         ret
 
-; This is broken
-enableAPIC:
-	; Set the APIC enable bit (bit 11) in the IA32_APIC_BASE MSR
-	rdmsr                      ; Read the IA32_APIC_BASE MSR into EDX:EAX.
-	or     eax, (1 << 11)      ; Set bit 11 to enable the APIC.
-	wrmsr                      ; Write the modified value back to IA32_APIC_BASE MSR.
-
-	; Enable the x2APIC by setting the x2APIC_ENABLE bit (bit 10) in IA32_APIC_BASE MSR.
-	rdmsr                      ; Read the IA32_APIC_BASE MSR into EDX:EAX.
-	or     eax, (1 << 10)      ; Set bit 10 to enable x2APIC.
-	wrmsr                      ; Write the modified value back to IA32_APIC_BASE MSR.
-
-	mov     ecx, 0x21         ; The interrupt vector (ISR 0x21) we want to map the keyboard to.
-	mov     eax, 1 << 16      ; Set the Delivery Mode to "Fixed" (bits 8-10 = 0b000) and
-	or      eax, 1 << 11      ; Set the Destination Mode to "Physical" (bit 11 = 1).
-	mov     edx, 1 << 24      ; Set bit 24 to enable the interrupt (IA32_APIC_LVT_MASK).
-	wrmsr
-
 enablePS2:
 	ret
 

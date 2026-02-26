@@ -301,7 +301,6 @@ void kernel_main(unsigned int magic, multiboot_info* mbt_info) {
 	registerCommand((Command) { acpi_command, 0, "acpi", 0, 0 });
 	registerCommand((Command) { syscall_command, 0, "syscall", 0, 0 });
 	registerCommand((Command) { bootdev_command, 0, "bootdev", 0, 0 });
-
 	registerCommand((Command) { pci_command, 0, "pci", 0, 0 });
 
 	terminalMain();

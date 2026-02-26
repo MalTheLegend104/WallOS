@@ -49,4 +49,7 @@ typedef struct task {
 } task_t;
 
 
+/**
+ * @brief Exits the current task with the given status.
+ */
 void task_exit(int status) __attribute__((noreturn));
