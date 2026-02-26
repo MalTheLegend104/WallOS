@@ -3,6 +3,16 @@ ENTRY(start)
 SECTIONS
 {
 	KERNAL_VIRTUAL_BASE = 0xFFFFFFFF80000000;
+	
+	/* Processor bring-up requires we have this below 1MB. */
+	.trampoline 0x8000 : ALIGN(4096) {
+		trampoline_start = .;
+		*(.bootstrap.text)
+		*(.bootstrap.data)
+		. = ALIGN(4096);
+		trampoline_end = .;
+	}
+
 	. = 1M;
 	kernel_start = .;
 	
@@ -16,15 +26,6 @@ SECTIONS
 		. = ALIGN(4096);
 	}
 
-	.bootstrap.text {
-		*(.bootstrap.text)
-		. = ALIGN(4096);
-	}
-
-	.bootstrap.data {
-		*(.bootstrap.data)
-		. = ALIGN(4096);
-	}
 
 	. += KERNAL_VIRTUAL_BASE;
 

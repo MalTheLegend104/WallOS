@@ -21,7 +21,7 @@ typedef struct cpu {
 
 typedef void (*task_entry_t)(void);
 
-// The are all architecture dependant.
+// These are all architecture dependant.
 
 /**
  * @brief Create a task with the given entry point.

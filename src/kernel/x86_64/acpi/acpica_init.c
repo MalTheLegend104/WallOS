@@ -180,6 +180,121 @@ void print_fadt() {
 	}
 }
 
+#include <acpi.h>
+#include <actbl.h>
+#include <actbl2.h>
+
+static void dump_madt(ACPI_TABLE_MADT* madt) {
+	printf("MADT @ %p\n", madt);
+	printf("  Local APIC Address: 0x%08X\n", madt->Address);
+	printf("  Flags: 0x%08X (PCAT_COMPAT=%u)\n",
+		madt->Flags,
+		madt->Flags & ACPI_MADT_PCAT_COMPAT ? 1 : 0);
+
+	ACPI_SUBTABLE_HEADER* sub =
+		(ACPI_SUBTABLE_HEADER*) ((uint8_t*) madt + sizeof(ACPI_TABLE_MADT));
+
+	while ((uint8_t*) sub < ((uint8_t*) madt + madt->Header.Length)) {
+		switch (sub->Type) {
+			case ACPI_MADT_TYPE_LOCAL_APIC:
+				{
+					ACPI_MADT_LOCAL_APIC* la = (ACPI_MADT_LOCAL_APIC*) sub;
+					printf("  [Type 0] Processor Local APIC\n");
+					printf("      ACPI CPU ID: %u\n", la->ProcessorId);
+					printf("      APIC ID: %u\n", la->Id);
+					printf("      Flags: 0x%08X (Enabled=%u)\n",
+						la->LapicFlags,
+						la->LapicFlags & ACPI_MADT_ENABLED ? 1 : 0);
+					break;
+				}
+
+			case ACPI_MADT_TYPE_IO_APIC:
+				{
+					ACPI_MADT_IO_APIC* io = (ACPI_MADT_IO_APIC*) sub;
+					printf("  [Type 1] I/O APIC\n");
+					printf("      ID: %u\n", io->Id);
+					printf("      Address: 0x%08X\n", io->Address);
+					printf("      GSI Base: %u\n", io->GlobalIrqBase);
+					break;
+				}
+
+			case ACPI_MADT_TYPE_INTERRUPT_OVERRIDE:
+				{
+					ACPI_MADT_INTERRUPT_OVERRIDE* iso =
+						(ACPI_MADT_INTERRUPT_OVERRIDE*) sub;
+					printf("  [Type 2] Interrupt Source Override\n");
+					printf("      Bus: %u\n", iso->Bus);
+					printf("      Source IRQ: %u\n", iso->SourceIrq);
+					printf("      GSI: %u\n", iso->GlobalIrq);
+					printf("      Flags: 0x%04X\n", iso->IntiFlags);
+					break;
+				}
+
+			case ACPI_MADT_TYPE_NMI_SOURCE:
+				{
+					ACPI_MADT_NMI_SOURCE* nmi =
+						(ACPI_MADT_NMI_SOURCE*) sub;
+					printf("  [Type 3] NMI Source\n");
+					printf("      GSI: %u\n", nmi->GlobalIrq);
+					printf("      Flags: 0x%04X\n", nmi->IntiFlags);
+					break;
+				}
+
+			case ACPI_MADT_TYPE_LOCAL_APIC_NMI:
+				{
+					ACPI_MADT_LOCAL_APIC_NMI* nmi =
+						(ACPI_MADT_LOCAL_APIC_NMI*) sub;
+					printf("  [Type 4] Local APIC NMI\n");
+					printf("      ACPI CPU ID: %u\n", nmi->ProcessorId);
+					printf("      LINT#: %u\n", nmi->Lint);
+					printf("      Flags: 0x%04X\n", nmi->IntiFlags);
+					break;
+				}
+
+			case ACPI_MADT_TYPE_LOCAL_APIC_OVERRIDE:
+				{
+					ACPI_MADT_LOCAL_APIC_OVERRIDE* lapic64 =
+						(ACPI_MADT_LOCAL_APIC_OVERRIDE*) sub;
+					printf("  [Type 5] Local APIC Address Override\n");
+					printf("      Address: 0x%016llX\n",
+						(unsigned long long)lapic64->Address);
+					break;
+				}
+
+			case ACPI_MADT_TYPE_LOCAL_X2APIC:
+				{
+					ACPI_MADT_LOCAL_X2APIC* x2 =
+						(ACPI_MADT_LOCAL_X2APIC*) sub;
+					printf("  [Type 9] Processor Local x2APIC\n");
+					printf("      x2APIC ID: %u\n", x2->LocalApicId);
+					printf("      ACPI UID: %u\n", x2->Uid);
+					printf("      Flags: 0x%08X (Enabled=%u)\n",
+						x2->LapicFlags,
+						x2->LapicFlags & ACPI_MADT_ENABLED ? 1 : 0);
+					break;
+				}
+
+			case ACPI_MADT_TYPE_LOCAL_X2APIC_NMI:
+				{
+					ACPI_MADT_LOCAL_X2APIC_NMI* x2nmi =
+						(ACPI_MADT_LOCAL_X2APIC_NMI*) sub;
+					printf("  [Type 10] Local x2APIC NMI\n");
+					printf("      ACPI UID: %u\n", x2nmi->Uid);
+					printf("      LINT#: %u\n", x2nmi->Lint);
+					printf("      Flags: 0x%04X\n", x2nmi->IntiFlags);
+					break;
+				}
+
+			default:
+				printf("  [Type %u] Unknown MADT entry (Length=%u)\n",
+					sub->Type, sub->Length);
+				break;
+		}
+
+		sub = (ACPI_SUBTABLE_HEADER*) ((uint8_t*) sub + sub->Length);
+	}
+}
+
 #include <ctype.h>
 
 void print_acpi_table_info(const char* sig) {
@@ -250,24 +365,25 @@ void print_acpi_table_info(const char* sig) {
 		}
 	} else if (!memcmp(table->Signature, "APIC", 4)) { // MADT
 		ACPI_TABLE_MADT* madt = (ACPI_TABLE_MADT*) table;
-		printf("  Local APIC Address: 0x%X\n", madt->Address);
-		printf("  Flags: 0x%X (1=PCAT Dual 8259)\n", madt->Flags);
+		dump_madt(madt);
+		// printf("  Local APIC Address: 0x%X\n", madt->Address);
+		// printf("  Flags: 0x%X (1=PCAT Dual 8259)\n", madt->Flags);
 
-		// Subtable parsing
-		ACPI_SUBTABLE_HEADER* sub = (ACPI_SUBTABLE_HEADER*) ((uint8_t*) madt + sizeof(ACPI_TABLE_MADT));
-		while ((uint8_t*) sub < (uint8_t*) madt + madt->Header.Length) {
-			if (sub->Type == ACPI_MADT_TYPE_LOCAL_APIC) {
-				ACPI_MADT_LOCAL_APIC* la = (ACPI_MADT_LOCAL_APIC*) sub;
-				printf("    - Processor Local APIC: ID %u, APIC ID %u, Flags 0x%X\n", la->ProcessorId, la->Id, la->LapicFlags);
-			} else if (sub->Type == ACPI_MADT_TYPE_IO_APIC) {
-				ACPI_MADT_IO_APIC* io = (ACPI_MADT_IO_APIC*) sub;
-				printf("    - I/O APIC: ID %u, Address 0x%X, GSI Base %u\n", io->Id, io->Address, io->GlobalIrqBase);
-			} else if (sub->Type == ACPI_MADT_TYPE_INTERRUPT_OVERRIDE) {
-				ACPI_MADT_INTERRUPT_OVERRIDE* iso = (ACPI_MADT_INTERRUPT_OVERRIDE*) sub;
-				printf("    - Int Source Override: Bus %u, IRQ %u -> GSI %u\n", iso->Bus, iso->SourceIrq, iso->GlobalIrq);
-			}
-			sub = (ACPI_SUBTABLE_HEADER*) ((uint8_t*) sub + sub->Length);
-		}
+		// // Subtable parsing
+		// ACPI_SUBTABLE_HEADER* sub = (ACPI_SUBTABLE_HEADER*) ((uint8_t*) madt + sizeof(ACPI_TABLE_MADT));
+		// while ((uint8_t*) sub < (uint8_t*) madt + madt->Header.Length) {
+		// 	if (sub->Type == ACPI_MADT_TYPE_LOCAL_APIC) {
+		// 		ACPI_MADT_LOCAL_APIC* la = (ACPI_MADT_LOCAL_APIC*) sub;
+		// 		printf("    - Processor Local APIC: ID %u, APIC ID %u, Flags 0x%X\n", la->ProcessorId, la->Id, la->LapicFlags);
+		// 	} else if (sub->Type == ACPI_MADT_TYPE_IO_APIC) {
+		// 		ACPI_MADT_IO_APIC* io = (ACPI_MADT_IO_APIC*) sub;
+		// 		printf("    - I/O APIC: ID %u, Address 0x%X, GSI Base %u\n", io->Id, io->Address, io->GlobalIrqBase);
+		// 	} else if (sub->Type == ACPI_MADT_TYPE_INTERRUPT_OVERRIDE) {
+		// 		ACPI_MADT_INTERRUPT_OVERRIDE* iso = (ACPI_MADT_INTERRUPT_OVERRIDE*) sub;
+		// 		printf("    - Int Source Override: Bus %u, IRQ %u -> GSI %u\n", iso->Bus, iso->SourceIrq, iso->GlobalIrq);
+		// 	}
+		// 	sub = (ACPI_SUBTABLE_HEADER*) ((uint8_t*) sub + sub->Length);
+		// }
 	} else if (!memcmp(table->Signature, "MCFG", 4)) {
 		// MCFG has a reserved 8-byte block before the base address allocations
 		ACPI_MCFG_ALLOCATION* alloc = (ACPI_MCFG_ALLOCATION*) ((uint8_t*) table + sizeof(ACPI_TABLE_HEADER) + 8);

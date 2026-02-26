@@ -100,6 +100,7 @@ extern "C" {
 	// C mappings for Memory Namespace. 
 	// Try to keep this minimal, most of the kernel should be C++ anyway.
 	uintptr_t mapKernelLocation(uintptr_t addr, size_t len);
+	uintptr_t mapSequentialKernelPagesWithFlags(size_t pages, uintptr_t phys_base_addr, uint64_t flags);
 
 #ifdef __cplusplus
 }
