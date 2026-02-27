@@ -32,7 +32,7 @@ typedef struct {
 
 		// Add other entry types as needed
 	};
-} MADTEntry;
+} MADTEntry __attribute__((packed));
 
 // Generalized MADT table representation
 typedef struct {
@@ -41,7 +41,7 @@ typedef struct {
 
 	MADTEntry* entries;    // pointer to an array of entries
 	uint32_t entry_count;  // number of entries
-} MADTTable;
+} MADTTable __attribute__((packed));
 
 typedef struct {
 	uint64_t base_addr;        // physical MMIO address
@@ -51,6 +51,6 @@ typedef struct {
 	uint8_t  flags;            // 0 = not periodic, 1 = periodic
 
 	uint64_t main_counter;
-} HPETTable;
+} HPETTable __attribute__((packed));
 
 #endif // WALLOS_ACPI_GENERIC_TABLES_H

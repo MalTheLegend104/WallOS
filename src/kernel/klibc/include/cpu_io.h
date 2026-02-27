@@ -11,8 +11,6 @@
 extern "C" {
 #endif
 
-
-
 	// read an 8 bit value from a port
 	static inline uint8_t inb(uint16_t port) {
 		uint8_t ret;

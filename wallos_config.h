@@ -16,8 +16,8 @@
  * Only one of these can be built at a time (intentionally). I was considering letting them both exist,
  * and still could "relatively" easily, but think it would just cause more problems than it's worth.
  */
-#define WALLOS_USE_ACPICA 1
-// #define WALLOS_USE_UACPI 1
+// #define WALLOS_USE_ACPICA 1
+#define WALLOS_USE_UACPI 1
 
 #if !defined(WALLOS_USE_ACPICA) && !defined(WALLOS_USE_UACPI)
 #error "Must have one ACPI subsystem enabled."

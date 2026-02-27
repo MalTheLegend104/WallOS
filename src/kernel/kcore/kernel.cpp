@@ -174,6 +174,12 @@ void init_pat() {
 	asm volatile("wrmsr" : : "a"(low), "d"(high), "c"(0x277));
 }
 
+#include <scheduler/scheduler.h>
+int temp_cmd(int, char**) {
+	arch_init_cpus();
+	return 0;
+}
+
 void kernel_main(unsigned int magic, multiboot_info* mbt_info) {
 	// ------------------------------------------------------------------------------------------------
 	// Very early init
@@ -302,6 +308,7 @@ void kernel_main(unsigned int magic, multiboot_info* mbt_info) {
 	registerCommand((Command) { syscall_command, 0, "syscall", 0, 0 });
 	registerCommand((Command) { bootdev_command, 0, "bootdev", 0, 0 });
 	registerCommand((Command) { pci_command, 0, "pci", 0, 0 });
+	registerCommand((Command) { temp_cmd, 0, "temp", 0, 0 });
 
 	terminalMain();
 }

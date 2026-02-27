@@ -2,10 +2,11 @@
 #define WALLOS_LAPIC_H
 
 #include <stdint.h>
-#include <system/cpuid.h>
 #include <stdbool.h>
-
 #include <cpu_io.h>
+
+#include <x86_64/tsc.h>
+
 // ID & Version
 #define LAPIC_ID				0x020
 #define LAPIC_VERSION			0x030
@@ -73,8 +74,8 @@
 // Spurious Interrupt Vector
 #define SPURIOUS_VECTOR			0xFF
 
-static inline uint32_t lapic_read(uint32_t offset);
-static inline void lapic_write(uint32_t offset, uint32_t value);
+uint32_t lapic_read(uint32_t offset);
+void lapic_write(uint32_t offset, uint32_t value);
 
 void lapic_send_ipi(uint8_t apic_id, uint32_t icr_low);
 
@@ -82,81 +83,6 @@ void set_lapic_base(uint64_t* base);
 
 void bsp_init_lapic();
 void ap_init_lapic();
-
-static inline uint64_t rdtsc_serialized(void) {
-	uint32_t lo, hi;
-	__asm__ volatile("lfence");
-	__asm__ volatile("rdtsc" : "=a"(lo), "=d"(hi) :: "memory");
-	return ((uint64_t) hi << 32) | lo;
-}
-
-bool check_tsc_support() {
-	uint32_t eax, ebx, ecx, edx;
-
-	// Check for TSC (Feature Bit 4 of EDX for CPUID leaf 1)
-	if (__get_cpuid(1, &eax, &ebx, &ecx, &edx)) {
-		if (!(edx & (1 << 4))) return false;
-	}
-
-	// Check for Invariant TSC (Bit 8 of EDX for CPUID leaf 0x80000007)
-	// This ensures TSC runs at constant freq regardless of P-states/C-states
-	__get_cpuid(0x80000007, &eax, &ebx, &ecx, &edx);
-	return (edx & (1 << 8));
-}
-
-uint64_t get_tsc_freq_cpuid() {
-	uint32_t eax, ebx, ecx, edx;
-	__get_cpuid(0x15, &eax, &ebx, &ecx, &edx);
-
-	if (eax == 0 || ebx == 0) return 0; // Not supported on this CPU
-
-	uint64_t crystal_hz = ecx;
-	if (crystal_hz == 0) {
-		// Many CPUs don't populate ECX. Use common defaults:
-		// These are standard for many Intel platforms.
-		crystal_hz = 24000000; // 24MHz
-	}
-
-	return (crystal_hz * ebx) / eax;
-}
-
-void pit_prepare_sleep(uint32_t ticks) {
-	// Channel 2 (speaker), Mode 0 (interrupt on terminal count)
-	// We use Channel 2 because we can read its status easily via Port 0x61
-	uint8_t val = (inb(0x61) & 0xFD) | 1;
-	outb(0x61, val);
-	outb(0x43, 0xB2);
-	outb(0x42, (uint8_t) ticks);
-	outb(0x42, (uint8_t) (ticks >> 8));
-}
-
-uint64_t calibrate_tsc_with_pit() {
-	// PIT Freq is 1193182, This should be moved to timing.h where PIT_FREQ is actually defined.
-	uint32_t pit_ticks = 1193182 / 100; // 10ms window
-	pit_prepare_sleep(pit_ticks);
-
-	uint64_t tsc_start = rdtsc_serialized();
-
-	// Wait for PIT to finish (Bit 5 of Port 0x61 goes high)
-	while (!(inb(0x61) & 0x20));
-
-	uint64_t tsc_end = rdtsc_serialized();
-	return (tsc_end - tsc_start) * 100;
-}
-
-uint64_t get_tsc_freq() {
-	if (!check_tsc_support()) return 0;
-
-	// Method 1: CPUID leaf 0x15
-	uint64_t freq = get_tsc_freq_cpuid();
-
-	// Method 2: Manual Calibration (if CPUID failed)
-	if (freq == 0) {
-		freq = calibrate_tsc_with_pit();
-	}
-
-	return freq;
-}
 
 uint64_t calibrate_lapic_timer_with_tsc(uint64_t tsc_freq);
 

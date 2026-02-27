@@ -123,6 +123,11 @@ uint64_t pde[TABLE_ENTRIES]  __attribute__((aligned(4096)));
 uint64_t pde_3gb[TABLE_ENTRIES] __attribute__((aligned(4096)));
 
 
+uintptr_t get_pml4_base_addr() {
+	uintptr_t base = ((uintptr_t) &pml4) - KERNEL_VIRTUAL_BASE;
+	return base;
+}
+
 void set_page_frame(uint64_t* page, uint64_t addr) {
 	/* This voodoo magic does two things
 	 * (*page & ~PAGE_FRAME) - clears the upper 52 bits of the page entry. Leaves the bottom 12 alone.
