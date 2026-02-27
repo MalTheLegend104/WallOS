@@ -190,7 +190,11 @@ void kernel_main(unsigned int magic, multiboot_info* mbt_info) {
 	init_pat();
 
 	initScreen();
-	init_serial();
+
+	// Tries to initialize all COM port 1-4, if present.
+	// Information about serial can be accessed using the `serial` command, to see what got loaded.
+	init_all_serial();
+
 	printf_serial("Welcome to WallOS!\r\n");
 	Memory::initVirtualMemory();
 
@@ -308,7 +312,7 @@ void kernel_main(unsigned int magic, multiboot_info* mbt_info) {
 	registerCommand((Command) { syscall_command, 0, "syscall", 0, 0 });
 	registerCommand((Command) { bootdev_command, 0, "bootdev", 0, 0 });
 	registerCommand((Command) { pci_command, 0, "pci", 0, 0 });
+	registerCommand((Command) { serial_cli_cmd, 0, "serial", 0, 0 });
 	registerCommand((Command) { temp_cmd, 0, "temp", 0, 0 });
-
 	terminalMain();
 }

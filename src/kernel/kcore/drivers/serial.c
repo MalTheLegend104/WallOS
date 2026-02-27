@@ -5,58 +5,235 @@
 #include <string.h>
 #include <math.h>
 
+#include <stdbool.h>
+
 #include <drivers/serial.h>
 #include <klibc/kprint.h>
 #include <cpu_io.h>
 
-#define PORT 0x3f8          // COM1
 
-int init_serial() {
-	outb(PORT + 1, 0x00);    // Disable all interrupts
-	outb(PORT + 3, 0x80);    // Enable DLAB (set baud rate divisor)
-	outb(PORT + 0, 0x03);    // Set divisor to 3 (lo byte) 38400 baud
-	outb(PORT + 1, 0x00);    //                  (hi byte)
-	outb(PORT + 3, 0x03);    // 8 bits, no parity, one stop bit
-	outb(PORT + 2, 0xC7);    // Enable FIFO, clear them, with 14-byte threshold
-	outb(PORT + 4, 0x0B);    // IRQs enabled, RTS/DSR set
-	outb(PORT + 4, 0x1E);    // Set in loopback mode, test the serial chip
-	outb(PORT + 0, 0xAE);    // Test serial chip (send byte 0xAE and check if serial returns same byte)
+// Structure to track which ports actually exist
+typedef struct {
+	uint16_t base;
+	bool present;
+} serial_port_t;
 
-	// Check if serial is faulty (i.e: not same byte as sent)
-	if (inb(PORT + 0) != 0xAE) {
-		return 1;
+static serial_port_t active_ports[] = {
+	{COM1, false},
+	{COM2, false},
+	{COM3, false},
+	{COM4, false}
+};
+
+#define PORT_COUNT (sizeof(active_ports) / sizeof(active_ports[0]))
+
+int init_serial(uint16_t base_port) {
+	outb(REG_IER(base_port), 0x00);    // Disable all interrupts
+	outb(REG_LCR(base_port), 0x80);    // Enable DLAB (set baud rate divisor)
+	outb(REG_DATA(base_port), 0x03);   // Set divisor to 3 (lo byte) 38400 baud
+	outb(REG_IER(base_port), 0x00);    //                  (hi byte)
+	outb(REG_LCR(base_port), 0x03);    // 8 bits, no parity, one stop bit
+	outb(REG_IIR_FCR(base_port), 0xC7);// Enable FIFO, clear them, 14-byte threshold
+	outb(REG_MCR(base_port), 0x0B);    // IRQs enabled, RTS/DSR set
+
+	// Loopback test
+	outb(REG_MCR(base_port), 0x1E);    // Set in loopback mode
+	outb(REG_DATA(base_port), 0xAE);   // Send test byte
+
+	if (inb(REG_DATA(base_port)) != 0xAE) {
+		return 1; // Faulty hardware or incorrect port
 	}
 
-	// If serial is not faulty set it in normal operation mode
-	// (not-loopback with IRQs enabled and OUT#1 and OUT#2 bits enabled)
-	outb(PORT + 4, 0x0F);
+	// Normal operation mode
+	outb(REG_MCR(base_port), 0x0F);
 	return 0;
 }
 
-int serial_received() {
-	return inb(PORT + 5) & 1;
+bool detect_uart(uint16_t port) {
+	// We use the scratch register (port + 7 offset) to see if a write "sticks"
+	// If it doesn't, that COM doesn't exist.
+
+	// We use both 0x55 and 0xAA to ensure we aren't just getting garbage back that *happens* to be correct.
+	outb(port + 7, 0x55);
+	if (inb(port + 7) != 0x55) return false;
+
+	outb(port + 7, 0xAA);
+	if (inb(port + 7) != 0xAA) return false;
+
+	return true;
 }
 
-char read_serial() {
-	while (serial_received() == 0);
-
-	return inb(PORT);
+void init_all_serial() {
+	for (int i = 0; i < PORT_COUNT; i++) {
+		if (detect_uart(active_ports[i].base)) {
+			init_serial(active_ports[i].base);
+			active_ports[i].present = true;
+		}
+	}
 }
 
-int is_transmit_empty() {
-	return inb(PORT + 5) & 0x20;
+int serial_received(uint16_t base_port) {
+	return inb(REG_LSR(base_port)) & 1;
+}
+
+char read_serial(uint16_t base_port) {
+	while (serial_received(base_port) == 0);
+	return inb(REG_DATA(base_port));
+}
+
+int is_transmit_empty(uint16_t base_port) {
+	return inb(REG_LSR(base_port)) & 0x20;
+}
+
+void write_serial_mirrored(char a) {
+	for (int i = 0; i < PORT_COUNT; i++) {
+		if (!active_ports[i].present) continue;
+
+		uint16_t port = active_ports[i].base;
+		// Wait for Transmit Holding Register Empty (THRE)
+		while ((inb(port + 5) & 0x20) == 0);
+		outb(port, a);
+	}
+}
+
+void write_string_serial_mirrored(const char* str) {
+	for (size_t i = 0; str[i] != '\0'; i++) {
+		write_serial_mirrored(str[i]);
+	}
 }
 
 void write_serial(char a) {
-	while (is_transmit_empty() == 0);
-
-	outb(PORT, a);
+	write_serial_mirrored(a);
 }
 
 void write_string_serial(char* str) {
-	for (size_t i = 0; i < strlen(str); i++) {
-		write_serial(str[i]);
+	write_string_serial_mirrored(str);
+}
+
+
+void write_serial_port(uint16_t base_port, char a) {
+	while (is_transmit_empty(base_port) == 0);
+	outb(REG_DATA(base_port), a);
+}
+
+void write_string_serial_port(uint16_t base_port, const char* str) {
+	for (size_t i = 0; str[i] != '\0'; i++) {
+		write_serial_port(base_port, str[i]);
 	}
+}
+
+// ------------------------------------------------------------------------------------------------
+// ------------------------------------------------------------------------------------------------
+// Serial CLI command
+// ------------------------------------------------------------------------------------------------
+// ------------------------------------------------------------------------------------------------
+static int cmd_serial_status() {
+	bool any = false;
+	for (int i = 0; i < PORT_COUNT; i++) {
+		if (!active_ports[i].present) continue;
+		printf("  COM%d @ 0x%X [active]\n", i + 1, active_ports[i].base);
+		any = true;
+	}
+	if (!any)
+		printf("  No active serial ports detected.\n");
+	return 0;
+}
+
+static int cmd_serial_init(const char* addr_str) {
+	char* end;
+	uint16_t addr = (uint16_t) strtol(addr_str, &end, 16);
+	if (*end != '\0' || addr == 0) {
+		printf("serial: invalid address\n");
+		return 1;
+	}
+
+	if (!detect_uart(addr)) {
+		printf("serial: no UART detected at address\n");
+		return 1;
+	}
+
+	if (init_serial(addr) != 0) {
+		printf("serial: init failed (loopback test)\n");
+		return 1;
+	}
+
+	for (int i = 0; i < PORT_COUNT; i++) {
+		if (active_ports[i].base == addr) {
+			active_ports[i].present = true;
+			printf("serial: port re-initialised\n");
+			return 0;
+		}
+	}
+	for (int i = 0; i < PORT_COUNT; i++) {
+		if (!active_ports[i].present) {
+			active_ports[i].base = addr;
+			active_ports[i].present = true;
+			printf("serial: port initialised and registered\n");
+			return 0;
+		}
+	}
+
+	printf("serial: port initialised (tracking table full)\n");
+	return 0;
+}
+
+static int cmd_serial_send(const char* target, const char* msg) {
+	if (strcmp(target, "all") == 0) {
+		printf("%s", msg);  // Print to console for "all"
+		return 0;
+	}
+
+	char* end;
+	uint16_t addr = (uint16_t) strtol(target, &end, 16);
+	if (*end != '\0' || addr == 0) {
+		printf("serial: invalid address\n");
+		return 1;
+	}
+
+	for (int i = 0; i < PORT_COUNT; i++) {
+		if (active_ports[i].present && active_ports[i].base == addr) {
+			write_string_serial_port(addr, msg);  // Hardware send
+			return 0;
+		}
+	}
+
+	printf("serial: port not active\n");
+	return 1;
+}
+
+int serial_cli_cmd(int argc, char** argv) {
+	if (argc < 2) {
+		printf(
+			"Usage:\n"
+			"  serial status\n"
+			"  serial init <addr>\n"
+			"  serial send <addr|all> <msg>\n"
+		);
+		return 1;
+	}
+
+	if (strcmp(argv[1], "status") == 0) {
+		return cmd_serial_status();
+	}
+
+	if (strcmp(argv[1], "init") == 0) {
+		if (argc < 3) {
+			printf("serial: init requires <addr>\n");
+			return 1;
+		}
+		return cmd_serial_init(argv[2]);
+	}
+
+	if (strcmp(argv[1], "send") == 0) {
+		if (argc < 4) {
+			printf("serial: send requires <addr|all> <msg>\n");
+			return 1;
+		}
+		return cmd_serial_send(argv[2], argv[3]);
+	}
+
+	printf("serial: unknown subcommand\n");
+	return 1;
 }
 
 // ------------------------------------------------------------------------------------------------
@@ -753,7 +930,7 @@ int vprintf_serial(const char* restrict format, va_list list) {
 								}
 						}
 						break;
-			}
+					}
 #endif // WALLOS_ENABLE_PRINTF_N
 				// ------------------------------------------------------------------------------------------------
 				// Flags
@@ -764,8 +941,8 @@ int vprintf_serial(const char* restrict format, va_list list) {
 						current++;
 						check_current = true;
 						break;
-					}
-					// Signed Conventions
+						}
+						// Signed Conventions
 				case '+': {
 						prepend_sign = true;
 						current++;
@@ -981,8 +1158,8 @@ int vprintf_serial(const char* restrict format, va_list list) {
 						written++;
 						break;
 					}
-		}
-	} else {
+					}
+			} else {
 			write_serial(*current);
 			written++;
 		}
@@ -1000,7 +1177,7 @@ int vprintf_serial(const char* restrict format, va_list list) {
 			padding = 0;
 			current++;
 		}
-}
+		}
 
 	return (int) written;
-}
+	}
