@@ -36,6 +36,10 @@ align 16
 real_mode_trampoline_entry:
 	cli
 
+    xor ax, ax
+    mov ds, ax
+    mov es, ax
+
 	; Set up temp stack
 	mov ax, 0x0000
     mov ss, ax
@@ -82,8 +86,11 @@ protected_mode_entry:
     or eax, (1 << 31)
     mov cr0, eax
 
-    jmp 0x18:long_mode_entry
-
+    ; This is more likely to not hate me than trying jmp 0x18:long_mode_entry
+    push 0x18
+    push long_mode_entry
+    retf
+    
 [BITS 64]
 
 extern x86_ap_main
