@@ -179,7 +179,11 @@ static int cmd_serial_init(const char* addr_str) {
 
 static int cmd_serial_send(const char* target, const char* msg) {
 	if (strcmp(target, "all") == 0) {
-		printf("%s", msg);  // Print to console for "all"
+		for (int i = 0; i < PORT_COUNT; i++) {
+			if (active_ports[i].present == true) {
+				write_string_serial_port(active_ports[i].base, msg);
+			}
+		}
 		return 0;
 	}
 
@@ -941,8 +945,8 @@ int vprintf_serial(const char* restrict format, va_list list) {
 						current++;
 						check_current = true;
 						break;
-						}
-						// Signed Conventions
+					}
+					// Signed Conventions
 				case '+': {
 						prepend_sign = true;
 						current++;
@@ -1158,8 +1162,8 @@ int vprintf_serial(const char* restrict format, va_list list) {
 						written++;
 						break;
 					}
-					}
-			} else {
+			}
+		} else {
 			write_serial(*current);
 			written++;
 		}
@@ -1177,7 +1181,7 @@ int vprintf_serial(const char* restrict format, va_list list) {
 			padding = 0;
 			current++;
 		}
-		}
+	}
 
 	return (int) written;
-	}
+}
