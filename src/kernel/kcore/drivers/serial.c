@@ -27,10 +27,13 @@ static serial_port_t active_ports[] = {
 
 #define PORT_COUNT (sizeof(active_ports) / sizeof(active_ports[0]))
 
+extern void io_wait();
+
 int init_serial(uint16_t base_port) {
 	outb(REG_IER(base_port), 0x00);    // Disable all interrupts
 	outb(REG_LCR(base_port), 0x80);    // Enable DLAB (set baud rate divisor)
-	outb(REG_DATA(base_port), 0x03);   // Set divisor to 3 (lo byte) 38400 baud
+	// outb(REG_DATA(base_port), 0x03);   // Set divisor to 3 (lo byte) 38400 baud
+	outb(REG_DATA(base_port), 0x01); // 115200 baud
 	outb(REG_IER(base_port), 0x00);    //                  (hi byte)
 	outb(REG_LCR(base_port), 0x03);    // 8 bits, no parity, one stop bit
 	outb(REG_IIR_FCR(base_port), 0xC7);// Enable FIFO, clear them, 14-byte threshold
@@ -66,8 +69,8 @@ bool detect_uart(uint16_t port) {
 void init_all_serial() {
 	for (int i = 0; i < PORT_COUNT; i++) {
 		if (detect_uart(active_ports[i].base)) {
-			init_serial(active_ports[i].base);
-			active_ports[i].present = true;
+			if (init_serial(active_ports[i].base) == 0)
+				active_ports[i].present = true;
 		}
 	}
 }
@@ -109,7 +112,6 @@ void write_serial(char a) {
 void write_string_serial(char* str) {
 	write_string_serial_mirrored(str);
 }
-
 
 void write_serial_port(uint16_t base_port, char a) {
 	while (is_transmit_empty(base_port) == 0);

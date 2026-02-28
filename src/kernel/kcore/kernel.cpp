@@ -224,6 +224,18 @@ void kernel_main(unsigned int magic, multiboot_info* mbt_info) {
 	);
 	display_init(display_mode);
 
+	char* asdf[] = { "serial", "status" };
+	serial_cli_cmd(2, asdf);
+
+	char c;
+	while (true) {
+		write_serial(c);
+		c++;
+		if (c > 60) c = 32;
+	}
+
+	WALLOS_CLI_HLT();
+
 	// ------------------------------------------------------------------------------------------------
 	// Initrd
 	// ------------------------------------------------------------------------------------------------

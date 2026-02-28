@@ -244,4 +244,5 @@ void arch_init_cpus() {
 	}
 
 	printf_serial("[SMP] Total Cores Online: %u\r\n", ap_started_count + 1);
+	printf("Total Cores Online: %u\n", ap_started_count + 1);
 }

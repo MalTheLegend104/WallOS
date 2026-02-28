@@ -179,19 +179,24 @@ void uacpi_kernel_deinitialize(void);
 uacpi_status uacpi_kernel_pci_device_open(uacpi_pci_address address, uacpi_handle* out_handle) {
 	printf_serial("[UACPI] uacpi_kernel_pci_device_open() called\r\n");
 	// uacpi_failure(__func__);
+	printf_color(PRINT_COLOR_LIGHT_GREY, PRINT_DEFAULT_BG, "[UACPI] uacpi_kernel_pci_device_open() called\r\n");
 	return UACPI_STATUS_UNIMPLEMENTED;
 }
 void uacpi_kernel_pci_device_close(uacpi_handle) {
 	printf_serial("[UACPI] uacpi_kernel_pci_device_close() called\r\n");
+	printf_color(PRINT_COLOR_LIGHT_GREY, PRINT_DEFAULT_BG, "[UACPI] uacpi_kernel_pci_device_close() called\r\n");
+
 	// uacpi_failure(__func__);
 }
 
 uacpi_status kernel_pci_read(uacpi_handle device, uacpi_size offset, void* value, size_t bitwidth) {
 	printf_serial("[UACPI] kernel_pci_read() called\r\n");
+	printf_color(PRINT_COLOR_LIGHT_GREY, PRINT_DEFAULT_BG, "[UACPI] kernel_pci_read() called\r\n");
 	return UACPI_STATUS_UNIMPLEMENTED;
 }
 uacpi_status kernel_pci_write(uacpi_handle device, uacpi_size offset, size_t value, size_t bitwidth) {
 	printf_serial("[UACPI] kernel_pci_write() called\r\n");
+	printf_color(PRINT_COLOR_LIGHT_GREY, PRINT_DEFAULT_BG, "[UACPI] kernel_pci_read() called\r\n");
 	return UACPI_STATUS_UNIMPLEMENTED;
 }
 
@@ -238,12 +243,14 @@ uacpi_status uacpi_kernel_io_map(uacpi_io_addr base, uacpi_size len, uacpi_handl
 	// For now, just use the base port as the handle
 	*out_handle = (uacpi_handle) (uintptr_t) base;
 	// printf_serial("[UACPI] uacpi_kernel_io_map() - returning handle 0x%llx\r\n", (uint64_t) *out_handle);
+	printf_color(PRINT_COLOR_LIGHT_GREY, PRINT_DEFAULT_BG, "[UACPI] uacpi_kernel_io_map() - returning handle 0x%llx\r\n", (uint64_t) *out_handle);
 	return UACPI_STATUS_OK;
 }
 
 void uacpi_kernel_io_unmap(uacpi_handle handle) {
 	// printf_serial("[UACPI] uacpi_kernel_io_unmap(0x%llx) called (no-op)\r\n", (uint64_t) handle);
 	// Nothing to do for now; ports don't require unmapping
+	printf_color(PRINT_COLOR_LIGHT_GREY, PRINT_DEFAULT_BG, "[UACPI] uacpi_kernel_io_unmap(0x%llx) called (no-op)\r\n", (uint64_t) handle);
 	(void) handle;
 }
 
@@ -260,6 +267,7 @@ void uacpi_kernel_io_unmap(uacpi_handle handle) {
  */
 uacpi_status kernel_io_read(uacpi_handle port, uacpi_size offset, void* out_value, size_t width) {
 	printf_serial("[UACPI] kernel_io_read(0x%llx, 0x%llx, %d bits) called\r\n", (uint64_t) port, offset, width);
+	printf_color(PRINT_COLOR_LIGHT_GREY, PRINT_DEFAULT_BG, "[UACPI] kernel_io_read(0x%llx, 0x%llx, %d bits) called\r\n", (uint64_t) port, offset, width);
 	switch (width) {
 		case 8:
 			*((uacpi_u8*) out_value) = inb((uint16_t) (port + offset));
@@ -279,6 +287,7 @@ uacpi_status kernel_io_read(uacpi_handle port, uacpi_size offset, void* out_valu
 }
 uacpi_status kernel_io_write(uacpi_handle port, uacpi_size offset, size_t in_value, size_t width) {
 	printf_serial("[UACPI] kernel_io_write(0x%llx, 0x%llx, 0x%llx, %d bits) called\r\n", (uint64_t) port, offset, in_value, width);
+	printf_color(PRINT_COLOR_LIGHT_GREY, PRINT_DEFAULT_BG, "[UACPI] kernel_io_write(0x%llx, 0x%llx, 0x%llx, %d bits) called\n", (uint64_t) port, offset, in_value, width);
 	switch (width) {
 		case 8:
 			outb((uint16_t) (port + offset), (uint8_t) in_value);
@@ -350,6 +359,8 @@ uacpi_u64 uacpi_kernel_get_nanoseconds_since_boot(void) {
 	// We only have ms accuracy
 	uacpi_u64 result = get_system_up_time() * 1000 * 1000;
 	printf_serial("[UACPI] uacpi_kernel_get_nanoseconds_since_boot() - returning %llu\r\n", result);
+	printf_color(PRINT_COLOR_LIGHT_GREY, PRINT_DEFAULT_BG, "[UACPI] uacpi_kernel_get_nanoseconds_since_boot() - returning %llu\n", result);
+
 	return result;
 }
 
@@ -358,6 +369,7 @@ uacpi_u64 uacpi_kernel_get_nanoseconds_since_boot(void) {
  */
 void uacpi_kernel_stall(uacpi_u8 usec) {
 	printf_serial("[UACPI] uacpi_kernel_stall(%u) called\r\n", usec);
+	printf_color(PRINT_COLOR_LIGHT_GREY, PRINT_DEFAULT_BG, "[UACPI] uacpi_kernel_stall(%u) called\n", usec);
 	uacpi_failure(__func__);
 	// return UACPI_STATUS_UNIMPLEMENTED;
 }
@@ -368,6 +380,7 @@ void uacpi_kernel_stall(uacpi_u8 usec) {
  */
 void uacpi_kernel_sleep(uacpi_u64 msec) {
 	printf_serial("[UACPI] uacpi_kernel_sleep(%llu) called\r\n", msec);
+	printf_color(PRINT_COLOR_LIGHT_GREY, PRINT_DEFAULT_BG, "[UACPI] uacpi_kernel_sleep(%llu) called\n", msec);
 	sleep(msec);
 	printf_serial("[UACPI] uacpi_kernel_sleep() - complete\r\n");
 }
@@ -381,6 +394,7 @@ void uacpi_kernel_sleep(uacpi_u64 msec) {
  */
 uacpi_status uacpi_kernel_handle_firmware_request(uacpi_firmware_request* req) {
 	printf_serial("[UACPI] uacpi_kernel_handle_firmware_request() called\r\n");
+	printf_color(PRINT_COLOR_LIGHT_GREY, PRINT_DEFAULT_BG, "[UACPI] uacpi_kernel_handle_firmware_request() called\n");
 	if (!req) return UACPI_STATUS_INVALID_ARGUMENT;
 
 	switch (req->type) {
@@ -573,6 +587,7 @@ uacpi_status uacpi_kernel_uninstall_interrupt_handler(uacpi_interrupt_handler ha
  * Create/free an opaque non-recursive kernel mutex object.
  */
 uacpi_handle uacpi_kernel_create_mutex(void) {
+	printf_color(PRINT_COLOR_LIGHT_GREY, PRINT_DEFAULT_BG, "[UACPI] uacpi_kernel_create_mutex() called\n");
 	// printf_serial("[UACPI] uacpi_kernel_create_mutex() called\r\n");
 	semaphore_t* sem = semaphore_create(1, 1);
 	// printf_serial("[UACPI] uacpi_kernel_create_mutex() - returning 0x%llx\r\n", (uint64_t) sem);
@@ -580,6 +595,7 @@ uacpi_handle uacpi_kernel_create_mutex(void) {
 }
 
 void uacpi_kernel_free_mutex(uacpi_handle handle) {
+	printf_color(PRINT_COLOR_LIGHT_GREY, PRINT_DEFAULT_BG, "[UACPI] uacpi_kernel_free_mutex() called\n");
 	// printf_serial("[UACPI] uacpi_kernel_free_mutex(0x%llx) called\r\n", (uint64_t) handle);
 	if (!handle) return;
 	semaphore_destroy((semaphore_t*) handle);
@@ -589,6 +605,8 @@ void uacpi_kernel_free_mutex(uacpi_handle handle) {
  * Create/free an opaque kernel (semaphore-like) event object.
  */
 uacpi_handle uacpi_kernel_create_event(void) {
+
+	printf_color(PRINT_COLOR_LIGHT_GREY, PRINT_DEFAULT_BG, "[UACPI] uacpi_kernel_create_event() called\n");
 	printf_serial("[UACPI] uacpi_kernel_create_event() called\r\n");
 	uacpi_handle evt = semaphore_create(UINT32_MAX, 0); // Start at 0
 	printf_serial("[UACPI] uacpi_kernel_create_event() - returning 0x%llx\r\n", (uint64_t) evt);
@@ -596,6 +614,8 @@ uacpi_handle uacpi_kernel_create_event(void) {
 }
 
 void uacpi_kernel_free_event(uacpi_handle handle) {
+	printf_color(PRINT_COLOR_LIGHT_GREY, PRINT_DEFAULT_BG, "[UACPI] uacpi_kernel_free_event() called\n");
+
 	printf_serial("[UACPI] uacpi_kernel_free_event(0x%llx) called\r\n", (uint64_t) handle);
 	if (!handle) return;
 	semaphore_destroy((semaphore_t*) handle);
@@ -633,6 +653,10 @@ uacpi_thread_id uacpi_kernel_get_thread_id(void) {
 uacpi_status uacpi_kernel_acquire_mutex(uacpi_handle handle, uacpi_u16 timeout_ms) {
 	// printf_serial("[UACPI] uacpi_kernel_acquire_mutex(0x%llx, %u) called\r\n", (uint64_t) handle, timeout_ms);
 	if (!handle) return UACPI_STATUS_INTERNAL_ERROR;
+
+	// printf_color(PRINT_COLOR_LIGHT_GREY, PRINT_DEFAULT_BG, "[UACPI] uacpi_kernel_acquire_mutex() called\n");
+
+
 	uint64_t timeout = (timeout_ms == 0xFFFF) ? UINT64_MAX : timeout_ms;
 	int status = semaphore_wait((semaphore_t*) handle, 1, timeout);
 	if (status == SEMAPHORE_TIMEOUT) {
@@ -645,6 +669,8 @@ uacpi_status uacpi_kernel_acquire_mutex(uacpi_handle handle, uacpi_u16 timeout_m
 
 void uacpi_kernel_release_mutex(uacpi_handle handle) {
 	// printf_serial("[UACPI] uacpi_kernel_release_mutex(0x%llx) called\r\n", (uint64_t) handle);
+	// printf_color(PRINT_COLOR_LIGHT_GREY, PRINT_DEFAULT_BG, "[UACPI] uacpi_kernel_release_mutex() called\n");
+
 	if (!handle) return;
 	semaphore_signal((semaphore_t*) handle, 1);
 }
@@ -658,6 +684,8 @@ void uacpi_kernel_release_mutex(uacpi_handle handle) {
  */
 uacpi_bool uacpi_kernel_wait_for_event(uacpi_handle handle, uacpi_u16 timeout_ms) {
 	printf_serial("[UACPI] uacpi_kernel_wait_for_event(0x%llx, %u) called\r\n", (uint64_t) handle, timeout_ms);
+	printf_color(PRINT_COLOR_LIGHT_GREY, PRINT_DEFAULT_BG, "[UACPI] uacpi_kernel_wait_for_event(0x%llx, %u) called\n", (uint64_t) handle, timeout_ms);
+
 	if (!handle) return 0;
 	uint64_t timeout = (timeout_ms == 0xFFFF) ? UINT64_MAX : timeout_ms;
 	int status = semaphore_wait((semaphore_t*) handle, 1, timeout);
@@ -673,6 +701,8 @@ uacpi_bool uacpi_kernel_wait_for_event(uacpi_handle handle, uacpi_u16 timeout_ms
  */
 void uacpi_kernel_signal_event(uacpi_handle handle) {
 	printf_serial("[UACPI] uacpi_kernel_signal_event(0x%llx) called\r\n", (uint64_t) handle);
+
+	printf_color(PRINT_COLOR_LIGHT_GREY, PRINT_DEFAULT_BG, "[UACPI] uacpi_kernel_signal_event(0x%llx) called\n", (uint64_t) handle);
 	if (!handle) return;
 	semaphore_signal((semaphore_t*) handle, 1);
 }
@@ -683,6 +713,7 @@ void uacpi_kernel_signal_event(uacpi_handle handle) {
  */
 void uacpi_kernel_reset_event(uacpi_handle handle) {
 	printf_serial("[UACPI] uacpi_kernel_reset_event(0x%llx) called\r\n", (uint64_t) handle);
+	printf_color(PRINT_COLOR_LIGHT_GREY, PRINT_DEFAULT_BG, "[UACPI] uacpi_kernel_reset_event(0x%llx) called\r\n", (uint64_t) handle);
 	if (!handle) return;
 	// Consume all available units in semaphore
 	while (semaphore_wait((semaphore_t*) handle, 1, 0) == SEMAPHORE_SUCCESS);
@@ -697,10 +728,13 @@ void uacpi_kernel_reset_event(uacpi_handle handle) {
  */
 uacpi_handle uacpi_kernel_create_spinlock(void) {
 	// printf_serial("[UACPI] uacpi_kernel_create_spinlock() called\r\n");
+	printf_color(PRINT_COLOR_LIGHT_GREY, PRINT_DEFAULT_BG, "[UACPI] uacpi_kernel_create_spinlock() called\n");
 	return spinlock_create();
 }
 void uacpi_kernel_free_spinlock(uacpi_handle handle) {
 	// printf_serial("[UACPI] uacpi_kernel_unlock_spinlock(0x%llx) called\r\n", (uint64_t) handle);
+	printf_color(PRINT_COLOR_LIGHT_GREY, PRINT_DEFAULT_BG, "[UACPI] uacpi_kernel_unlock_spinlock() called\n");
+
 	spinlock_destroy(handle);
 }
 
@@ -714,12 +748,15 @@ void uacpi_kernel_free_spinlock(uacpi_handle handle) {
  * Note that lock is infalliable.
  */
 uacpi_cpu_flags uacpi_kernel_lock_spinlock(uacpi_handle handle) {
+	printf_color(PRINT_COLOR_LIGHT_GREY, PRINT_DEFAULT_BG, "[UACPI] uacpi_kernel_lock_spinlock() called\n");
 	if (!handle) return 0;
 	spinlock_lock((spinlock_t*) handle);
 	return 0; // Flags are ignored in single-core for now
 }
 
 void uacpi_kernel_unlock_spinlock(uacpi_handle handle, uacpi_cpu_flags flags) {
+	printf_color(PRINT_COLOR_LIGHT_GREY, PRINT_DEFAULT_BG, "[UACPI] uacpi_kernel_unlock_spinlock() called\n");
+
 	if (!handle) return;
 	spinlock_unlock((spinlock_t*) handle);
 }
