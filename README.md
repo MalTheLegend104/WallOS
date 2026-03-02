@@ -95,6 +95,9 @@ src┐
 3. Move terminal to userspace.
    - Scheduling and multitasking are necessary for me to do userspace apps, but I can still move the terminal to userspace.
    - This would also make developing and testing syscalls much easier.
+4. PCI
+   - This is the last "big" device interface I've not conquered (which unlocks an incredible amount of devices I can interface with).
+   - I mostly want this (and need it) for AHCI, basic HID device support, and networking.
 
 ### Future "Wishlist"
 
@@ -106,6 +109,8 @@ src┐
    - I ideally want something smoother to use, likely CMake (which I've tried implementing unsuccessfully several times, mainly due to me giving up halfway through each time). 
 - Major Refactor
    - A ton of things are written with only x86_64 in mind, and should ideally be abstracted away into proper interfaces. For example, time depends on the x86 RTC, serial depends on x86 CPU I/O ports, etc. 
+- AHCI
+   - It would be nice not to have to rely on the incredibly old SATA PIO interface, but it works for what little I do with filesystem stuff for now.
 
 ### Recently Completed
 
@@ -114,7 +119,7 @@ src┐
    - The interface for this is much more intuitive than the old one, and it now supports things that aren't 2MB blocks
       - It still has the old interface, as I haven't rewritten my VMM (and don't plan to for quite a while). 
    - Supports up to 8MB allocations in O(1) time, with 4KB chunks being the minimum allocation size.
-3. Framebuffer Graphics
+2. Framebuffer Graphics
    - This uses my `Apollo Graphics Framework`, designed to work with basically any pixel-based framebuffer.
    - This works very well. It was (and still is) extensively tested independently of this project, and is used in some other private projects of mine.
    - This *is* compiled using `-O3`, which hasn't caused problems yet, but potentially could depending on how GCC is feeling at compile time.
