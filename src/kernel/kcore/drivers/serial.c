@@ -456,6 +456,10 @@ char serial_getc() {
 
 	char c = serial_buffer[serial_buf_tail];
 	serial_buf_tail = (serial_buf_tail + 1) % SERIAL_BUF_SIZE;
+
+	write_serial_port(COM1, c); // echo input
+	if (c == '\r') write_serial_port(COM1, '\n'); // we need the \n
+
 	return c;
 }
 
@@ -465,6 +469,10 @@ char serial_getc_nonblocking() {
 
 	char c = serial_buffer[serial_buf_tail];
 	serial_buf_tail = (serial_buf_tail + 1) % SERIAL_BUF_SIZE;
+
+	write_serial_port(COM1, c); // echo input
+	if (c == '\r') write_serial_port(COM1, '\n'); // we need the \n
+
 	return c;
 }
 

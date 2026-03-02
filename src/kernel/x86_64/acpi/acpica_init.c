@@ -183,89 +183,159 @@ void print_fadt() {
 #include <acpi.h>
 #include <actbl.h>
 #include <actbl2.h>
-
 static void dump_madt(ACPI_TABLE_MADT* madt) {
-	printf("MADT @ %p\n", madt);
-	printf("  Local APIC Address: 0x%08X\n", madt->Address);
-	printf("  Flags: 0x%08X (PCAT_COMPAT=%u)\n",
-		madt->Flags,
-		madt->Flags & ACPI_MADT_PCAT_COMPAT ? 1 : 0);
+	// This for the "summary" that normal printf gets.
+	uint32_t lapic_count = 0;
+	uint32_t lapic_enabled = 0;
+	uint32_t ioapic_count = 0;
+	uint32_t iso_count = 0;
+	uint32_t nmi_source_count = 0;
+	uint32_t lapic_nmi_count = 0;
+	uint32_t lapic_override_count = 0;
+	uint32_t x2apic_count = 0;
+	uint32_t x2apic_enabled = 0;
+	uint32_t x2apic_nmi_count = 0;
 
-	ACPI_SUBTABLE_HEADER* sub =
-		(ACPI_SUBTABLE_HEADER*) ((uint8_t*) madt + sizeof(ACPI_TABLE_MADT));
+	// Serial gets a MASSIVE dump of everything we can possibly know about the MADT
+	printf_serial("MADT @ %p\r\n", madt);
+	printf_serial("  Local APIC Address: 0x%08X\r\n", madt->Address);
+	// This line is awful, just ignore it
+	printf_serial("  Flags: 0x%08X (PCAT_COMPAT=%u)\r\n", madt->Flags, madt->Flags & ACPI_MADT_PCAT_COMPAT ? 1 : 0);
+
+	ACPI_SUBTABLE_HEADER* sub = (ACPI_SUBTABLE_HEADER*) ((uint8_t*) madt + sizeof(ACPI_TABLE_MADT));
 
 	while ((uint8_t*) sub < ((uint8_t*) madt + madt->Header.Length)) {
 		switch (sub->Type) {
-			case ACPI_MADT_TYPE_LOCAL_APIC:
-				{
+			case ACPI_MADT_TYPE_LOCAL_APIC: {
 					ACPI_MADT_LOCAL_APIC* la = (ACPI_MADT_LOCAL_APIC*) sub;
-					printf("  [Type 0] Processor Local APIC: ACPI CPU ID=%u; APIC ID=%u; Flags=0x%08X (Enabled=%u)\n",
-						la->ProcessorId, la->Id, la->LapicFlags, la->LapicFlags & ACPI_MADT_ENABLED ? 1 : 0);
+					lapic_count++;
+					if (la->LapicFlags & ACPI_MADT_ENABLED)
+						lapic_enabled++;
+
+					printf_serial(
+						"  [Type 0] Processor Local APIC: ACPI CPU ID=%u; APIC ID=%u; Flags=0x%08X (Enabled=%u)\r\n",
+						la->ProcessorId, la->Id, la->LapicFlags,
+						la->LapicFlags & ACPI_MADT_ENABLED ? 1 : 0
+					);
 					break;
 				}
 
-			case ACPI_MADT_TYPE_IO_APIC:
-				{
+			case ACPI_MADT_TYPE_IO_APIC: {
+					ioapic_count++;
 					ACPI_MADT_IO_APIC* io = (ACPI_MADT_IO_APIC*) sub;
-					printf("  [Type 1] I/O APIC: ID=%u; Address=0x%08X; GSI Base=%u\n",
-						io->Id, io->Address, io->GlobalIrqBase);
+
+					printf_serial(
+						"  [Type 1] I/O APIC: ID=%u; Address=0x%08X; GSI Base=%u\r\n",
+						io->Id, io->Address, io->GlobalIrqBase
+					);
 					break;
 				}
 
-			case ACPI_MADT_TYPE_INTERRUPT_OVERRIDE:
-				{
+			case ACPI_MADT_TYPE_INTERRUPT_OVERRIDE: {
+					iso_count++;
 					ACPI_MADT_INTERRUPT_OVERRIDE* iso = (ACPI_MADT_INTERRUPT_OVERRIDE*) sub;
-					printf("  [Type 2] Interrupt Source Override: Bus=%u; Source IRQ=%u; GSI=%u; Flags=0x%04X\n",
-						iso->Bus, iso->SourceIrq, iso->GlobalIrq, iso->IntiFlags);
+
+					printf_serial(
+						"  [Type 2] Interrupt Source Override: Bus=%u; Source IRQ=%u; GSI=%u; Flags=0x%04X\r\n",
+						iso->Bus, iso->SourceIrq, iso->GlobalIrq, iso->IntiFlags
+					);
 					break;
 				}
 
-			case ACPI_MADT_TYPE_NMI_SOURCE:
-				{
+			case ACPI_MADT_TYPE_NMI_SOURCE: {
+					nmi_source_count++;
 					ACPI_MADT_NMI_SOURCE* nmi = (ACPI_MADT_NMI_SOURCE*) sub;
-					printf("  [Type 3] NMI Source: GSI=%u; Flags=0x%04X\n", nmi->GlobalIrq, nmi->IntiFlags);
+
+					printf_serial(
+						"  [Type 3] NMI Source: GSI=%u; Flags=0x%04X\r\n",
+						nmi->GlobalIrq, nmi->IntiFlags
+					);
 					break;
 				}
 
-			case ACPI_MADT_TYPE_LOCAL_APIC_NMI:
-				{
+			case ACPI_MADT_TYPE_LOCAL_APIC_NMI: {
+					lapic_nmi_count++;
 					ACPI_MADT_LOCAL_APIC_NMI* nmi = (ACPI_MADT_LOCAL_APIC_NMI*) sub;
-					printf("  [Type 4] Local APIC NMI: ACPI CPU ID=%u; LINT#=%u; Flags=0x%04X\n",
-						nmi->ProcessorId, nmi->Lint, nmi->IntiFlags);
+
+					printf_serial(
+						"  [Type 4] Local APIC NMI: ACPI CPU ID=%u; LINT#=%u; Flags=0x%04X\r\n",
+						nmi->ProcessorId, nmi->Lint, nmi->IntiFlags
+					);
 					break;
 				}
 
-			case ACPI_MADT_TYPE_LOCAL_APIC_OVERRIDE:
-				{
-					ACPI_MADT_LOCAL_APIC_OVERRIDE* lapic64 = (ACPI_MADT_LOCAL_APIC_OVERRIDE*) sub;
-					printf("  [Type 5] Local APIC Address Override: Address=0x%016llX\n",
-						(unsigned long long)lapic64->Address);
+			case ACPI_MADT_TYPE_LOCAL_APIC_OVERRIDE: {
+					lapic_override_count++;
+					ACPI_MADT_LOCAL_APIC_OVERRIDE* lapic64 =
+						(ACPI_MADT_LOCAL_APIC_OVERRIDE*) sub;
+
+					printf_serial(
+						"  [Type 5] Local APIC Address Override: Address=0x%016llX\r\n",
+						(unsigned long long)lapic64->Address
+					);
 					break;
 				}
 
-			case ACPI_MADT_TYPE_LOCAL_X2APIC:
-				{
-					ACPI_MADT_LOCAL_X2APIC* x2 = (ACPI_MADT_LOCAL_X2APIC*) sub;
-					printf("  [Type 9] Processor Local x2APIC: x2APIC ID=%u; ACPI UID=%u; Flags=0x%08X (Enabled=%u)\n",
-						x2->LocalApicId, x2->Uid, x2->LapicFlags, x2->LapicFlags & ACPI_MADT_ENABLED ? 1 : 0);
+			case ACPI_MADT_TYPE_LOCAL_X2APIC: {
+					x2apic_count++;
+					ACPI_MADT_LOCAL_X2APIC* x2 =
+						(ACPI_MADT_LOCAL_X2APIC*) sub;
+
+					if (x2->LapicFlags & ACPI_MADT_ENABLED)
+						x2apic_enabled++;
+
+					printf_serial(
+						"  [Type 9] Processor Local x2APIC: x2APIC ID=%u; ACPI UID=%u; Flags=0x%08X (Enabled=%u)\r\n",
+						x2->LocalApicId, x2->Uid, x2->LapicFlags,
+						x2->LapicFlags & ACPI_MADT_ENABLED ? 1 : 0
+					);
 					break;
 				}
 
-			case ACPI_MADT_TYPE_LOCAL_X2APIC_NMI:
-				{
-					ACPI_MADT_LOCAL_X2APIC_NMI* x2nmi = (ACPI_MADT_LOCAL_X2APIC_NMI*) sub;
-					printf("  [Type 10] Local x2APIC NMI: ACPI UID=%u; LINT#=%u; Flags=0x%04X\n",
-						x2nmi->Uid, x2nmi->Lint, x2nmi->IntiFlags);
+			case ACPI_MADT_TYPE_LOCAL_X2APIC_NMI: {
+					x2apic_nmi_count++;
+					ACPI_MADT_LOCAL_X2APIC_NMI* x2nmi =
+						(ACPI_MADT_LOCAL_X2APIC_NMI*) sub;
+
+					printf_serial(
+						"  [Type 10] Local x2APIC NMI: ACPI UID=%u; LINT#=%u; Flags=0x%04X\r\n",
+						x2nmi->Uid, x2nmi->Lint, x2nmi->IntiFlags
+					);
 					break;
 				}
-			default:
-				printf("  [Type %u] Unknown MADT entry (Length=%u)\n",
-					sub->Type, sub->Length);
-				break;
+
+			default: {
+					printf_serial("  [Type %u] Unknown MADT entry (Length=%u)\r\n", sub->Type, sub->Length);
+					break;
+				}
 		}
 
 		sub = (ACPI_SUBTABLE_HEADER*) ((uint8_t*) sub + sub->Length);
 	}
+
+	printf("MADT Summary:\n");
+	printf(
+		"  CPUs: %u LAPIC (%u usable), %u x2APIC (%u usable)\n",
+		lapic_count, lapic_enabled, x2apic_count, x2apic_enabled
+	);
+
+	printf("  IOAPICs: %u\n", ioapic_count);
+	printf("  Interrupt Overrides: %u\n", iso_count);
+	printf("  NMI Sources: %u\n", nmi_source_count);
+	printf("  LAPIC NMIs: %u\n", lapic_nmi_count);
+	printf("  x2APIC NMIs: %u\n", x2apic_nmi_count);
+
+	printf_serial("MADT Summary:\r\n");
+	printf_serial(
+		"  CPUs: %u LAPIC (%u usable), %u x2APIC (%u usable)\r\n",
+		lapic_count, lapic_enabled, x2apic_count, x2apic_enabled
+	);
+
+	printf_serial("  IOAPICs: %u\r\n", ioapic_count);
+	printf_serial("  Interrupt Overrides: %u\r\n", iso_count);
+	printf_serial("  NMI Sources: %u\r\n", nmi_source_count);
+	printf_serial("  LAPIC NMIs: %u\r\n", lapic_nmi_count);
+	printf_serial("  x2APIC NMIs: %u\r\n", x2apic_nmi_count);
 }
 
 #include <ctype.h>
