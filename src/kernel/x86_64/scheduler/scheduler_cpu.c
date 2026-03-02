@@ -60,8 +60,11 @@ void safe_printf_serial(const char* format, ...) {
 // BSP is already started
 volatile uint32_t ap_started_count = 1;
 volatile uint32_t ap_last_id = 0;
+volatile uint32_t ap_stack_locked = 0;
 
 void x86_ap_main() {
+	__atomic_store_n(&ap_stack_locked, 0, __ATOMIC_SEQ_CST);
+
 	// Verify we have a working stack
 	volatile uint64_t stack_test = 0xDEADBEEFCAFEBABEULL;
 
@@ -210,22 +213,28 @@ void arch_init_cpus() {
 		lapic_write(LAPIC_ESR, 0);
 
 		// Send INIT
-		printf_serial("[SMP] Sending INIT to AP %d\r\n", ap_apic_id);
+		safe_printf_serial("[SMP] Sending INIT to AP %d\r\n", ap_apic_id);
 		lapic_write(LAPIC_ICR_HIGH, (uint32_t) ap_apic_id << 24);
 		lapic_write(LAPIC_ICR_LOW, 0x0000C500); // INIT, Assert, Level
 
 		lapic_sleep_us(lapic_timer_freq, 10000); // 10ms
 
 		// Send SIPI (Vector 0x08 for 0x8000)
-		printf_serial("[SMP] Sending SIPI 1 to AP %d\r\n", ap_apic_id);
+		safe_printf_serial("[SMP] Sending SIPI 1 to AP %d\r\n", ap_apic_id);
 		lapic_write(LAPIC_ICR_HIGH, (uint32_t) ap_apic_id << 24);
 		lapic_write(LAPIC_ICR_LOW, 0x0000C608);
 
 		lapic_sleep_us(lapic_timer_freq, 200); // 200us
 
 		// Send second SIPI
-		printf_serial("[SMP] Sending SIPI 2 to AP %d\r\n", ap_apic_id);
+		safe_printf_serial("[SMP] Sending SIPI 2 to AP %d\r\n", ap_apic_id);
 		lapic_write(LAPIC_ICR_LOW, 0x0000C608);
+
+		uint64_t wait_timeout = 100000;
+		while (__atomic_load_n(&ap_stack_locked, __ATOMIC_SEQ_CST) == 1 && wait_timeout > 0) {
+			__asm__ volatile("pause");
+			wait_timeout--;
+		}
 
 		// Wait for AP to signal ready
 		uint64_t timeout = 5000;
@@ -238,11 +247,11 @@ void arch_init_cpus() {
 			printf_color(PRINT_COLOR_GREEN, PRINT_DEFAULT_BG, "Processor %d: [OK]\n", ap_apic_id);
 			expected_count++;
 		} else {
+			safe_printf_serial("[SMP] AP %d failed to increment counter.\r\n", ap_apic_id);
 			printf_color(PRINT_COLOR_RED, PRINT_DEFAULT_BG, "Processor %d: [FAILED]\n", ap_apic_id);
-			printf_serial("[SMP] AP %d failed to increment counter.\r\n", ap_apic_id);
 		}
 	}
 
-	printf_serial("[SMP] Total Cores Online: %u\r\n", ap_started_count + 1);
-	printf("Total Cores Online: %u\n", ap_started_count + 1);
+	printf_serial("[SMP] Total Cores Online: %u\r\n", ap_started_count);
+	printf("Total Cores Online: %u\n", ap_started_count);
 }

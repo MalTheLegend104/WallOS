@@ -307,6 +307,19 @@ bool addAtPos(char* buf, size_t size, char c, size_t pos) {
 }
 
 extern void display_flush();
+extern char serial_getc();
+extern char serial_getc_nonblocking();
+
+char get_input() {
+	char current = -1;
+	while (current == -1) {
+		current = nonblocking_keyboard_getc();
+		if (current == -1) current = serial_getc_nonblocking();
+	}
+
+	return current;
+}
+
 void terminalMain() {
 	registerSystemCommands();
 	printf_color(PRINT_COLOR_PINK, PRINT_DEFAULT_BG, "Initalizing Terminal...");
@@ -332,8 +345,6 @@ void terminalMain() {
 	// Actually do command stuff now.
 	printf("> ");
 	while (true) {
-		char current = kb_getc();
-		KeyboardState state = getKeyboardState();
 
 		if (newCommand) {
 			printf("> ");
@@ -342,6 +353,12 @@ void terminalMain() {
 			position_in_previous = 0;
 			memset(oldCommand, 0, MAX_COMMAND_BUF);
 		}
+
+		// char current = kb_getc();
+		// char current = serial_getc();
+		char current = get_input();
+		KeyboardState state = getKeyboardState();
+
 
 		if (state.escaped) {
 			switch (state.last_scancode) {
@@ -383,8 +400,9 @@ void terminalMain() {
 
 		// We always want to print the char, unless it's backspace or tab
 		// Backspace makes sure we cant delete past the beginning of the line.
-		if (current == '\n') {
+		if (current == '\n' || current == '\r') {
 			printf("%c", current);
+			if (current == '\r') printf("\n"); // serial tends to just send \r, we still need the \n
 			// If there's an empty command we just start a new line.
 			if (strlen(commandBuf) == 0) {
 				newCommand = true;

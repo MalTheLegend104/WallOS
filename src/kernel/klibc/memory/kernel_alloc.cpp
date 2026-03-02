@@ -1,3 +1,7 @@
+// This *SIGNIFICANTLY* increases performance whenever there's thousands of allocations.
+// I've never had it be a problem until a SuperMicro motherboard wanted me to deal with a 10MB ACPI structure.
+#pragma GCC push_options
+#pragma GCC optimize ("O3")
 #include <stdint.h>
 #include <stddef.h>
 #include <stdio.h>
@@ -34,7 +38,11 @@ typedef enum {
 	WORD = 2,
 	DWORD = 4,
 	QWORD = 8,
-
+	OWORD = 16,
+	SIZE_32 = 32,
+	SIZE_64 = 64,
+	SIZE_128 = 128,
+	SIZE_256 = 256,
 	PAGE_ENTRY = 4096,
 } cache_type_t;
 
@@ -170,6 +178,21 @@ void initKernelAllocator() {
 
 	initSlab(QWORD);
 	printf("\t%u Byte Header Initialized.\n", QWORD);
+
+	initSlab(OWORD);
+	printf("\t%u Byte Header Initialized.\n", OWORD);
+
+	initSlab(SIZE_32);
+	printf("\t%u Byte Header Initialized.\n", SIZE_32);
+
+	initSlab(SIZE_64);
+	printf("\t%u Byte Header Initialized.\n", SIZE_64);
+
+	initSlab(SIZE_128);
+	printf("\t%u Byte Header Initialized.\n", SIZE_128);
+
+	initSlab(SIZE_256);
+	printf("\t%u Byte Header Initialized.\n", SIZE_256);
 
 	initSlab(PAGE_ENTRY);
 	printf("\t%u Byte Header Initialized.\n", PAGE_ENTRY);
@@ -411,20 +434,23 @@ void kfree(void* ptr) {
 
 void* kalloc(size_t bytes) {
 	if (bytes > PAGE_2MB_SIZE) {
-		return (void*) Memory::MapSequentialKernelPages(((int) (bytes / PAGE_2MB_SIZE)) + 1);
+		printf_serial("[KALLOC] Requested memory allocation.\r\n\tBytes: 0x%llx ", bytes);
+		void* ret = (void*) Memory::MapSequentialKernelPages(((int) (bytes / PAGE_2MB_SIZE)) + 1);
+		printf_serial("virt: 0x%llx", (uint64_t) ret);
+		return ret;
 	}
 
 	// Determine best object size - pick the smallest size that fits
 	size_t object_size;
-	if (bytes <= 2) {
-		object_size = WORD;  // 2
-	} else if (bytes <= 4) {
-		object_size = DWORD;  // 4
-	} else if (bytes <= 8) {
-		object_size = QWORD;  // 8
-	} else {
-		object_size = PAGE_ENTRY;  // 4096
-	}
+	if (bytes <= 2)   object_size = WORD;
+	else if (bytes <= 4)   object_size = DWORD;
+	else if (bytes <= 8)   object_size = QWORD;
+	else if (bytes <= 16)  object_size = OWORD;
+	else if (bytes <= 32)  object_size = SIZE_32;
+	else if (bytes <= 64)  object_size = SIZE_64;
+	else if (bytes <= 128) object_size = SIZE_128;
+	else if (bytes <= 256) object_size = SIZE_256;
+	else                   object_size = PAGE_ENTRY;
 
 	size_t amount_of_objects = (bytes + object_size - 1) / object_size;
 
@@ -471,6 +497,9 @@ void* kalloc(size_t bytes) {
 	}
 
 	// No space found, create new slab
+	printf_serial("[KALLOC] Requested memory allocation.\r\n\tBytes: 0x%llx ret: 0x%llx\r\n", bytes, WALLOS_RET_ADDR());
 	initSlab(object_size);
 	return kalloc(bytes);
 }
+
+#pragma GCC pop_options

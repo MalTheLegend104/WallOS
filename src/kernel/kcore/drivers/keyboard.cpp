@@ -215,6 +215,15 @@ char kb_getc() {
 	}
 }
 
+char nonblocking_keyboard_getc() {
+	if (!getc_gotten) {
+		getc_gotten = true;
+		return scancode_to_char(currentState.last_scancode);
+	}
+
+	return -1;
+}
+
 void wait_for_esc() {
 	while (true) {
 		if (kb_getc() == '\e') return;
@@ -295,8 +304,7 @@ void handle_scancode(uint8_t sc) {
 		case SC_LEFT_SHIFT + 0x80:	currentState.l_shift = false; 		break;// Key released
 		case SC_RIGHT_SHIFT:		currentState.r_shift = true; 		break;
 		case SC_RIGHT_SHIFT + 0x80: currentState.r_shift = false; 		break; // Key released
-		case SC_CAPS_LOCK: 			currentState.caps = true;			break;
-		case SC_CAPS_LOCK + 0x80: 	currentState.caps = false; 			break; // Key released
+		case SC_CAPS_LOCK: 			currentState.caps = !currentState.caps; break;
 		case SC_NUM_LOCK: 			currentState.numlock = true;		break;
 		case SC_NUM_LOCK + 0x80: 	currentState.numlock = false; 		break; // Key released
 		case SC_SCROLL_LOCK: 		currentState.scroll_lock = true;	break;

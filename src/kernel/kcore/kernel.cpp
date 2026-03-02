@@ -180,6 +180,49 @@ int temp_cmd(int, char**) {
 	return 0;
 }
 
+extern "C" void setup_serial_interrupts();
+extern "C" int virt_mem_cli(int argc, char** argv);
+
+/* These are for printing out information about PS/2 controller state.
+ * I have had issues with PS/2 on some devices but not others.
+ * It mostly has to do with how well some BIOS's emulate the controller.
+ * I've honestly kind of resigned to the fact that I *may* not have keyboard support until I get a simple USB driver.
+ */
+#include <cpu_io.h>
+static inline bool wait_output() {
+	for (int i = 0; i < 50000; i++)
+		if (inb(0x64) & 0x01) return true;
+	return false;
+}
+
+void keyboard_debug() {
+	// Status register (port 0x64)
+	uint8_t status = inb(0x64);
+	printf_serial("=== PS/2 8042 Debug ===\r\n");
+	printf_serial("Status Register (0x%02x):\r\n", status);
+	printf_serial("  Output buffer full:  %d\r\n", (status >> 0) & 1);
+	printf_serial("  Input buffer full:   %d\r\n", (status >> 1) & 1);
+	printf_serial("  System flag:         %d\r\n", (status >> 2) & 1);
+	printf_serial("  Command/data:        %d\r\n", (status >> 3) & 1);
+	printf_serial("  Keyboard locked:     %d\r\n", (status >> 4) & 1);
+	printf_serial("  Aux buffer full:     %d\r\n", (status >> 5) & 1);
+	printf_serial("  Timeout error:       %d\r\n", (status >> 6) & 1);
+	printf_serial("  Parity error:        %d\r\n", (status >> 7) & 1);
+
+	// Read config byte (command 0x20)
+	uint8_t config = 0xFF;
+	outb(0x64, 0x20);
+	if (wait_output()) config = inb(0x60);
+	printf_serial("Config Byte (0x%02x):\r\n", config);
+	printf_serial("  Port 1 interrupt:    %d\r\n", (config >> 0) & 1);
+	printf_serial("  Port 2 interrupt:    %d\r\n", (config >> 1) & 1);
+	printf_serial("  System flag:         %d\r\n", (config >> 2) & 1);
+	printf_serial("  Port 1 clock:        %d (0=enabled)\r\n", (config >> 4) & 1);
+	printf_serial("  Port 2 clock:        %d (0=enabled)\r\n", (config >> 5) & 1);
+	printf_serial("  Port 1 translation:  %d\r\n", (config >> 6) & 1);
+	printf_serial("======================\r\n");
+}
+
 void kernel_main(unsigned int magic, multiboot_info* mbt_info) {
 	// ------------------------------------------------------------------------------------------------
 	// Very early init
@@ -201,7 +244,7 @@ void kernel_main(unsigned int magic, multiboot_info* mbt_info) {
 	MultibootManager::initialize(magic, mbt_info);
 	cpu_features f = cpuFeatures();
 	Features::checkFeatures(&f);
-	Features::enableFeatures();
+	// Features::enableFeatures();
 
 	// This inits the first 22 interrupts + the PIT interrupt (PIT is disabled at this point).
 	initIDT();
@@ -223,18 +266,6 @@ void kernel_main(unsigned int magic, multiboot_info* mbt_info) {
 		display_mode == DISPLAY_MODE_VGA_TEXT
 	);
 	display_init(display_mode);
-
-	char* asdf[] = { "serial", "status" };
-	serial_cli_cmd(2, asdf);
-
-	char c;
-	while (true) {
-		write_serial(c);
-		c++;
-		if (c > 60) c = 32;
-	}
-
-	WALLOS_CLI_HLT();
 
 	// ------------------------------------------------------------------------------------------------
 	// Initrd
@@ -269,6 +300,7 @@ void kernel_main(unsigned int magic, multiboot_info* mbt_info) {
 	// If it requires allocations, add it after `initKernelAllocator()`
 	pit_init(1000);
 	keyboard_init();
+	keyboard_debug();
 
 	// ------------------------------------------------------------------------------------------------
 	// Physical Memory & ACPI
@@ -302,7 +334,10 @@ void kernel_main(unsigned int magic, multiboot_info* mbt_info) {
 	// ACPI
 	// ------------------------------------------------------------------------------------------------
 	// ------------------------------------------------------------------------------------------------
+	uint64_t acpi_runtime = get_system_up_time();
 	initialize_acpi();
+	acpi_runtime = get_system_up_time() - acpi_runtime;
+	printf_color(PRINT_COLOR_PINK, PRINT_DEFAULT_BG, "ACPI Init took a total of %llu ms\n", acpi_runtime);
 
 	// char* array[] = { (char*) "drive", (char*) "mount", (char*) "0" };
 	// drive_mount_cmd(3, array);
@@ -314,7 +349,9 @@ void kernel_main(unsigned int magic, multiboot_info* mbt_info) {
 	// framebuffer();
 
 	// printf("");
-	wait_for_esc();
+	// wait_for_esc();
+
+	setup_serial_interrupts();
 
 	// After we're done checking features, we need to set up our terminal.
 	// Eventually this will be a userspace program. 
@@ -325,6 +362,7 @@ void kernel_main(unsigned int magic, multiboot_info* mbt_info) {
 	registerCommand((Command) { bootdev_command, 0, "bootdev", 0, 0 });
 	registerCommand((Command) { pci_command, 0, "pci", 0, 0 });
 	registerCommand((Command) { serial_cli_cmd, 0, "serial", 0, 0 });
+	registerCommand((Command) { virt_mem_cli, 0, "vmm", 0, 0 });
 	registerCommand((Command) { temp_cmd, 0, "temp", 0, 0 });
 	terminalMain();
 }

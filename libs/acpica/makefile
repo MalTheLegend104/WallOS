@@ -13,7 +13,7 @@ all: $(TEMP_LIB)
 # Compile sources into object files
 $(OUTPUT_DIR)/builds/acpica/%.o: %.c
 	@mkdir -p $(dir $@)
-	$(WALLOS_C_COMPILER) $(WALLOS_C_FLAGS) $(INCLUDE_DIRS) -Wno-unused-parameter -c $< -o $@
+	$(WALLOS_C_COMPILER) $(WALLOS_C_FLAGS) $(INCLUDE_DIRS) -O3 -Wno-unused-parameter -c $< -o $@
 
 # Combine all object files into a single temporary archive
 $(TEMP_LIB): $(OBJECTS)

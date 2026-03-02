@@ -13,3 +13,6 @@
 /libs/output/
 targets/x86_64/iso/boot/initrd.img
 tools/wallos_netboot/boot/grub/net_settings.cfg
+
+# This is for my lab testing PXE server
+./upload.sh

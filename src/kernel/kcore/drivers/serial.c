@@ -12,6 +12,238 @@
 #include <cpu_io.h>
 
 
+// // Structure to track which ports actually exist
+// typedef struct {
+// 	uint16_t base;
+// 	bool present;
+// } serial_port_t;
+
+// static serial_port_t active_ports[] = {
+// 	{COM1, false},
+// 	{COM2, false},
+// 	{COM3, false},
+// 	{COM4, false}
+// };
+
+// #define PORT_COUNT (sizeof(active_ports) / sizeof(active_ports[0]))
+
+// static inline void io_wait(void) {
+// 	// Port 0x80 is the standard "post code" port
+// 	// Writing should take ~1us, and it *should* be safe to do on all x86 cpus.
+// 	outb(0x80, 0);
+// }
+
+// int init_serial(uint16_t base_port) {
+// 	outb(REG_IER(base_port), 0x00);		io_wait(); // Disable interrupts
+// 	outb(REG_LCR(base_port), 0x80);		io_wait(); // Enable DLAB (set baud rate divisor)
+
+// 	outb(REG_DATA(base_port), 0x01);	io_wait(); // Divisor 1 is 115200, 3 is 38400 if slower is needed
+// 	outb(REG_IER(base_port), 0x00);		io_wait(); // hi byte
+
+// 	outb(REG_LCR(base_port), 0x03);		io_wait(); // 8 bits, no parity, one stop bit, DLAB off
+// 	outb(REG_IIR_FCR(base_port), 0xC7);	io_wait(); // Enable FIFO, clear them, 14-byte threshold
+// 	outb(REG_MCR(base_port), 0x0B);		io_wait(); // IRQs enabled, RTS/DSR set
+
+// 	// Loopback test
+// 	outb(REG_MCR(base_port), 0x1E);		io_wait(); // Set in loopback mode
+// 	outb(REG_DATA(base_port), 0xAE);	io_wait(); // Send test byte
+
+// 	// Previous implementation failed the loopback test because it was reading too quickly (particularly on weird system configs).
+// 	// This gives the BMC/Virtual UART a moment to "loop" the byte
+// 	// We'd also just leave the UART in loopback mode if it failed, which is a horrible idea.
+// 	bool success = false;
+// 	for (int retry = 0; retry < 1000; retry++) {
+// 		if (inb(REG_LSR(base_port)) & 0x01) { // Check if Data Ready
+// 			if (inb(REG_DATA(base_port)) == 0xAE) {
+// 				success = true;
+// 				break;
+// 			}
+// 		}
+// 		io_wait();
+// 	}
+
+// 	// always exit loopback mode, even if the test failed
+// 	outb(REG_MCR(base_port), 0x0F);    io_wait();
+
+// 	return success ? 0 : 1;
+// }
+
+// int init_serial_with_interrupts(uint16_t base_port) {
+// 	int status = init_serial(base_port);
+// 	if (status != 0) return status;
+
+// 	// 1. Enable "Received Data Available" interrupt in IER
+// 	outb(REG_IER(base_port), 0x01);
+// 	io_wait();
+
+// 	// 2. Set OUT2 bit in MCR. 
+// 	// On real hardware/QEMU, the UART IRQ is not connected to the PIC
+// 	// unless Bit 3 (OUT2) is high.
+// 	uint8_t mcr = inb(REG_MCR(base_port));
+// 	outb(REG_MCR(base_port), mcr | 0x08);
+// 	io_wait();
+
+// 	return 0;
+// }
+
+// bool detect_uart(uint16_t port) {
+// 	// We use the scratch register (port + 7 offset) to see if a write "sticks"
+// 	// If it doesn't, that COM doesn't exist.
+// 	uint8_t original = inb(port + 7);
+
+// 	// We use both 0x55 and 0xAA to ensure we aren't just getting garbage back that *happens* to be correct.
+// 	outb(port + 7, 0x55); io_wait();
+// 	if (inb(port + 7) != 0x55) return false;
+
+// 	outb(port + 7, 0xAA); io_wait();
+// 	if (inb(port + 7) != 0xAA) return false;
+
+// 	// Restore original value just to be polite (or the system wants it this way for some reason)
+// 	// better safe than sorry
+// 	outb(port + 7, original);
+// 	return true;
+// }
+
+// void init_all_serial() {
+// 	for (int i = 0; i < PORT_COUNT; i++) {
+// 		if (detect_uart(active_ports[i].base)) {
+// 			if (init_serial(active_ports[i].base) == 0) active_ports[i].present = true;
+// 		}
+// 	}
+// }
+
+// int serial_received(uint16_t base_port) {
+// 	return inb(REG_LSR(base_port)) & 1;
+// }
+
+// char read_serial(uint16_t base_port) {
+// 	while (serial_received(base_port) == 0);
+// 	return inb(REG_DATA(base_port));
+// }
+
+// int is_transmit_empty(uint16_t base_port) {
+// 	return inb(REG_LSR(base_port)) & 0x20;
+// }
+
+// void write_serial_mirrored(char a) {
+// 	for (int i = 0; i < PORT_COUNT; i++) {
+// 		if (!active_ports[i].present) continue;
+
+// 		uint16_t port = active_ports[i].base;
+// 		// Wait for Transmit Holding Register Empty (THRE)
+// 		while ((inb(port + 5) & 0x20) == 0);
+// 		outb(port, a);
+// 	}
+// }
+
+// void write_string_serial_mirrored(const char* str) {
+// 	for (size_t i = 0; str[i] != '\0'; i++) {
+// 		write_serial_mirrored(str[i]);
+// 	}
+// }
+
+// void write_serial(char a) {
+// 	write_serial_mirrored(a);
+// }
+
+// void write_string_serial(char* str) {
+// 	write_string_serial_mirrored(str);
+// }
+
+// void write_serial_port(uint16_t base_port, char a) {
+// 	while (is_transmit_empty(base_port) == 0);
+// 	outb(REG_DATA(base_port), a);
+// }
+
+// void write_string_serial_port(uint16_t base_port, const char* str) {
+// 	for (size_t i = 0; str[i] != '\0'; i++) {
+// 		write_serial_port(base_port, str[i]);
+// 	}
+// }
+
+// #define SERIAL_BUF_SIZE 1024
+// static char serial_buffer[SERIAL_BUF_SIZE];
+// static uint32_t serial_buf_head = 0;
+// static uint32_t serial_buf_tail = 0;
+
+// // Internal function to push to buffer
+// static void serial_push(char c) {
+// 	uint32_t next = (serial_buf_head + 1) % SERIAL_BUF_SIZE;
+// 	if (next != serial_buf_tail) { // Avoid overflow
+// 		serial_buffer[serial_buf_head] = c;
+// 		serial_buf_head = next;
+// 	}
+// }
+
+// // The Interrupt Handler (IRQ 4)
+// __attribute__((interrupt)) __attribute__((__target__("general-regs-only"))) void serial_irq_handler(struct interrupt_frame* frame) {
+// 	uint16_t port = COM1;
+
+// 	// While Data Ready bit is set in Line Status Register
+// 	while (inb(REG_LSR(port)) & 0x01) {
+// 		char c = inb(REG_DATA(port));
+// 		write_serial_port(COM1, c);
+
+// 		// Push to circular buffer
+// 		uint32_t next = (serial_buf_head + 1) % SERIAL_BUF_SIZE;
+// 		if (next != serial_buf_tail) {
+// 			serial_buffer[serial_buf_head] = c;
+// 			serial_buf_head = next;
+// 		}
+// 	}
+
+// 	// Send EOI to the Master PIC
+// 	outb(0x20, 0x20);
+// }
+
+// #include <system/idt.h>
+// void setup_serial_interrupts() {
+// 	// Map IRQ 4 to IDT vector 36 (0x24)
+// 	// Your PIC offset is 0x20, so 0x20 + 4 = 0x24
+// 	WALLOS_CLI();
+// 	add_interrupt_handler(0x24, (void*) serial_irq_handler, 0, 0x8E);
+// 	irq_enable(4);
+// 	WALLOS_STI();
+
+// 	// 1. Clear any garbage currently in the buffers
+// 	inb(REG_DATA(COM1));
+
+// 	// 2. Enable "Received Data Available" in the UART hardware
+// 	// This is bit 0 of the Interrupt Enable Register
+// 	outb(REG_IER(COM1), 0x01);
+// 	io_wait();
+
+// 	// 3. Set the OUT2 bit in the Modem Control Register
+// 	// This is the "Master Switch" for the UART to talk to the PIC
+// 	uint8_t mcr = inb(REG_MCR(COM1));
+// 	outb(REG_MCR(COM1), mcr | 0x08);
+// 	io_wait();
+// }
+
+// char serial_getc() {
+// 	// Block until head != tail (data available)
+// 	while (serial_buf_head == serial_buf_tail) {
+// 		__asm__ volatile("pause");
+// 	}
+
+// 	char c = serial_buffer[serial_buf_tail];
+// 	serial_buf_tail = (serial_buf_tail + 1) % SERIAL_BUF_SIZE;
+// 	return c;
+// }
+
+// char serial_getc_nonblocking() {
+// 	// Block until head != tail (data available)
+// 	if (serial_buf_head == serial_buf_tail) return EOF;
+
+// 	char c = serial_buffer[serial_buf_tail];
+// 	serial_buf_tail = (serial_buf_tail + 1) % SERIAL_BUF_SIZE;
+// 	return c;
+// }
+
+// bool serial_has_char() {
+// 	return serial_buf_head != serial_buf_tail;
+// }
+
 // Structure to track which ports actually exist
 typedef struct {
 	uint16_t base;
@@ -27,90 +259,76 @@ static serial_port_t active_ports[] = {
 
 #define PORT_COUNT (sizeof(active_ports) / sizeof(active_ports[0]))
 
-extern void io_wait();
+static inline void io_wait(void) {
+	// Port 0x80 is the standard "post code" port
+	// Writing should take ~1us, and it *should* be safe to do on all x86 cpus.
+	outb(0x80, 0);
+}
 
 int init_serial(uint16_t base_port) {
-	outb(REG_IER(base_port), 0x00);    // Disable all interrupts
-	outb(REG_LCR(base_port), 0x80);    // Enable DLAB (set baud rate divisor)
-	// outb(REG_DATA(base_port), 0x03);   // Set divisor to 3 (lo byte) 38400 baud
-	outb(REG_DATA(base_port), 0x01); // 115200 baud
-	outb(REG_IER(base_port), 0x00);    //                  (hi byte)
-	outb(REG_LCR(base_port), 0x03);    // 8 bits, no parity, one stop bit
-	outb(REG_IIR_FCR(base_port), 0xC7);// Enable FIFO, clear them, 14-byte threshold
-	outb(REG_MCR(base_port), 0x0B);    // IRQs enabled, RTS/DSR set
+	outb(REG_IER(base_port), 0x00);		io_wait(); // Disable interrupts
+	outb(REG_LCR(base_port), 0x80);		io_wait(); // Enable DLAB (set baud rate divisor)
+
+	outb(REG_DATA(base_port), 0x01);	io_wait(); // Divisor 1 = 115200 baud
+	outb(REG_IER(base_port), 0x00);		io_wait(); // hi byte
+
+	outb(REG_LCR(base_port), 0x03);		io_wait(); // 8 bits, no parity, one stop bit, DLAB off
+	outb(REG_IIR_FCR(base_port), 0xC7);	io_wait(); // Enable FIFO, clear them, 14-byte threshold
+	outb(REG_MCR(base_port), 0x0B);		io_wait(); // IRQs enabled, RTS/DSR set
 
 	// Loopback test
-	outb(REG_MCR(base_port), 0x1E);    // Set in loopback mode
-	outb(REG_DATA(base_port), 0xAE);   // Send test byte
+	outb(REG_MCR(base_port), 0x1E);		io_wait(); // Set in loopback mode
+	outb(REG_DATA(base_port), 0xAE);	io_wait(); // Send test byte
 
-	if (inb(REG_DATA(base_port)) != 0xAE) {
-		return 1; // Faulty hardware or incorrect port
+	// Poll with retries to give slow/virtual UARTs time to loop the byte back.
+	bool success = false;
+	for (int retry = 0; retry < 1000; retry++) {
+		if (inb(REG_LSR(base_port)) & 0x01) { // Check if Data Ready
+			if (inb(REG_DATA(base_port)) == 0xAE) {
+				success = true;
+				break;
+			}
+		}
+		io_wait();
 	}
 
-	// Normal operation mode
-	outb(REG_MCR(base_port), 0x0F);
-	return 0;
+	// Always exit loopback mode, even on failure — leaving it set would be catastrophic.
+	outb(REG_MCR(base_port), 0x0F);    io_wait();
+
+	return success ? 0 : 1;
 }
 
 bool detect_uart(uint16_t port) {
-	// We use the scratch register (port + 7 offset) to see if a write "sticks"
-	// If it doesn't, that COM doesn't exist.
+	// Use the scratch register (offset +7) to check if a write sticks.
+	// If it doesn't, no UART is present at this address.
+	uint8_t original = inb(port + 7);
 
-	// We use both 0x55 and 0xAA to ensure we aren't just getting garbage back that *happens* to be correct.
-	outb(port + 7, 0x55);
+	// Test with two values to avoid false positives from garbage data.
+	outb(port + 7, 0x55); io_wait();
 	if (inb(port + 7) != 0x55) return false;
 
-	outb(port + 7, 0xAA);
+	outb(port + 7, 0xAA); io_wait();
 	if (inb(port + 7) != 0xAA) return false;
 
+	// Restore the original value.
+	outb(port + 7, original);
 	return true;
 }
 
 void init_all_serial() {
 	for (int i = 0; i < PORT_COUNT; i++) {
 		if (detect_uart(active_ports[i].base)) {
-			if (init_serial(active_ports[i].base) == 0)
-				active_ports[i].present = true;
+			if (init_serial(active_ports[i].base) == 0) active_ports[i].present = true;
 		}
 	}
 }
 
-int serial_received(uint16_t base_port) {
-	return inb(REG_LSR(base_port)) & 1;
-}
-
-char read_serial(uint16_t base_port) {
-	while (serial_received(base_port) == 0);
-	return inb(REG_DATA(base_port));
-}
+// ---------------------------------------------------------------------------
+// Transmit helpers
+// ---------------------------------------------------------------------------
 
 int is_transmit_empty(uint16_t base_port) {
 	return inb(REG_LSR(base_port)) & 0x20;
-}
-
-void write_serial_mirrored(char a) {
-	for (int i = 0; i < PORT_COUNT; i++) {
-		if (!active_ports[i].present) continue;
-
-		uint16_t port = active_ports[i].base;
-		// Wait for Transmit Holding Register Empty (THRE)
-		while ((inb(port + 5) & 0x20) == 0);
-		outb(port, a);
-	}
-}
-
-void write_string_serial_mirrored(const char* str) {
-	for (size_t i = 0; str[i] != '\0'; i++) {
-		write_serial_mirrored(str[i]);
-	}
-}
-
-void write_serial(char a) {
-	write_serial_mirrored(a);
-}
-
-void write_string_serial(char* str) {
-	write_string_serial_mirrored(str);
 }
 
 void write_serial_port(uint16_t base_port, char a) {
@@ -122,6 +340,136 @@ void write_string_serial_port(uint16_t base_port, const char* str) {
 	for (size_t i = 0; str[i] != '\0'; i++) {
 		write_serial_port(base_port, str[i]);
 	}
+}
+
+// Mirror output to all active ports.
+void write_serial_mirrored(char a) {
+	for (int i = 0; i < PORT_COUNT; i++) {
+		if (!active_ports[i].present) continue;
+		write_serial_port(active_ports[i].base, a);
+	}
+}
+
+void write_string_serial_mirrored(const char* str) {
+	for (size_t i = 0; str[i] != '\0'; i++) {
+		write_serial_mirrored(str[i]);
+	}
+}
+
+// Convenience wrappers that mirror to all active ports.
+void write_serial(char a) {
+	write_serial_mirrored(a);
+}
+
+void write_string_serial(char* str) {
+	write_string_serial_mirrored(str);
+}
+
+// ---------------------------------------------------------------------------
+// Interrupt-driven receive — circular buffer
+//
+// Both head and tail are volatile so the compiler never caches them in a
+// register across the spin-loops in serial_getc / serial_has_char.
+// ---------------------------------------------------------------------------
+
+#define SERIAL_BUF_SIZE 1024
+static char serial_buffer[SERIAL_BUF_SIZE];
+static volatile uint32_t serial_buf_head = 0; // Written by ISR
+static volatile uint32_t serial_buf_tail = 0; // Written by consumer
+
+// Push one byte into the ring buffer.
+// Must only be called from the ISR (or with interrupts disabled).
+static void serial_push(char c) {
+	uint32_t next = (serial_buf_head + 1) % SERIAL_BUF_SIZE;
+	if (next != serial_buf_tail) { // Drop on overflow rather than corrupt
+		serial_buffer[serial_buf_head] = c;
+		serial_buf_head = next;
+	}
+}
+
+// ---------------------------------------------------------------------------
+// IRQ 4 handler (COM1)
+//
+// Drains the UART FIFO into the ring buffer.  Does NOT echo — if you need
+// echo, do it in the consumer (serial_getc) so you're not spinning in the ISR.
+//
+// If you ever need multi-port interrupt support, loop over active_ports and
+// check each port's IIR to find which one(s) fired before draining.
+// ---------------------------------------------------------------------------
+__attribute__((interrupt)) __attribute__((__target__("general-regs-only")))
+void serial_irq_handler(struct interrupt_frame* frame) {
+	uint16_t port = COM1;
+
+	// Drain the FIFO completely before returning.
+	while (inb(REG_LSR(port)) & 0x01) {
+		char c = inb(REG_DATA(port));
+		serial_push(c);
+	}
+
+	// Send EOI to the Master PIC.
+	outb(0x20, 0x20);
+}
+
+// ---------------------------------------------------------------------------
+// Interrupt setup
+//
+// Call init_all_serial() (or at minimum init_serial(COM1)) before this.
+// This function solely wires up the IDT entry and enables the UART interrupt;
+// it does not re-initialise baud rate, FIFO, or loopback settings.
+// ---------------------------------------------------------------------------
+#include <system/idt.h>
+void setup_serial_interrupts() {
+	WALLOS_CLI();
+	// IRQ 4 -> IDT vector 0x24 (PIC master offset 0x20 + IRQ 4)
+	add_interrupt_handler(0x24, (void*) serial_irq_handler, 0, 0x8E);
+	irq_enable(4);
+	WALLOS_STI();
+
+	// Drain any stale bytes sitting in the FIFO before enabling the interrupt,
+	// otherwise the first IRQ may deliver garbage to the ring buffer.
+	while (inb(REG_LSR(COM1)) & 0x01) {
+		(void) inb(REG_DATA(COM1));
+	}
+
+	// Enable "Received Data Available" interrupt in the UART.
+	outb(REG_IER(COM1), 0x01);
+	io_wait();
+
+	// Set OUT2 in MCR — this gates the UART's IRQ line to the PIC.
+	// Without it the PIC will never see the interrupt on real hardware or QEMU.
+	uint8_t mcr = inb(REG_MCR(COM1));
+	outb(REG_MCR(COM1), mcr | 0x08);
+	io_wait();
+}
+
+// ---------------------------------------------------------------------------
+// Consumer API
+// ---------------------------------------------------------------------------
+
+// Block until a character is available, then return it.
+// Note: this is a busy-wait (uses PAUSE for power/pipeline friendliness).
+// If you have a scheduler, consider sleeping here instead.
+char serial_getc() {
+	while (serial_buf_head == serial_buf_tail) {
+		__asm__ volatile("pause");
+	}
+
+	char c = serial_buffer[serial_buf_tail];
+	serial_buf_tail = (serial_buf_tail + 1) % SERIAL_BUF_SIZE;
+	return c;
+}
+
+// Return EOF immediately if no data is waiting, otherwise return the character.
+char serial_getc_nonblocking() {
+	if (serial_buf_head == serial_buf_tail) return EOF;
+
+	char c = serial_buffer[serial_buf_tail];
+	serial_buf_tail = (serial_buf_tail + 1) % SERIAL_BUF_SIZE;
+	return c;
+}
+
+bool serial_has_char() {
+	return serial_buf_head != serial_buf_tail;
 }
 
 // ------------------------------------------------------------------------------------------------

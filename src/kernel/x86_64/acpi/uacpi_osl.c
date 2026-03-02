@@ -68,44 +68,197 @@ uacpi_status uacpi_kernel_get_rsdp(uacpi_phys_addr* out_rsdp_address) {
  *              resulting virtual address 0xF000 + 0xABC => 0xFABC. Return it
  *              to uACPI.
  */
-void* uacpi_kernel_map(uacpi_phys_addr addr, uacpi_size len) {
-	// printf_serial("[UACPI] uacpi_kernel_map(0x%llx, 0x%llx) called\r\n", addr, len);
+// void* uacpi_kernel_map(uacpi_phys_addr addr, uacpi_size len) {
+// 	// printf_serial("[UACPI] uacpi_kernel_map(0x%llx, 0x%llx) called\r\n", addr, len);
 
-	if (addr >= KERNEL_VIRTUAL_BASE) {
-		printf_serial("[UACPI] uacpi_kernel_map() - already mapped, returning 0x%llx\r\n", addr);
-		return (void*) addr; // It's already mapped.
-	}
+// 	if (addr >= KERNEL_VIRTUAL_BASE) {
+// 		printf_serial("[UACPI] uacpi_kernel_map() - already mapped, returning 0x%llx\r\n", addr);
+// 		return (void*) addr; // It's already mapped.
+// 	}
 
-	// Arbitrary Cutoff, 256 continuous MB.
-	if (len > 0x200000 * 128) {
-		printf_serial("[UACPI] uacpi_kernel_map() - length too large, checking signature\r\n");
-		// Map only the requested location, get the table header, return 0.
-		char* magic = (char*) mapKernelLocation(addr, 0x24);
-		printf("ACPICA: Target Signature: \"%c%c%c%c\"\n", magic[0], magic[1], magic[2], magic[3]);
-		printf_serial("[UACPI] uacpi_kernel_map() - returning NULL due to size\r\n");
-		return 0;
-	}
+// 	static uint64_t total_maps = 0;
+// 	total_maps++;
+// 	if (total_maps % 1000 == 0) serial_printf("Total ACPI Maps: %llu\r\n", total_maps);
 
-	void* ret = (void*) mapKernelLocation(addr, len);
-	// printf_serial("[UACPI] uacpi_kernel_map() - returning 0x%llx\r\n", (uint64_t) ret);
+// 	// Arbitrary Cutoff, 256 continuous MB.
+// 	if (len > 0x200000 * 128) {
+// 		printf_serial("[UACPI] uacpi_kernel_map() - length too large, checking signature\r\n");
+// 		// Map only the requested location, get the table header, return 0.
+// 		char* magic = (char*) mapKernelLocation(addr, 0x24);
+// 		printf("ACPICA: Target Signature: \"%c%c%c%c\"\n", magic[0], magic[1], magic[2], magic[3]);
+// 		printf_serial("[UACPI] uacpi_kernel_map() - returning NULL due to size\r\n");
+// 		return 0;
+// 	}
 
-	// printf_serial("\r\nMAP REQUEST:\r\n\tRequest PHYS: 0x%llx\r\n\tRequest LEN:  0x%llx\r\n\tMapped Return: 0x%llx\r\n", PhysicalAddress, Length, ret);
-	// printf("\nMAP REQUEST:\n\tRequest PHYS: 0x%llx\n\tRequest LEN:  0x%llx\n\tMapped Return: 0x%llx\n", PhysicalAddress, Length, ret);
+// 	void* ret = (void*) mapKernelLocation(addr, len);
+// 	// printf_serial("[UACPI] uacpi_kernel_map() - returning 0x%llx\r\n", (uint64_t) ret);
 
-	return ret;
+// 	// printf_serial("\r\nMAP REQUEST:\r\n\tRequest PHYS: 0x%llx\r\n\tRequest LEN:  0x%llx\r\n\tMapped Return: 0x%llx\r\n", PhysicalAddress, Length, ret);
+// 	// printf("\nMAP REQUEST:\n\tRequest PHYS: 0x%llx\n\tRequest LEN:  0x%llx\n\tMapped Return: 0x%llx\n", PhysicalAddress, Length, ret);
+
+// 	return ret;
+// }
+
+// /*
+//  * Unmap a virtual memory range at 'addr' with a length of 'len' bytes.
+//  *
+//  * NOTE: 'addr' may be misaligned, see the comment above 'uacpi_kernel_map'.
+//  *       Similar steps to uacpi_kernel_map can be taken to retrieve the
+//  *       virtual address originally returned by the VMM for this mapping
+//  *       as well as its true length.
+//  */
+// void uacpi_kernel_unmap(void* addr, uacpi_size len) {
+// 	// printf_serial("[UACPI] uacpi_kernel_unmap(0x%llx, 0x%llx) called (no-op)\r\n", (uint64_t) addr, len);
+// 	// I dont really care about unmapping right now. 
+// }
+
+// ------------------------------------------------------------------------------------------------
+// Physical -> Virtual mapping cache
+// Prevents redundant VMM allocations when uACPI re-maps the same physical
+// regions (e.g. re-reading table headers, sub-region probes on the SSDT, etc.)
+// ------------------------------------------------------------------------------------------------
+#define PAGE_SIZE       0x1000
+#define PAGE_MASK       (~(uacpi_phys_addr)(PAGE_SIZE - 1))
+
+// Power-of-two so we can mask instead of modulo. 1024 slots handles a large
+// server SSDT comfortably; bump to 2048 if you ever see cache-full warnings.
+#define MAP_CACHE_SLOTS 1024
+
+typedef struct {
+	uacpi_phys_addr phys_base;   // page-aligned base physical address
+	uacpi_size      mapped_len;  // page-aligned total length passed to VMM
+	void* virt_base;   // what mapKernelLocation returned
+	uint32_t        refcount;    // how many live uacpi_kernel_map calls reference this
+} map_cache_entry_t;
+
+static map_cache_entry_t _map_cache[MAP_CACHE_SLOTS];
+static uint32_t          _map_cache_used = 0;
+
+// FNV-1a hash, fast and good enough for physical page numbers
+static inline uint32_t _map_hash(uacpi_phys_addr phys_base, uacpi_size mapped_len) {
+	uint64_t v = (uint64_t) phys_base ^ ((uint64_t) mapped_len << 32);
+	v ^= v >> 33;
+	v *= 0xff51afd7ed558ccdULL;
+	v ^= v >> 33;
+	return (uint32_t) (v & (MAP_CACHE_SLOTS - 1));
 }
 
-/*
- * Unmap a virtual memory range at 'addr' with a length of 'len' bytes.
- *
- * NOTE: 'addr' may be misaligned, see the comment above 'uacpi_kernel_map'.
- *       Similar steps to uacpi_kernel_map can be taken to retrieve the
- *       virtual address originally returned by the VMM for this mapping
- *       as well as its true length.
- */
+// Returns the cache slot for (phys_base, mapped_len), or -1 if not found.
+static int _map_cache_find(uacpi_phys_addr phys_base, uacpi_size mapped_len) {
+	uint32_t slot = _map_hash(phys_base, mapped_len);
+	// Linear probing
+	for (uint32_t i = 0; i < MAP_CACHE_SLOTS; i++) {
+		uint32_t idx = (slot + i) & (MAP_CACHE_SLOTS - 1);
+		map_cache_entry_t* e = &_map_cache[idx];
+		if (!e->virt_base) return -1;  // empty slot => not present
+		if (e->phys_base == phys_base && e->mapped_len == mapped_len)
+			return (int) idx;
+	}
+	return -1;
+}
+
+// Inserts a new entry. Call only after _map_cache_find returned -1.
+static int _map_cache_insert(uacpi_phys_addr phys_base, uacpi_size mapped_len, void* virt_base) {
+	if (_map_cache_used >= MAP_CACHE_SLOTS) {
+		printf_serial("[UACPI][MAP_CACHE] WARNING: cache full (%u slots), cannot insert phys=0x%llx\r\n",
+			MAP_CACHE_SLOTS, (uint64_t) phys_base);
+		return -1;
+	}
+	uint32_t slot = _map_hash(phys_base, mapped_len);
+	for (uint32_t i = 0; i < MAP_CACHE_SLOTS; i++) {
+		uint32_t idx = (slot + i) & (MAP_CACHE_SLOTS - 1);
+		if (!_map_cache[idx].virt_base) {
+			_map_cache[idx].phys_base = phys_base;
+			_map_cache[idx].mapped_len = mapped_len;
+			_map_cache[idx].virt_base = virt_base;
+			_map_cache[idx].refcount = 1;
+			_map_cache_used++;
+			return (int) idx;
+		}
+	}
+	return -1;
+}
+
+// ------------------------------------------------------------------------------------------------
+// uacpi_kernel_map / uacpi_kernel_unmap
+// ------------------------------------------------------------------------------------------------
+void* uacpi_kernel_map(uacpi_phys_addr addr, uacpi_size len) {
+	// Already in virtual address space — identity return.
+	if (addr >= KERNEL_VIRTUAL_BASE)
+		return (void*) addr;
+
+	// Compute the true page-aligned region we need the VMM to map.
+	uacpi_phys_addr page_offset = addr & (PAGE_SIZE - 1);       // offset within first page
+	uacpi_phys_addr phys_base = addr & PAGE_MASK;              // round base down
+	uacpi_size      aligned_len = (len + page_offset + PAGE_SIZE - 1) & PAGE_MASK; // round len up
+
+	// --- Cache lookup ---
+	int idx = _map_cache_find(phys_base, aligned_len);
+	if (idx >= 0) {
+		_map_cache[idx].refcount++;
+		printf_serial("[UACPI][MAP_CACHE] HIT  phys=0x%llx len=0x%llx refcount=%u\r\n",
+			(uint64_t) phys_base, (uint64_t) aligned_len, _map_cache[idx].refcount);
+// Return the cached virtual base plus the original intra-page offset.
+		return (void*) ((uintptr_t) _map_cache[idx].virt_base + page_offset);
+	}
+
+	// --- Sanity check: refuse absurdly large requests ---
+	if (aligned_len > 0x200000 * 128) {
+		printf_serial("[UACPI][MAP_CACHE] WARN: oversized map request 0x%llx bytes at phys 0x%llx\r\n",
+			(uint64_t) aligned_len, (uint64_t) phys_base);
+// Peek at the table signature to aid debugging, then bail.
+		void* peek = (void*) mapKernelLocation(phys_base, 0x24);
+		if (peek) {
+			char* sig = (char*) peek + page_offset;
+			printf_serial("[UACPI][MAP_CACHE] Signature at target: '%c%c%c%c'\r\n",
+				sig[0], sig[1], sig[2], sig[3]);
+		}
+		return NULL;
+	}
+
+	// --- Cache miss: call the VMM ---
+	void* virt_base = (void*) mapKernelLocation(phys_base, aligned_len);
+	if (!virt_base) {
+		printf_serial("[UACPI][MAP_CACHE] VMM returned NULL for phys=0x%llx len=0x%llx\r\n",
+			(uint64_t) phys_base, (uint64_t) aligned_len);
+		return NULL;
+	}
+
+	_map_cache_insert(phys_base, aligned_len, virt_base);
+	printf_serial("[UACPI][MAP_CACHE] MISS phys=0x%llx len=0x%llx -> virt=0x%llx (cache %u/%u)\r\n",
+		(uint64_t) phys_base, (uint64_t) aligned_len, (uint64_t) virt_base,
+		_map_cache_used, MAP_CACHE_SLOTS);
+
+	return (void*) ((uintptr_t) virt_base + page_offset);
+}
+
 void uacpi_kernel_unmap(void* addr, uacpi_size len) {
-	// printf_serial("[UACPI] uacpi_kernel_unmap(0x%llx, 0x%llx) called (no-op)\r\n", (uint64_t) addr, len);
-	// I dont really care about unmapping right now. 
+	if ((uintptr_t) addr >= KERNEL_VIRTUAL_BASE)
+		return;  // identity-mapped, nothing to do
+
+	// Reconstruct the page-aligned key so we can find the cache entry.
+	// We don't have the original physical address here, so we match on virt.
+	uacpi_size page_offset = (uintptr_t) addr & (PAGE_SIZE - 1);
+	void* virt_base = (void*) ((uintptr_t) addr & PAGE_MASK);
+	uacpi_size aligned_len = (len + page_offset + PAGE_SIZE - 1) & PAGE_MASK;
+
+	for (uint32_t i = 0; i < MAP_CACHE_SLOTS; i++) {
+		map_cache_entry_t* e = &_map_cache[i];
+		if (!e->virt_base) continue;
+		// Match on virtual base + length (both were derived the same way).
+		if (e->virt_base == virt_base && e->mapped_len == aligned_len) {
+			if (e->refcount > 0) e->refcount--;
+			// Leave the mapping alive even at refcount 0 — the VMM mapping is
+			// cheap to keep and uACPI may legitimately re-map the same region.
+			// If you ever want to actually free: call your VMM unmap here when
+			// refcount hits 0 and zero out the slot + _map_cache_used--.
+			printf_serial("[UACPI][MAP_CACHE] UNMAP virt=0x%llx len=0x%llx refcount=%u (kept)\r\n",
+				(uint64_t) virt_base, (uint64_t) aligned_len, e->refcount);
+			return;
+		}
+	}
+
+	printf_serial("[UACPI][MAP_CACHE] UNMAP virt=0x%llx not in cache (ignoring)\r\n", (uint64_t) addr);
 }
 
 void uacpi_kernel_log(uacpi_log_level lvl, const uacpi_char* str) {
@@ -659,12 +812,15 @@ uacpi_status uacpi_kernel_acquire_mutex(uacpi_handle handle, uacpi_u16 timeout_m
 
 	uint64_t timeout = (timeout_ms == 0xFFFF) ? UINT64_MAX : timeout_ms;
 	int status = semaphore_wait((semaphore_t*) handle, 1, timeout);
+
+	int ret = UACPI_STATUS_OK;
+
 	if (status == SEMAPHORE_TIMEOUT) {
 		// printf_serial("[UACPI] uacpi_kernel_acquire_mutex() - timeout\r\n");
-		return UACPI_STATUS_TIMEOUT;
+		ret = UACPI_STATUS_TIMEOUT;
 	}
-	// printf_serial("[UACPI] uacpi_kernel_acquire_mutex() - success\r\n");
-	return UACPI_STATUS_OK;
+	// printf_serial("[UACPI] uacpi_kernel_acquire_mutex() - %s\r\n", ret == UACPI_STATUS_OK ? "STATUS_OK" : "STATUS_TIMEOUT");
+	return ret;
 }
 
 void uacpi_kernel_release_mutex(uacpi_handle handle) {

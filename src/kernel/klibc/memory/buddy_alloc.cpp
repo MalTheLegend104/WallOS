@@ -630,8 +630,8 @@ void Memory::PhysicalMemInit() {
 }
 
 uintptr_t Memory::PhysicalAlloc2MBSequential(size_t page_count) {
-	printf_serial("\r\n[PMM] PhysicalAlloc2MBSequential ENTER\r\n");
-	printf_serial("[PMM] requested page_count=%llu\r\n", page_count);
+	// printf_serial("\r\n[PMM] PhysicalAlloc2MBSequential ENTER\r\n");
+	// printf_serial("[PMM] requested page_count=%llu\r\n", page_count);
 
 	if (page_count == 0) {
 		return 0;
@@ -655,8 +655,7 @@ uintptr_t Memory::PhysicalAlloc2MBSequential(size_t page_count) {
 		return 0;
 	}
 
-	printf_serial("[PMM] Allocating order-%u block (contains %llu x 2MB)\r\n",
-		needed_order, page_count);
+	// printf_serial("[PMM] Allocating order-%u block (contains %llu x 2MB)\r\n", needed_order, page_count);
 
 	uint32_t idx = buddy_alloc(needed_order);
 
@@ -667,7 +666,7 @@ uintptr_t Memory::PhysicalAlloc2MBSequential(size_t page_count) {
 
 	uintptr_t result = idx_to_addr(idx);
 
-	printf_serial("[PMM] SUCCESS addr=0x%llx\r\n", result);
+	// printf_serial("[PMM] SUCCESS addr=0x%llx\r\n", result);
 
 	return result;
 }

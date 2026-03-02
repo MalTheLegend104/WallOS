@@ -185,6 +185,8 @@ long_mode_start:
 	mov gs, ax
 	mov ss, ax
 
+	call enable_sse_main
+
 	; Zero uninitialized memory so there's no junk
 	mov rdi, _bss_start_
 	mov rcx, _bss_end_
@@ -204,3 +206,15 @@ align 4096
 stack_bottom:
 	resb 32768
 stack_top:
+
+section .text
+bits 32
+enable_sse_main:
+	mov eax, cr0
+	and ax, 0xFFFB		;clear coprocessor emulation CR0.EM
+	or ax, 0x2			;set coprocessor monitoring  CR0.MP
+	mov cr0, eax
+	mov eax, cr4
+	or ax, 3 << 9		;set CR4.OSFXSR and CR4.OSXMMEXCPT at the same time
+	mov cr4, eax
+	ret

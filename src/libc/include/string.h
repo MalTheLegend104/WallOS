@@ -10,6 +10,8 @@ extern "C" {
 	size_t strlen(const char*);
 	void strrev(char* arr, int start, int end);
 	long strtol(const char* str, char** endptr, int base);
+	long long strtoll(const char* __restrict__ nptr, char** __restrict__ endptr, int base);
+	unsigned long long strtoull(const char* __restrict__ nptr, char** __restrict__ endptr, int base);
 
 	int strcmp(const char* str1, const char* str2);
 	int strncmp(const char* s1, const char* s2, size_t n);
