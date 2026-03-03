@@ -1,6 +1,7 @@
-#include <scheduler/cpu.h>
 #include <stdio.h>
+#include <stdarg.h>
 
+#include <scheduler/cpu.h>
 
 #include <acpi/acpi_api.h>
 #include <x86_64/lapic.h>
@@ -17,19 +18,9 @@ void idle_task_main() {
 
 cpu_t system_cpus[WALLOS_SYSTEM_MAX_CPU];
 
-cpu_t* cpu_current(void) {
-
-}
-
-cpu_t* cpu_get(uint32_t cpu_id) {
-
-}
-
-uint32_t cpu_count(void) {
-
-}
-
-#include <stdarg.h>
+cpu_t* cpu_current(void) { }
+cpu_t* cpu_get(uint32_t cpu_id) { }
+uint32_t cpu_count(void) { }
 
 volatile int print_lock = 0;
 void safe_printf(const char* format, ...) {
@@ -59,7 +50,6 @@ void safe_printf_serial(const char* format, ...) {
 
 // BSP is already started
 volatile uint32_t ap_started_count = 1;
-volatile uint32_t ap_last_id = 0;
 volatile uint32_t ap_stack_locked = 0;
 
 void x86_ap_main() {
@@ -71,9 +61,6 @@ void x86_ap_main() {
 	// Get our APIC ID
 	uint32_t apic_id = lapic_read(0x20) >> 24;
 
-	// Record it
-	ap_last_id = apic_id;
-
 
 	safe_printf("  [AP %d] Hello from the other side!\n", apic_id);
 	safe_printf_serial("[SMP] AP %d reporting for duty. Stack is at %p\r\n", apic_id, &stack_test);
@@ -84,29 +71,6 @@ void x86_ap_main() {
 	// Halt forever
 	WALLOS_CLI_HLT();
 }
-
-// void wakeup_ap(uint8_t apic_id, uint8_t vector) {
-// 	// 1. Select the target AP (High 32-bits of ICR)
-// 	// Destination is in bits 24-31
-// 	lapic_write(LAPIC_ICR_HIGH, (uint32_t) apic_id << 24);
-
-// 	// 2. Send INIT IPI
-// 	// Level = Assert (bit 14), Delivery Mode = INIT (0b101)
-// 	lapic_write(LAPIC_ICR_LOW, 0x0000C500);
-
-// 	// Wait 10ms - Use your calibrated PIT or TSC timer
-// 	delay_ms(10);
-
-// 	// 3. Send SIPI #1
-// 	// Delivery Mode = Startup (0b110), Vector = 0x08 (for 0x8000)
-// 	lapic_write(LAPIC_ICR_LOW, 0x0000C600 | vector);
-
-// 	// Wait 200us
-// 	delay_us(200);
-
-// 	// 4. Send SIPI #2 (Just to be sure)
-// 	lapic_write(LAPIC_ICR_LOW, 0x0000C600 | vector);
-// }
 
 // This exists for the original IDT and PIC setup
 // We're going to reuse it here.
@@ -134,6 +98,7 @@ void arch_init_cpus() {
 
 	// We're temporarily going to use the APIC timer in single shot mode during SMP setup.
 	// I *really* don't want to deal with timer interrupts during this since the process is so fragile.
+	// We can't really trust the TSC with super long delay's (unless it's invariant), it should be fine for this though.
 	uint64_t tsc_freq = get_tsc_freq();
 	printf_color(PRINT_COLOR_CYAN, PRINT_DEFAULT_BG, "TSC FREQ: %zu\n", tsc_freq);
 	printf_serial("[SMP] TSC Frequency calibrated: %zu Hz\r\n", tsc_freq);
@@ -170,6 +135,7 @@ void arch_init_cpus() {
 	printf_color(PRINT_COLOR_LIGHT_GREEN, PRINT_DEFAULT_BG, "MADT INFO:\n\tcount: %d\n", madt->entry_count);
 
 	uint32_t expected_count = 1;
+	bool reuse_stack = false;
 	for (uint32_t i = 0; i < madt->entry_count; i++) {
 		MADTEntry* e = &madt->entries[i];
 
@@ -197,17 +163,21 @@ void arch_init_cpus() {
 		// 64KiB stack should be *way* more than needed.
 		// We don't worry about tracking the allocation, it's never getting deallocated.
 		// If something happens that takes an AP entirely offline, we have WAY bigger problems.
-		void* stack = kalloc(65536);
-		ap_stack_pointer = (uint64_t) stack + 65536;
-		ap_last_id = 0;
 
-		printf_serial("[SMP] Allocated stack for AP %d at %p\r\n", ap_apic_id, ap_stack_pointer);
+		if (!reuse_stack) {
+			void* stack = kalloc(65536);
+			ap_stack_pointer = (uint64_t) stack + 65536; // Stack grows backwards.
+			printf_serial("[SMP] Allocated stack for AP %d at %p\r\n", ap_apic_id, ap_stack_pointer);
+		} else {
+			reuse_stack = false;
+			printf_serial("[SMP] Last AP didn't startup correctly. Re-using stack for AP %d at %p\r\n", ap_apic_id, ap_stack_pointer);
+		}
+
 		// Send INIT-SIPI-SIPI
 		// 		- Wait until ICR idle
 		// 		- Send INIT IPI (Wait 10ms)
 		// 		- Send SIPI (wait 200us)
 		// 		- Send SIPI again.
-
 
 		// Clear Errors
 		lapic_write(LAPIC_ESR, 0);
@@ -230,10 +200,14 @@ void arch_init_cpus() {
 		safe_printf_serial("[SMP] Sending SIPI 2 to AP %d\r\n", ap_apic_id);
 		lapic_write(LAPIC_ICR_LOW, 0x0000C608);
 
+		// We want to make sure it actually consumes the stack.
+		// If it doesn't, we definitely have a problem.
+		// We can also reuse the stack if it's not consumed (assuming we don't care if a single core is "bad")
 		uint64_t wait_timeout = 100000;
 		while (__atomic_load_n(&ap_stack_locked, __ATOMIC_SEQ_CST) == 1 && wait_timeout > 0) {
 			__asm__ volatile("pause");
 			wait_timeout--;
+			goto end_loop;
 		}
 
 		// Wait for AP to signal ready
@@ -242,6 +216,8 @@ void arch_init_cpus() {
 			lapic_sleep_us(lapic_timer_freq, 1000);
 			timeout--;
 		}
+
+	end_loop:
 
 		if (ap_started_count > previous_count) {
 			printf_color(PRINT_COLOR_GREEN, PRINT_DEFAULT_BG, "Processor %d: [OK]\n", ap_apic_id);

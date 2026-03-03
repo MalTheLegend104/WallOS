@@ -28,6 +28,31 @@ void lapic_send_ipi(uint8_t apic_id, uint32_t icr_low) {
 
 void set_lapic_base(uint64_t* base) { lapic_base = base; }
 
+void enable_lapic_msr(uintptr_t phys_addr) {
+	uint32_t low, high;
+
+	// Read current MSR state
+	// ecx = 0x1B
+	__asm__ volatile("rdmsr" : "=a"(low), "=d"(high) : "c"(0x1B));
+
+	// Preserve everything EXCEPT the address and the enable bit
+	// Address must be 4KB aligned.
+	// Low: Clear bits 12-31. High: Clear bits 0-19 (representing 32-51)
+	low &= 0x00000FFF;
+	high &= 0xFFF00000; // Adjust based on MAXPHYADDR, but this is usually safe
+
+	// Set the Enable Bit (11)
+	low |= (1 << 11);
+
+	// Insert the new physical address
+	// We assume phys_addr is 4KB aligned.
+	low |= (uint32_t) (phys_addr & 0xFFFFF000);
+	high |= (uint32_t) (phys_addr >> 32);
+
+	// Write back
+	__asm__ volatile("wrmsr" : : "a"(low), "d"(high), "c"(0x1B));
+}
+
 /**
  * @brief Writes to the LAPIC SVR, masks the LVT entries, and sets the TPR to 0 (accept all interrupts)
  *
@@ -60,8 +85,7 @@ void lapic_sleep_us(uint64_t lapic_freq, uint64_t us) {
 	lapic_write(LAPIC_LVT_TIMER, (1 << 16));	// masked, one-shot
 	lapic_write(LAPIC_INITIAL_COUNT, (uint32_t) ticks);
 
-	while (lapic_read(LAPIC_CURRENT_COUNT) != 0)
-		__asm__ volatile("pause");
+	while (lapic_read(LAPIC_CURRENT_COUNT) != 0) __asm__ volatile("pause");
 }
 
 uint64_t calibrate_lapic_timer_with_tsc(uint64_t tsc_freq) {
