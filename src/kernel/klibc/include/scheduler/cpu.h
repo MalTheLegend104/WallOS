@@ -58,7 +58,7 @@ extern "C" {
 	 *
 	 * It is expected that this only "loads" the CPUs, which includes:
 	 * Setting up each CPU to a state where it can be loaded with a task.
-	 * Timers set up. Can be global (PIT) or per CPU (APIC).
+	 * Should be in a "waiting" state.
 	 */
 	void arch_init_cpus();
 
