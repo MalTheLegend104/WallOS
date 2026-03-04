@@ -94,21 +94,148 @@ P0 -> P1 -> P2 -> P0 -> P1 -> P3 -> P0 -> P1 -> P4 -> ...
 
 It is expected that very few, if any, tasks will ever occupy priority 0 or 1. Tasks at these levels are expected to use as little of their timeslice as possible.
 
-### Starvation
+##### Intended Use and Quanta Cap
 
-A long runqueue at a given priority level could cause lower-priority tasks to be starved. To mitigate this, the scheduler may schedule several tasks of the same priority back-to-back, proportional to the size of that runqueue relative to the others.
+Priority 0 and 1 deviate from the doubling pattern intentionally.
+Following the pattern strictly would yield 512ms and 256ms respectively.
+Runtimes this large would dominate the CPU and cause sluggishness in everything else, contradicting their purpose entirely.
 
-For example, if the priority 5 runqueue has 20 tasks while all other runqueues (2-9, excluding 5) have roughly 5-10 tasks:
+**P0 and P1 are designed for low-latency work:** short bursts that need to run soon, not long computations that need a lot of time. Their quanta are capped at 8 and 4 respectively, matching the P2 ceiling, to enforce brevity.
+
+> ***If a task genuinely needs more runtime than a P2 priority, it should likely be implemented as a [kernel task](#kernel-tasks).***
+
+Because P0 and P1 are interleaved between every task transition, their effective CPU share is disproportionately high relative to their raw quanta.
+Even at modest quanta values, a consistently occupied P0 or P1 runqueue can dominate scheduling.
+The quanta cap is therefore a necessary constraint to keep the system functional under any load.
+
+A well-behaved P0 or P1 task should yield well before its quanta expires.
+Consistently consuming the full allotment is a strong signal that the task is misusing its priority level.
+The scheduler does not enforce this, but it is a design expectation.
+
+The scheduler makes no distinction between a task that uses 1ms of its quanta and one that uses the full allotment.
+Both are treated identically at the scheduling level.
+The responsibility for brevity lies entirely with the task.
+
+Here is the updated section with that clarification woven in:
+
+---
+
+### Starvation Mitigation
+
+To prevent long runqueues from starving other tasks, the scheduler may run multiple tasks from the same priority level back-to-back.
+This applies only to P2-P9.
+P0 and P1 are unaffected, as their interleaving is unconditional.
+
+Starvation mitigation does not alter priority ordering.
+It only affects how many times a given priority level is selected before descending to the next.
+
+The number of consecutive runs granted to a given priority level is:
 
 ```plaintext
-P2 -> P3 -> P4 -> P5 -> P5 -> P6 -> P7 -> P8 -> P9 -> P2 -> P3 -> ...
+back_to_back = clamp(floor(len(rq) / D), 1, 8)
 ```
 
-With all others the same and P5 raised to 30 tasks:
+Where:
+
+- `len(rq)` is the number of runnable tasks in that priority's runqueue.
+- `D` is a dynamic divisor determined by overall system load.
+- `clamp(x, 1, 8)` ensures a minimum of 1 (normal behavior) and a hard maximum of 8 consecutive runs.
+
+A result of 1 is the default behavior (no extra consecutive runs).
+Starvation mitigation only meaningfully activates when the result exceeds 1.
+
+#### Determining `D`
+
+Only **non-empty** runqueues (P2-P9) are considered when computing `D`.
+Runqueues with 0 tasks are excluded entirely, as they have no bearing on scheduling pressure.
+Runqueues with fewer than 10 tasks are still included: they are short, but they still must be considered for contention.
+
+`D` is then determined by how many of these non-empty runqueues contain 20 or more tasks:
+
+- If **3 or fewer** non-empty runqueues have 20+ tasks:
+
+  ```plaintext
+  D = max(longest_other_rq, 10)
+  ```
+
+- If **more than 3** non-empty runqueues have 20+ tasks:
+
+  ```plaintext
+  D = max(floor(avg_rq_len), 10)
+  ```
+
+Where:
+
+- `longest_other_rq` is the length of the largest non-empty runqueue, excluding the one currently being evaluated.
+- `avg_rq_len` is the average length across all **non-empty** P2-P9 runqueues.
+- The `max(..., 10)` term acts as a floor in both cases, treating 10 as the baseline normal runqueue length and preventing disproportionate results when all queues are short.
+
+#### Hard Cap
+
+`back_to_back` is capped at 8.
+
+Without a cap, an extremely large runqueue could still produce an unreasonably large consecutive run count despite the dampening effect of `D`. The cap ensures that no single priority level can monopolize the CPU under extreme load.
+
+The value 8 was chosen to:
+
+- Provide meaningful starvation relief under heavy imbalance.
+- Preserve responsiveness for other priority levels.
+
+#### Examples
+
+**Few long runqueues** (≤3 non-empty queues with 20+ tasks: use `max(longest_other, 10)` as `D`):
+
+> For sake of brevity, `-> P0 -> P1 ->` will be replaced with `-> P01 ->`
+
+Given:
 
 ```plaintext
-P2 -> P3 -> P4 -> P5 -> P5 -> P5 -> P6 -> P7 -> P8 -> P9 -> P2 -> P3 -> ...
+P2=4, P3=2, P4=26, P5=34
 ```
+
+Only P4 and P5 exceed 20, so `D = 10`:
+
+```plaintext
+P4: clamp(floor(26/10), 1, 8) = 2
+P5: clamp(floor(34/10), 1, 8) = 3
+```
+
+Resulting flow:
+
+```plaintext
+P2 -> P01 -> P3 -> P01 -> P4 -> P01 -> P4 -> P01 -> P5 -> P01 -> P5 -> P01 -> P5 -> P01 -> P6 -> ...
+```
+
+**Many long runqueues** (>3 non-empty queues with 20+ tasks — use `max(floor(avg), 10)` as `D`):
+
+Given:
+
+```plaintext
+P2=25, P3=30, P4=26, P5=34, P6=2, P7=2
+```
+
+P8 and P9 are empty and excluded. Four queues exceed 20, so:
+
+```plaintext
+avg = floor((25+30+26+34+2+2) / 6)
+    = floor(119/6)
+    = 19
+
+D = 19
+```
+
+```plaintext
+P2: clamp(floor(25/19), 1, 8) = 1
+P3: clamp(floor(30/19), 1, 8) = 1
+P4: clamp(floor(26/19), 1, 8) = 1
+P5: clamp(floor(34/19), 1, 8) = 1
+P6: clamp(floor(2/19),  1, 8) = 1
+P7: clamp(floor(2/19),  1, 8) = 1
+```
+
+Note that when load is broadly distributed, the average rises and `D` rises with it, naturally dampening back-to-back counts across the board. Starvation mitigation is most aggressive when load is concentrated in one or two runqueues, and least aggressive when all runqueues are similarly loaded, which is the desired behavior.
+
+Even under extreme imbalance (e.g., thousands of tasks in one runqueue), the clamp guarantees that no priority level will run more than 8 consecutive times before descending to the next.
 
 ---
 
@@ -305,3 +432,5 @@ The following are known areas subject to future change:
 - **Low quanta tasks** (priority 8 and 9, at 2 ms and 1 ms respectively) may have a significant portion of their runtime consumed by context switching. This is not necessarily a problem, as tasks intentionally placed in these tiers are likely doing very little work. With the default priority of 5 providing 16x more runtime than priority 9, very few tasks should ever occupy these tiers unintentionally.
 - **Starvation algorithm granularity** could be improved. If a P5 runqueue has 1000 tasks and P2 has 1, P5 tasks will still feel disproportionately slow relative to P2. This is partially by design, but priority boosting could be explored if it becomes a real problem in practice.
 - **Hard affinity takeover signals** are not yet defined. There is currently no IPC implementation in WallOS. This will be revisited once a default IPC protocol is established.
+- **Idle state race condition**: When a CPU becomes idle and its "Targetable" bit is set, there could be a race condition where multiple busy CPUs try to "Offer" tasks to it at the exact same millisecond. This will be fixed by using an atomic "Compare-and-Swap" on that targetable bit so only one donor wins the right to push tasks.
+- **Priority Inheritance** may be needed if, for example, a P0 task is relying on something from a P9 task. That P9 task may need to be briefly granted the same priority as the P0 task that needs it.
