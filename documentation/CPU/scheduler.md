@@ -1,8 +1,8 @@
 # WallOS "Fair Enough" Scheduler (WFES)
 
-There are some core design philosophies for the WallOS "Fair Enough" Scheduler (WFES) that are largely platform independent.
+The WallOS "Fair Enough" Scheduler (WFES) is a priority-weighted, per-CPU task scheduler for SMP systems. It is built around simplicity and minimal cross-CPU coordination, favoring predictable, low-overhead behavior over strict fairness guarantees.
 
-For the purposes of this document, `CPU` refers to a logical compute unit (threads on x86, cores on aarch64, etc.).
+> Note: For the purposes of this document, `CPU` refers to a logical compute unit (threads on x86, cores on aarch64, etc.).
 
 ---
 
@@ -115,8 +115,6 @@ The scheduler does not enforce this, but it is a design expectation.
 The scheduler makes no distinction between a task that uses 1ms of its quanta and one that uses the full allotment.
 Both are treated identically at the scheduling level.
 The responsibility for brevity lies entirely with the task.
-
-Here is the updated section with that clarification woven in:
 
 ---
 
