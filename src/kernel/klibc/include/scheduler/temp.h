@@ -2,12 +2,14 @@
 #define WALLOS_NEW_INTERFACE_H
 
 #include <stdint.h>
+#include <memory/spinlock.h>
 
-typedef pid_t /* implementation defined */;
+typedef uint64_t pid_t;
 
-typedef arch_context_t /* implementation defined. whatever is stored on a context switch. */;
+// Forward declare, this should be implementation defined.
+struct arch_context;
 
-typedef cpu_t /* implementation defined */;
+typedef struct cpu_t;
 
 typedef enum {
 	TASK_RUNNING,
@@ -33,7 +35,7 @@ typedef struct task_descriptor {
 	struct task_descriptor* child_task;
 	uint64_t child_task_count;
 
-	arch_context_t* context;
+	struct arch_context_t* context;
 
 	// A value of UINT16 MAX indicates *no affinity*
 	// Otherwise it's the CPU number
@@ -75,7 +77,7 @@ typedef struct {
 	uint16_t 	cpu_id; // Which logical unit owns this rq
 
 	// Other CPUs can look at this to see if we want to be "donated" threads.
-	/*atomic*/ uint8_t is_targetable;
+	_Atomic uint8_t is_targetable;
 
 	// Cooldown until we can try to steal tasks again.
 	uint64_t 	steal_cooldown_ticks;

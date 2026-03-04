@@ -6,6 +6,38 @@ The WallOS "Fair Enough" Scheduler (WFES) is a priority-weighted, per-CPU task s
 
 ---
 
+## Table of Contents
+
+- [WallOS "Fair Enough" Scheduler (WFES)](#wallos-fair-enough-scheduler-wfes)
+  - [Table of Contents](#table-of-contents)
+  - [Philosophies](#philosophies)
+  - [Affinity](#affinity)
+  - [Priority](#priority)
+    - [Fairness](#fairness)
+      - [Priority 0 and 1](#priority-0-and-1)
+        - [Intended Use and Quanta Cap](#intended-use-and-quanta-cap)
+    - [Starvation Mitigation](#starvation-mitigation)
+      - [Determining `D`](#determining-d)
+      - [Hard Cap](#hard-cap)
+      - [Examples](#examples)
+  - [Runqueue Balancing](#runqueue-balancing)
+    - [Stealing Tasks With Affinity](#stealing-tasks-with-affinity)
+  - [Kernel Tasks](#kernel-tasks)
+  - [Yielding](#yielding)
+  - [Blocking](#blocking)
+  - [Task Creation](#task-creation)
+  - [Task Destruction](#task-destruction)
+  - [Timer \& Quanta Expiry](#timer--quanta-expiry)
+  - [SMP Synchronization](#smp-synchronization)
+  - [Idle State](#idle-state)
+    - [Entering Idle](#entering-idle)
+    - [Cooldown Expiry](#cooldown-expiry)
+    - [Receiving Tasks While Idle](#receiving-tasks-while-idle)
+    - [Kernel Interaction](#kernel-interaction)
+  - [Considerations](#considerations)
+
+---
+
 ## Philosophies
 
 The WallOS "Fair Enough" Scheduler is a priority-weighted, per-CPU scheduler designed for simplicity and scalability:
