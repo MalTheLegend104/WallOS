@@ -25,6 +25,11 @@
 #error "Must have only one ACPI subsystem enabled, not both."
 #endif
 
+// Defines the amount of IOAPIC we allow.
+// This is defined statically for simplicity.
+// If it becomes a problem, it can be made dynamic.
+// My weird dual-socket server only has a few of these, 16 should be plenty.
+#define WALLOS_IOAPIC_MAX 16
 
 /* Scheduler configuration
  *

@@ -9,6 +9,8 @@
 #include <memory/virtual_mem.h>
 #include <memory/kernel_alloc.h>
 
+#include <x86_64/ioapic.h>
+#include <system/timing.h>
 
 void idle_task_main() {
 	while (1) {
@@ -76,6 +78,19 @@ void x86_ap_main() {
 // We're going to reuse it here.
 extern void disablePIC();
 
+void pic_disable(void) {
+	// Remap PIC to vectors 0xF0+ so stray interrupts don't hit CPU exceptions
+	// Master: vectors 0xF0-0xF7, Slave: 0xF8-0xFF
+	outb(0x20, 0x11); outb(0xA0, 0x11);  // ICW1: init
+	outb(0x21, 0xF0); outb(0xA1, 0xF8);  // ICW2: new vector offsets
+	outb(0x21, 0x04); outb(0xA1, 0x02);  // ICW3: cascade
+	outb(0x21, 0x01); outb(0xA1, 0x01);  // ICW4: 8086 mode
+
+	// Now mask everything on both PICs
+	outb(0x21, 0xFF);
+	outb(0xA1, 0xFF);
+}
+
 void arch_init_cpus() {
 	// We need to get the APIC from ACPI.
 
@@ -87,10 +102,13 @@ void arch_init_cpus() {
 
 	enable_lapic_msr(madt->lapic_base);
 
+	WALLOS_CLI();
+
 	// We just disable the PIC in general
 	// We use the PIT timer before we start the SMP setup
 	// After this we'll just use the APIC timer
-	disablePIC();
+	// disablePIC();
+	pic_disable();
 
 	// We need to init the LOCAL APIC for the BSP before we can touch anything else.
 	// This abstracts away a LOT of writing to LAPIC registers
@@ -230,4 +248,40 @@ void arch_init_cpus() {
 
 	printf_serial("[SMP] Total Cores Online: %u\r\n", ap_started_count);
 	printf("Total Cores Online: %u\n", ap_started_count);
+
+	// We can now do the "final" setup for this.
+	// We need to set up the IOAPIC to re-route interrupts
+	// We need to set up actual timer interrupts
+	// - PIT is currently set up for 1ms interrupts for system tick, I think we should just keep using it for system timekeeping.
+	// - LAPIC should also be set up for 1ms timing for scheduling purposes.
+
+	// Since we're currently still running terminal and stuff on BSP since we don't have a scheduler yet,
+	// we should keep routing keyboard interrupts and serial interrupts to BSP. 
+	// I need to "harden" a lot of the subsystems to have locks and atomic access interfaces.
+
+	// WALLOS_CLI();
+	ioapic_init(madt);
+
+	extern bool pic_disabled;
+	pic_disabled = true;
+
+	// Route the PIT (ISA IRQ 0)
+	ioapic_route_irq(0, 32, bsp_apic_id, false);
+	printf_serial("[IOAPIC] PIT routed to vector 32 on BSP\r\n");
+
+	// Route the Keyboard (ISA IRQ 1)
+	i8042_flush(); // We need to flush the keyboard state and "re-enable" it
+	ioapic_route_irq(1, 33, bsp_apic_id, false);
+	printf_serial("[IOAPIC] Keyboard routed to vector 33 on BSP\r\n");
+
+	// Route Serial COM1 (ISA IRQ 4)
+	ioapic_route_irq(4, 36, bsp_apic_id, false);
+	printf_serial("[IOAPIC] COM1 routed to vector 36 on BSP\r\n");
+
+	// We need to set the LAPIC timer to 1ms here.
+
+	// Finally, enable interrupts on the BSP
+	WALLOS_STI();
+
+	pit_init(1000);
 }

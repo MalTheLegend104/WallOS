@@ -299,6 +299,7 @@ void kernel_main(unsigned int magic, multiboot_info* mbt_info) {
 	// Everything that needs an IRQ should be done after the PIT as it messes with the mask
 	// If it requires allocations, add it after `initKernelAllocator()`
 	pit_init(1000);
+	i8042_flush();
 	keyboard_init();
 	keyboard_debug();
 

@@ -30,7 +30,12 @@ typedef struct {
 			uint32_t gsi_base;
 		} ioapic;
 
-		// Add other entry types as needed
+		struct {
+			uint8_t  bus_source;	// Constant 0 (ISA)
+			uint8_t  irq_source;	// The ISA IRQ (e.g., 0 for Timer)
+			uint32_t gsi;			// What it's actually wired to (e.g., 2)
+			uint16_t flags;			// Polarity and Trigger Mode
+		} override;
 	};
 } MADTEntry __attribute__((packed));
 

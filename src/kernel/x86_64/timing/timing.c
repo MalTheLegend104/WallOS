@@ -6,7 +6,7 @@
 // IDT entry for the handler.
 extern __attribute__((interrupt)) void system_pit(struct interrupt_frame* frame);
 
-size_t system_execution_time;
+size_t system_execution_time = 0;
 
 void sleep(size_t ms) {
 	size_t start = system_execution_time;
@@ -28,7 +28,7 @@ void incriment_sys_time() {
 
 // Function to initialize the PIT and set up the desired interrupt frequency
 void pit_init(uint16_t frequency_ms) {
-	system_execution_time = 0;
+	// system_execution_time = 0;
 
 	printf_color(PRINT_COLOR_LIGHT_CYAN, PRINT_COLOR_BLACK, "Install Timer at %dHz\n", frequency_ms);
 
@@ -45,7 +45,9 @@ void pit_init(uint16_t frequency_ms) {
 	outb(0x40, low);
 	outb(0x40, high);
 
-	// Dont ask me what this is doing, it just works
+	extern bool pic_disabled;
+	if (pic_disabled) return;
+
 	__asm__ volatile("cli");
 	outb(0x21, 0xFD);
 	irq_enable(0);

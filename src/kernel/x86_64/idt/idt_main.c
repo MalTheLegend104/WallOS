@@ -33,6 +33,31 @@ struct idt_descriptor {
 struct idt_entry idt[256];
 struct idt_descriptor idt_desc;
 
+
+// ------------------------------------------------------------------------------------------------
+// ------------------------------------------------------------------------------------------------
+// Abstraction for EOI.
+// We need LAPIC EOI if using IOAPIC, regular PIC EOI otherwise.
+// ------------------------------------------------------------------------------------------------
+// ------------------------------------------------------------------------------------------------
+#include <x86_64/lapic.h>
+// Do we currently accept interrupts from the PIC?
+// False = Legacy PIC mode, True = IOAPIC/LAPIC mode.
+bool pic_disabled = false;
+
+void interrupt_eoi(uint8_t irq_number) {
+	if (pic_disabled) {
+		// Local APIC EOI is just a write of 0 to the EOI register
+		lapic_write(LAPIC_EOI, 0);
+	} else {
+		// Legacy PIC EOI
+		if (irq_number >= 8) {
+			outb(0xA0, 0x20); // Slave
+		}
+		outb(0x20, 0x20); // Master
+	}
+}
+
 // ------------------------------------------------------------------------------------------------
 // ------------------------------------------------------------------------------------------------
 // Generic IRQ Handlers for all interrupts
@@ -269,13 +294,15 @@ __attribute__((interrupt)) void test_sys_handler(struct interrupt_frame* frame) 
 // Keyboard Handler.
 __attribute__((interrupt)) void keyboard_handler(struct interrupt_frame* frame) {
 	handle_scancode(inb(0x60));
-	outb(0x20, 0x20);
+	// outb(0x20, 0x20);
+	interrupt_eoi(1);
 }
 
 #include <system/timing.h>
 __attribute__((interrupt)) void system_pit(struct interrupt_frame* frame) {
 	incriment_sys_time();
-	outb(0x20, 0x20);
+	// outb(0x20, 0x20);
+	interrupt_eoi(0);
 }
 
 // ------------------------------------------------------------------------------------------------

@@ -470,8 +470,7 @@ void acpi_irq_wrapper_##n(struct interrupt_frame *frame) { \
         } \
     } \
 	(void) handled; \
-    if (n >= 8) outb(0xA0, 0x20); \
-    outb(0x20, 0x20); \
+    interrupt_eoi(n); \
 }
 
 DEFINE_ACPI_IRQ_WRAPPER(1)

@@ -66,6 +66,15 @@ extern "C" {
 	 * @param irq IRQ number to enable on the PIC.
 	 */
 	extern void irq_disable(uint8_t irq);
+
+	/**
+	 * @brief Abstracted EOI handler.
+	 *
+	 * It will send EOI to LAPIC if enabled, regular PIC otherwise.
+	 *
+	 * @param irq_number IRQ number we are servicing (0-15).
+	 */
+	void interrupt_eoi(uint8_t irq_number);
 #ifdef __cplusplus
 }
 #endif

@@ -122,6 +122,19 @@ MADTTable* parse_madt() {
 				}
 				break;
 
+			case 2: // Interrupt Source Override
+				if (len >= 10) {
+					e->override.bus_source = ptr[2];
+					e->override.irq_source = ptr[3];
+
+					memcpy(&e->override.gsi, ptr + 4, 4);
+					memcpy(&e->override.flags, ptr + 8, 2);
+
+					// printf_serial("[MADT] IRQ Override: ISA IRQ %u -> GSI %u (Flags: 0x%x)\n",
+					// 	e->override.irq_source, e->override.gsi, e->override.flags);
+				}
+				break;
+
 			default:
 				printf_serial("[MADT] Skipping unknown entry type %u, len %u\r\n", type, len);
 				break;
