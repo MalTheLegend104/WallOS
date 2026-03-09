@@ -51,6 +51,12 @@ extern "C" {
 	void remove_interrupt_handler(uint8_t entry);
 
 	void initIDT();
+
+	/**
+	 * @brief Meant to be called during AP bringup.
+	 * Loads the same IDT that we do on the BSP.
+	 */
+	void ap_load_idt();
 	/**
 	 * @brief Enable the IRQ number on the legacy 8529 PIC.
 	 * Ideally we should use the APIC, but legacy PIC support is baked in so idrc.

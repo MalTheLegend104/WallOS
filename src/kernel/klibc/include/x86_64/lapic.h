@@ -213,6 +213,13 @@ void lapic_send_ipi(uint8_t apic_id, uint32_t icr_low);
 void set_lapic_base(uint64_t* base);
 
 /**
+ * @brief Set the physical base address of the LAPIC from our MADT.
+ *
+ * @param phys Physical address of the LAPIC registers.
+ */
+void set_lapic_phys(uint64_t* phys);
+
+/**
  * @brief Initialize the LAPIC on the Bootstrap Processor (BSP).
  *
  * This function does the following:
@@ -224,6 +231,19 @@ void set_lapic_base(uint64_t* base);
  * This should only be called once on the BSP during early SMP setup.
  */
 void bsp_init_lapic();
+
+/**
+ * @brief Initialize the LAPIC on the APs.
+ *
+ * This function does the following:
+ *  - calls enable_lapic_msr();
+ *  - Setting the Spurious Interrupt Vector
+ *  - Configuring LVT entries
+ *  - Clearing pending errors
+ *
+ * This should be called once per AP during bringup.
+ */
+void ap_init_lapic();
 
 /**
  * @brief Initialize the LAPIC on an Application Processor (AP).

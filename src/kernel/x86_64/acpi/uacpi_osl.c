@@ -594,7 +594,7 @@ struct uacpi_irq_info {
 static struct uacpi_irq_info uacpi_irq_table[MAX_UACPI_IRQS];
 
 // This first one is identical to the rest. This one is the "example" so you can actually see what's happening.
-__attribute__((interrupt)) __attribute__((__target__("general-regs-only"))) void uacpi_irq_wrapper_0(struct interrupt_frame* frame) {
+WALLOS_INTERRUPT_HANDLER void uacpi_irq_wrapper_0(struct interrupt_frame* frame) {
 	if (uacpi_irq_table[0].in_use && uacpi_irq_table[0].handler) {
 		   /* Call the uACPI handler */
 		(void) uacpi_irq_table[0].handler(uacpi_irq_table[0].ctx);
@@ -604,21 +604,21 @@ __attribute__((interrupt)) __attribute__((__target__("general-regs-only"))) void
 	interrupt_eoi(0);
 }
 
-__attribute__((interrupt)) __attribute__((__target__("general-regs-only"))) void uacpi_irq_wrapper_1(struct interrupt_frame* frame) { if (uacpi_irq_table[1].in_use && uacpi_irq_table[1].handler) { (void) uacpi_irq_table[1].handler(uacpi_irq_table[1].ctx); } interrupt_eoi(1); }
-__attribute__((interrupt)) __attribute__((__target__("general-regs-only"))) void uacpi_irq_wrapper_2(struct interrupt_frame* frame) { if (uacpi_irq_table[2].in_use && uacpi_irq_table[2].handler) { (void) uacpi_irq_table[2].handler(uacpi_irq_table[2].ctx); } interrupt_eoi(2); }
-__attribute__((interrupt)) __attribute__((__target__("general-regs-only"))) void uacpi_irq_wrapper_3(struct interrupt_frame* frame) { if (uacpi_irq_table[3].in_use && uacpi_irq_table[3].handler) { (void) uacpi_irq_table[3].handler(uacpi_irq_table[3].ctx); } interrupt_eoi(3); }
-__attribute__((interrupt)) __attribute__((__target__("general-regs-only"))) void uacpi_irq_wrapper_4(struct interrupt_frame* frame) { if (uacpi_irq_table[4].in_use && uacpi_irq_table[4].handler) { (void) uacpi_irq_table[4].handler(uacpi_irq_table[4].ctx); } interrupt_eoi(4); }
-__attribute__((interrupt)) __attribute__((__target__("general-regs-only"))) void uacpi_irq_wrapper_5(struct interrupt_frame* frame) { if (uacpi_irq_table[5].in_use && uacpi_irq_table[5].handler) { (void) uacpi_irq_table[5].handler(uacpi_irq_table[5].ctx); } interrupt_eoi(5); }
-__attribute__((interrupt)) __attribute__((__target__("general-regs-only"))) void uacpi_irq_wrapper_6(struct interrupt_frame* frame) { if (uacpi_irq_table[6].in_use && uacpi_irq_table[6].handler) { (void) uacpi_irq_table[6].handler(uacpi_irq_table[6].ctx); } interrupt_eoi(6); }
-__attribute__((interrupt)) __attribute__((__target__("general-regs-only"))) void uacpi_irq_wrapper_7(struct interrupt_frame* frame) { if (uacpi_irq_table[7].in_use && uacpi_irq_table[7].handler) { (void) uacpi_irq_table[7].handler(uacpi_irq_table[7].ctx); } interrupt_eoi(7); }
-__attribute__((interrupt)) __attribute__((__target__("general-regs-only"))) void uacpi_irq_wrapper_8(struct interrupt_frame* frame) { if (uacpi_irq_table[8].in_use && uacpi_irq_table[8].handler) { (void) uacpi_irq_table[8].handler(uacpi_irq_table[8].ctx); } interrupt_eoi(8); }
-__attribute__((interrupt)) __attribute__((__target__("general-regs-only"))) void uacpi_irq_wrapper_9(struct interrupt_frame* frame) { if (uacpi_irq_table[9].in_use && uacpi_irq_table[9].handler) { (void) uacpi_irq_table[9].handler(uacpi_irq_table[9].ctx); } interrupt_eoi(9); }
-__attribute__((interrupt)) __attribute__((__target__("general-regs-only"))) void uacpi_irq_wrapper_10(struct interrupt_frame* frame) { if (uacpi_irq_table[10].in_use && uacpi_irq_table[10].handler) { (void) uacpi_irq_table[10].handler(uacpi_irq_table[10].ctx); } interrupt_eoi(10); }
-__attribute__((interrupt)) __attribute__((__target__("general-regs-only"))) void uacpi_irq_wrapper_11(struct interrupt_frame* frame) { if (uacpi_irq_table[11].in_use && uacpi_irq_table[11].handler) { (void) uacpi_irq_table[11].handler(uacpi_irq_table[11].ctx); } interrupt_eoi(11); }
-__attribute__((interrupt)) __attribute__((__target__("general-regs-only"))) void uacpi_irq_wrapper_12(struct interrupt_frame* frame) { if (uacpi_irq_table[12].in_use && uacpi_irq_table[12].handler) { (void) uacpi_irq_table[12].handler(uacpi_irq_table[12].ctx); } interrupt_eoi(12); }
-__attribute__((interrupt)) __attribute__((__target__("general-regs-only"))) void uacpi_irq_wrapper_13(struct interrupt_frame* frame) { if (uacpi_irq_table[13].in_use && uacpi_irq_table[13].handler) { (void) uacpi_irq_table[13].handler(uacpi_irq_table[13].ctx); } interrupt_eoi(13); }
-__attribute__((interrupt)) __attribute__((__target__("general-regs-only"))) void uacpi_irq_wrapper_14(struct interrupt_frame* frame) { if (uacpi_irq_table[14].in_use && uacpi_irq_table[14].handler) { (void) uacpi_irq_table[14].handler(uacpi_irq_table[14].ctx); } interrupt_eoi(14); }
-__attribute__((interrupt)) __attribute__((__target__("general-regs-only"))) void uacpi_irq_wrapper_15(struct interrupt_frame* frame) { if (uacpi_irq_table[15].in_use && uacpi_irq_table[15].handler) { (void) uacpi_irq_table[15].handler(uacpi_irq_table[15].ctx); } interrupt_eoi(15); }
+WALLOS_INTERRUPT_HANDLER void uacpi_irq_wrapper_1(struct interrupt_frame* frame) { if (uacpi_irq_table[1].in_use && uacpi_irq_table[1].handler) { (void) uacpi_irq_table[1].handler(uacpi_irq_table[1].ctx); } interrupt_eoi(1); }
+WALLOS_INTERRUPT_HANDLER void uacpi_irq_wrapper_2(struct interrupt_frame* frame) { if (uacpi_irq_table[2].in_use && uacpi_irq_table[2].handler) { (void) uacpi_irq_table[2].handler(uacpi_irq_table[2].ctx); } interrupt_eoi(2); }
+WALLOS_INTERRUPT_HANDLER void uacpi_irq_wrapper_3(struct interrupt_frame* frame) { if (uacpi_irq_table[3].in_use && uacpi_irq_table[3].handler) { (void) uacpi_irq_table[3].handler(uacpi_irq_table[3].ctx); } interrupt_eoi(3); }
+WALLOS_INTERRUPT_HANDLER void uacpi_irq_wrapper_4(struct interrupt_frame* frame) { if (uacpi_irq_table[4].in_use && uacpi_irq_table[4].handler) { (void) uacpi_irq_table[4].handler(uacpi_irq_table[4].ctx); } interrupt_eoi(4); }
+WALLOS_INTERRUPT_HANDLER void uacpi_irq_wrapper_5(struct interrupt_frame* frame) { if (uacpi_irq_table[5].in_use && uacpi_irq_table[5].handler) { (void) uacpi_irq_table[5].handler(uacpi_irq_table[5].ctx); } interrupt_eoi(5); }
+WALLOS_INTERRUPT_HANDLER void uacpi_irq_wrapper_6(struct interrupt_frame* frame) { if (uacpi_irq_table[6].in_use && uacpi_irq_table[6].handler) { (void) uacpi_irq_table[6].handler(uacpi_irq_table[6].ctx); } interrupt_eoi(6); }
+WALLOS_INTERRUPT_HANDLER void uacpi_irq_wrapper_7(struct interrupt_frame* frame) { if (uacpi_irq_table[7].in_use && uacpi_irq_table[7].handler) { (void) uacpi_irq_table[7].handler(uacpi_irq_table[7].ctx); } interrupt_eoi(7); }
+WALLOS_INTERRUPT_HANDLER void uacpi_irq_wrapper_8(struct interrupt_frame* frame) { if (uacpi_irq_table[8].in_use && uacpi_irq_table[8].handler) { (void) uacpi_irq_table[8].handler(uacpi_irq_table[8].ctx); } interrupt_eoi(8); }
+WALLOS_INTERRUPT_HANDLER void uacpi_irq_wrapper_9(struct interrupt_frame* frame) { if (uacpi_irq_table[9].in_use && uacpi_irq_table[9].handler) { (void) uacpi_irq_table[9].handler(uacpi_irq_table[9].ctx); } interrupt_eoi(9); }
+WALLOS_INTERRUPT_HANDLER void uacpi_irq_wrapper_10(struct interrupt_frame* frame) { if (uacpi_irq_table[10].in_use && uacpi_irq_table[10].handler) { (void) uacpi_irq_table[10].handler(uacpi_irq_table[10].ctx); } interrupt_eoi(10); }
+WALLOS_INTERRUPT_HANDLER void uacpi_irq_wrapper_11(struct interrupt_frame* frame) { if (uacpi_irq_table[11].in_use && uacpi_irq_table[11].handler) { (void) uacpi_irq_table[11].handler(uacpi_irq_table[11].ctx); } interrupt_eoi(11); }
+WALLOS_INTERRUPT_HANDLER void uacpi_irq_wrapper_12(struct interrupt_frame* frame) { if (uacpi_irq_table[12].in_use && uacpi_irq_table[12].handler) { (void) uacpi_irq_table[12].handler(uacpi_irq_table[12].ctx); } interrupt_eoi(12); }
+WALLOS_INTERRUPT_HANDLER void uacpi_irq_wrapper_13(struct interrupt_frame* frame) { if (uacpi_irq_table[13].in_use && uacpi_irq_table[13].handler) { (void) uacpi_irq_table[13].handler(uacpi_irq_table[13].ctx); } interrupt_eoi(13); }
+WALLOS_INTERRUPT_HANDLER void uacpi_irq_wrapper_14(struct interrupt_frame* frame) { if (uacpi_irq_table[14].in_use && uacpi_irq_table[14].handler) { (void) uacpi_irq_table[14].handler(uacpi_irq_table[14].ctx); } interrupt_eoi(14); }
+WALLOS_INTERRUPT_HANDLER void uacpi_irq_wrapper_15(struct interrupt_frame* frame) { if (uacpi_irq_table[15].in_use && uacpi_irq_table[15].handler) { (void) uacpi_irq_table[15].handler(uacpi_irq_table[15].ctx); } interrupt_eoi(15); }
 
 
 // Array of wrapper function pointers

@@ -162,6 +162,10 @@ void initSlab(uint64_t object_size) {
 	//printSlabInfo(header, base, bls, padding);
 }
 
+#include <memory/spinlock.h>
+
+spinlock_t* memlock;
+
 /**
  * @brief Initializes the kernel allocator. Creates a 2, 4, 8, and 4096 cache.
  */
@@ -199,6 +203,9 @@ void initKernelAllocator() {
 
 	createSpanList();
 	printf("\t%u Byte Header Initialized.\n", sizeof(allocated_span_t));
+
+	memlock = spinlock_create();
+	printf("\tCreated Spinlock.\n");
 
 	display_set_colors_default();
 }
@@ -336,6 +343,7 @@ void removeSpan(allocated_span_t* span) {
 }
 
 void kfree(void* ptr) {
+	spinlock_lock(memlock);
 	slab_header_t* header = first_slab;
 	while (header != NULL) {
 		// If the addr is after the starting addr of the header and before the end address it's in that slab
@@ -356,10 +364,12 @@ void kfree(void* ptr) {
 				memset(ptr, 0, header->object_size);
 				setChunkFree(header, chunk);
 			}
+			spinlock_unlock(memlock);
 			return;
 		}
 		header = header->next_slab;
 	}
+	spinlock_unlock(memlock);
 }
 
 #include <drivers/serial.h>
@@ -433,10 +443,13 @@ void kfree(void* ptr) {
 // }
 
 void* kalloc(size_t bytes) {
+	spinlock_lock(memlock);
+
 	if (bytes > PAGE_2MB_SIZE) {
 		printf_serial("[KALLOC] Requested memory allocation.\r\n\tBytes: 0x%llx ", bytes);
 		void* ret = (void*) Memory::MapSequentialKernelPages(((int) (bytes / PAGE_2MB_SIZE)) + 1);
 		printf_serial("virt: 0x%llx", (uint64_t) ret);
+		spinlock_unlock(memlock);
 		return ret;
 	}
 
@@ -486,6 +499,7 @@ void* kalloc(size_t bytes) {
 					if (amount_of_objects > 1) {
 						addSpan(ptr, amount_of_objects);
 					}
+					spinlock_unlock(memlock);
 					return (void*) ptr;
 				}
 			} else {
@@ -499,6 +513,8 @@ void* kalloc(size_t bytes) {
 	// No space found, create new slab
 	printf_serial("[KALLOC] Requested memory allocation.\r\n\tBytes: 0x%llx ret: 0x%llx\r\n", bytes, WALLOS_RET_ADDR());
 	initSlab(object_size);
+
+	spinlock_unlock(memlock);
 	return kalloc(bytes);
 }
 

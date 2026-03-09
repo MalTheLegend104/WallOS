@@ -89,7 +89,7 @@ __attribute__((noreturn)) void acpi_reboot(void) {
 	if (ACPI_SUCCESS(status)) {
 		// Wait a bit for reset to take effect
 		for (int i = 0; i < 1000000; i++) {
-			WALLOS_SPIN_PAUSE();
+			WALLOS_PAUSE();
 		}
 	}
 #elifdef WALLOS_USE_UACPI

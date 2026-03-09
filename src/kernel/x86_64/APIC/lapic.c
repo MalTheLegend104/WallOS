@@ -5,7 +5,7 @@
 #include <stddef.h>
 
 static volatile uint64_t* lapic_base = NULL;
-
+static volatile uint64_t* lapic_phys = NULL;
 
 uint32_t lapic_read(uint32_t offset) {
 	return *(volatile uint32_t*) ((uintptr_t) lapic_base + offset);
@@ -27,6 +27,7 @@ void lapic_send_ipi(uint8_t apic_id, uint32_t icr_low) {
 }
 
 void set_lapic_base(uint64_t* base) { lapic_base = base; }
+void set_lapic_phys(uint64_t* phys) { lapic_phys = phys; }
 
 void enable_lapic_msr(uintptr_t phys_addr) {
 	uint32_t low, high;
@@ -71,6 +72,33 @@ void bsp_init_lapic() {
 	lapic_write(LAPIC_TPR, 0);
 
 	// Clear any pending EOI
+	lapic_write(LAPIC_EOI, 0);
+}
+
+void ap_init_lapic() {
+	// Enable the LAPIC via MSR (IA32_APIC_BASE)
+	// Bit 11 is the Global Enable bit. 
+	// We use the standard base 0xFEE00000 unless your MADT said otherwise.
+	enable_lapic_msr((uintptr_t) lapic_phys);
+
+	// Set Spurious Vector and Software Enable (Bit 8)
+	lapic_write(LAPIC_SVR, SPURIOUS_VECTOR | (1 << 8));
+
+	// Setup LVT entries. 
+	// We mask them initially to prevent "stray" interrupts before  the AP is fully ready for the timer.
+	lapic_write(LAPIC_LVT_TIMER, 1 << 16);
+	lapic_write(LAPIC_LVT_LINT0, 1 << 16);
+	lapic_write(LAPIC_LVT_LINT1, 1 << 16);
+	lapic_write(LAPIC_LVT_ERROR, 1 << 16);
+
+	// Set Task Priority to 0 to allow all interrupt classes
+	lapic_write(LAPIC_TPR, 0);
+
+	// Clear ESR (Error Status Register) - requires two writes on some CPUs
+	lapic_write(LAPIC_ESR, 0);
+	lapic_write(LAPIC_ESR, 0);
+
+	// Signal EOI just in case there's a stale interrupt from a warm reboot
 	lapic_write(LAPIC_EOI, 0);
 }
 

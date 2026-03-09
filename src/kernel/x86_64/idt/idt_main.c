@@ -415,3 +415,7 @@ void initIDT() {
 	// Call the external assembly function to load the IDT
 	idt_load(&idt_desc);
 }
+
+void ap_load_idt() {
+	idt_load(&idt_desc);
+}

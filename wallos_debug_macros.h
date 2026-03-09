@@ -4,14 +4,16 @@
  */
 #pragma once
 
-#define WALLOS_SPIN_PAUSE()	__asm__ volatile("pause")
+#define WALLOS_PAUSE()	__asm__ volatile("pause")
 
 #define WALLOS_HLT()        __asm__ volatile("hlt")
 #define WALLOS_CLI()        __asm__ volatile("cli")
 #define WALLOS_STI()        __asm__ volatile("sti")
 #define WALLOS_CLI_HLT()    do { WALLOS_CLI(); WALLOS_HLT(); } while (0)
 
-#define WALLOS_HANG() do { __asm__ volatile("cli"); for (;;) __asm__ volatile("hlt"); } while (0)
+#define WALLOS_HANG() WALLOS_CLI_HLT()
+
+#define WALLOS_INTERRUPT_HANDLER __attribute__((interrupt)) __attribute__((__target__("general-regs-only")))
 
 /* I find myself constantly needing to extern this for debugging in libraries. */
 

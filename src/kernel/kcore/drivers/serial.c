@@ -165,7 +165,7 @@ static void serial_push(char c) {
 // If you ever need multi-port interrupt support, loop over active_ports and
 // check each port's IIR to find which one(s) fired before draining.
 // ---------------------------------------------------------------------------
-__attribute__((interrupt)) __attribute__((__target__("general-regs-only")))
+WALLOS_INTERRUPT_HANDLER
 void serial_irq_handler(struct interrupt_frame* frame) {
 	uint16_t port = COM1;
 

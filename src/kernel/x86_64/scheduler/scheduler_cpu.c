@@ -40,44 +40,110 @@ void safe_printf(const char* format, ...) {
 volatile int serial_print_lock = 0;
 void safe_printf_serial(const char* format, ...) {
 	// Basic Spinlock
-	while (__atomic_test_and_set(&print_lock, __ATOMIC_ACQUIRE));
+	while (__atomic_test_and_set(&serial_print_lock, __ATOMIC_ACQUIRE));
 
 	va_list arg;
 	va_start(arg, format);
 	vprintf_serial(format, arg);
 	va_end(arg);
 
-	__atomic_clear(&print_lock, __ATOMIC_RELEASE);
+	__atomic_clear(&serial_print_lock, __ATOMIC_RELEASE);
 }
 
 // BSP is already started
 volatile uint32_t ap_started_count = 1;
 volatile uint32_t ap_stack_locked = 0;
+volatile uint64_t lapic_ticks_per_ms;
 
-void x86_ap_main() {
-	__atomic_store_n(&ap_stack_locked, 0, __ATOMIC_SEQ_CST);
+void ap_init_timer(uint8_t vector) {
+	// Set the divisor. 0x3 = Divide by 16.
+	// This makes the counter more manageable.
+	lapic_write(LAPIC_DIVIDE_CONFIG, 0x3);
 
-	// Verify we have a working stack
-	volatile uint64_t stack_test = 0xDEADBEEFCAFEBABEULL;
+	// Set the LVT Timer Register
+	// Bit 17:18 = 01 for Periodic Mode (0x20000)
+	// Bits 0:7   = The interrupt vector
+	lapic_write(LAPIC_LVT_TIMER, vector | 0x20000);
 
-	// Get our APIC ID
-	uint32_t apic_id = lapic_read(0x20) >> 24;
+	// Set the Initial Count
+	// As soon this is written, the timer starts counting down.
+	lapic_write(LAPIC_INITIAL_COUNT, lapic_ticks_per_ms);
 
-
-	safe_printf("  [AP %d] Hello from the other side!\n", apic_id);
-	safe_printf_serial("[SMP] AP %d reporting for duty. Stack is at %p\r\n", apic_id, &stack_test);
-
-	// Signal BSP we are alive
-	__atomic_fetch_add(&ap_started_count, 1, __ATOMIC_SEQ_CST);
-
-	// Halt forever
-	WALLOS_CLI_HLT();
+	lapic_write(LAPIC_LVT_TIMER, vector | (1 << 17)); // periodic
 }
 
-// This exists for the original IDT and PIC setup
-// We're going to reuse it here.
-extern void disablePIC();
+// This is temporary, and a very shitty way of doing this.
+uint64_t lapic_timer_ticks[WALLOS_SYSTEM_MAX_CPU];
 
+#include <system/idt.h>
+WALLOS_INTERRUPT_HANDLER
+void lapic_timer_int(struct interrupt_frame* frame) {
+	// Interrupt vector 0xFD
+	uint32_t apic_id = lapic_read(0x20) >> 24;
+
+	lapic_timer_ticks[apic_id] += 1;
+
+	if (lapic_timer_ticks[apic_id] % 100 == 0) safe_printf_serial("[AP%lu] Timer: %llu ms\r\n", apic_id, lapic_timer_ticks[apic_id]);
+
+	lapic_write(LAPIC_EOI, 0);
+}
+
+// void x86_ap_main() {
+// 	__atomic_store_n(&ap_stack_locked, 0, __ATOMIC_SEQ_CST);
+// 	WALLOS_CLI();
+
+// 	ap_init_lapic();
+
+// 	// Get our APIC ID
+// 	uint32_t apic_id = lapic_read(0x20) >> 24;
+
+
+// 	safe_printf("  [AP %d] Hello from the other side!\n", apic_id);
+// 	safe_printf_serial("[SMP] AP %d reporting for duty. Stack is at %p\r\n", apic_id, &stack_test);
+
+// 	// Signal BSP we are alive. The BSP will start the next AP init when we do this.
+// 	__atomic_fetch_add(&ap_started_count, 1, __ATOMIC_SEQ_CST);
+
+// 	ap_init_timer(0xFD);
+
+// 	WALLOS_STI();
+// 	// Halt and wait for the timer
+// 	while (1) WALLOS_HLT();
+// }
+
+#include <system/gdt.h>
+
+void x86_ap_main() {
+	// This signals to the BSP we *at least* consumed our stack.
+	// This doesn't necessarily mean we're ready to go
+	__atomic_store_n(&ap_stack_locked, 0, __ATOMIC_SEQ_CST);
+
+	set_ap_gdt_and_tss();
+	ap_load_idt();
+
+	WALLOS_CLI();
+
+	ap_init_lapic();
+
+	uint32_t apic_id = lapic_read(LAPIC_ID) >> 24;
+
+	safe_printf("  [AP %d] Hello\n", apic_id);
+
+	// We're started enough to let the other APs init.
+	__atomic_fetch_add(&ap_started_count, 1, __ATOMIC_SEQ_CST);
+
+	WALLOS_STI();
+
+	ap_init_timer(0xFD);
+
+	while (1) WALLOS_HLT();
+}
+
+/**
+ * @brief This fully disables and remaps the PIC.
+ * We need to reuse the vectors we set up earlier for PIT, KB, and Serial
+ * This ensures we don't end up with any weirdness (which we shouldn't but QEMU is weird).
+ */
 void pic_disable(void) {
 	// Remap PIC to vectors 0xF0+ so stray interrupts don't hit CPU exceptions
 	// Master: vectors 0xF0-0xF7, Slave: 0xF8-0xFF
@@ -91,6 +157,10 @@ void pic_disable(void) {
 	outb(0xA1, 0xFF);
 }
 
+WALLOS_INTERRUPT_HANDLER void lapic_spurious(struct interrupt_frame* f) {
+	lapic_write(LAPIC_EOI, 0);
+}
+
 void arch_init_cpus() {
 	// We need to get the APIC from ACPI.
 
@@ -102,7 +172,10 @@ void arch_init_cpus() {
 
 	enable_lapic_msr(madt->lapic_base);
 
-	WALLOS_CLI();
+	set_lapic_phys((uint64_t*) madt->lapic_base);
+
+	WALLOS_CLI(); // We disable these here otherwise we end up getting problems when we disable the PIC.
+	// This entire process is a "bit" fragile, so we don't really want interrupts during it anyway.
 
 	// We just disable the PIC in general
 	// We use the PIT timer before we start the SMP setup
@@ -129,6 +202,14 @@ void arch_init_cpus() {
 
 	uint64_t lapic_timer_freq = calibrate_lapic_timer_with_tsc(tsc_freq);
 	printf_serial("[SMP] LAPIC Timer Freq: %zu\r\n", lapic_timer_freq);
+
+	// We reuse this in the APs
+	lapic_ticks_per_ms = lapic_timer_freq / 1000;
+
+	// Add our LAPIC timer interrupt.
+	// We reuse the IDT in the APs, so we need to do this before they all get started.
+	add_interrupt_handler(0xFD, lapic_timer_int, 0, 0x8E);
+	add_interrupt_handler(SPURIOUS_VECTOR, lapic_spurious, 0, 0x8E);
 
 	// We have two variables that need to be set for AP setup
 	// We need the kernel stack, and we need the RAW pointer for the page tables to load into CR3.
@@ -182,6 +263,8 @@ void arch_init_cpus() {
 		// We don't worry about tracking the allocation, it's never getting deallocated.
 		// If something happens that takes an AP entirely offline, we have WAY bigger problems.
 
+		__atomic_store_n(&ap_stack_locked, 1, __ATOMIC_SEQ_CST);
+
 		if (!reuse_stack) {
 			void* stack = kalloc(65536);
 			ap_stack_pointer = (uint64_t) stack + 65536; // Stack grows backwards.
@@ -225,7 +308,7 @@ void arch_init_cpus() {
 		while (__atomic_load_n(&ap_stack_locked, __ATOMIC_SEQ_CST) == 1 && wait_timeout > 0) {
 			__asm__ volatile("pause");
 			wait_timeout--;
-			goto end_loop;
+			// goto end_loop;
 		}
 
 		// Wait for AP to signal ready
@@ -270,7 +353,10 @@ void arch_init_cpus() {
 	printf_serial("[IOAPIC] PIT routed to vector 32 on BSP\r\n");
 
 	// Route the Keyboard (ISA IRQ 1)
-	i8042_flush(); // We need to flush the keyboard state and "re-enable" it
+	// We need to flush the keyboard state and "re-enable" it
+	// This is *very* hit or miss if it's needed on a particular system or not.
+	i8042_flush();
+
 	ioapic_route_irq(1, 33, bsp_apic_id, false);
 	printf_serial("[IOAPIC] Keyboard routed to vector 33 on BSP\r\n");
 

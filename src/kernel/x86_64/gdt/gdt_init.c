@@ -1,42 +1,62 @@
 #include <stdint.h>
 #include <system/gdt.h>
-// Define the GDT
-gdt_entry_t gdt[3];
-gdt_descriptor_t gdtr;
+#include <memory/kernel_alloc.h>
 
-// Function to set up a GDT entry
-void gdt_entry_init(uint32_t index, uint32_t base, uint32_t limit, uint8_t access, uint8_t granularity) {
-	gdt[index].base_low = (base & 0xFFFF);
-	gdt[index].base_middle = (base >> 16) & 0xFF;
-	gdt[index].base_high = (base >> 24) & 0xFF;
+#include <string.h>
 
-	gdt[index].limit_low = (limit & 0xFFFF);
-	gdt[index].granularity = ((limit >> 16) & 0x0F);
-	gdt[index].granularity |= (granularity & 0xF0);
+void set_ap_gdt_and_tss() {
+	// We need to set up a proper GDT on each AP.
+	// There isn't a whole lot of requirement in this, GDT isn't used much in long mode
+	// We need the TSS for interrupts though.
 
-	gdt[index].access = access;
-}
+	// 5 slots: 0=Null, 1=Code, 2=Data, 3=TSS_Low, 4=TSS_High
+	struct gdt_entry* gdt = kalloc(sizeof(struct gdt_entry) * 5);
+	struct tss_64* tss = kalloc(sizeof(struct tss_64));
+	memset(tss, 0, sizeof(struct tss_64));
 
-/**
- * @brief Loads the GDT.
- *
- * @param gdtr_ptr Pointer to the gdtr
- */
-extern void gdt_load(uint64_t gdtr_ptr);
+	// Setup Standard Segments
+	gdt[0] = (struct gdt_entry){ 0, 0, 0, 0, 0, 0 };           // Null
+	gdt[1] = (struct gdt_entry){ 0, 0, 0, 0x9A, 0x20, 0 };     // Code (0x08)
+	gdt[2] = (struct gdt_entry){ 0, 0, 0, 0x92, 0x00, 0 };     // Data (0x10)
 
-// Function to initialize the GDT
-void gdt_init(void) {
-	// Set up null descriptor
-	gdt_entry_init(0, 0, 0, 0, 0);
+	// Setup TSS Stack
+	// RSP0 is used when an interrupt occurs in Ring 3. 
+	// Even in Ring 0, having a valid TSS is an architectural requirement.
+	tss->rsp0 = (uint64_t) kalloc(8192) + 8192;
+	tss->iopb_offset = sizeof(struct tss_64); // Point beyond TSS to disable IO bitmap
 
-	// Set up code segment descriptor
-	gdt_entry_init(1, 0, 0xFFFFFFFF, 0x9A, 0xCF);
+	// Setup 16-byte TSS Descriptor in GDT (Starting at 0x18)
+	uint64_t tss_addr = (uint64_t) tss;
+	gdt[3].limit_low = (sizeof(struct tss_64) - 1) & 0xFFFF;
+	gdt[3].base_low = tss_addr & 0xFFFF;
+	gdt[3].base_middle = (tss_addr >> 16) & 0xFF;
+	gdt[3].access = 0x89; // Present, Executable, TSS Type
+	gdt[3].granularity = 0x00;
+	gdt[3].base_high = (tss_addr >> 24) & 0xFF;
 
-	// Set up data segment descriptor
-	gdt_entry_init(2, 0, 0xFFFFFFFF, 0x92, 0xCF);
+	struct gdt_entry_high* tss_high = (struct gdt_entry_high*) &gdt[4];
+	tss_high->base_upper = (tss_addr >> 32) & 0xFFFFFFFF;
+	tss_high->reserved = 0;
 
-	// Load the GDT
-	gdtr.limit = sizeof(gdt) - 1;
-	gdtr.base = (uint64_t) &gdt;
-	gdt_load((uint64_t) &gdtr);
+	// Load GDT
+	// Don't ask me why I did it this way. Don't question it...
+	struct gdt_ptr gp = { .limit = (sizeof(struct gdt_entry) * 5) - 1, .base = (uint64_t) gdt };
+	__asm__ volatile("lgdt %0" : : "m"(gp));
+
+	// Reload Segments
+	__asm__ volatile(
+		"push $0x08\n"
+		"lea 1f(%%rip), %%rax\n"
+		"push %%rax\n"
+		"lretq\n"
+		"1:\n"
+		"mov $0x10, %%ax\n"
+		"mov %%ax, %%ds\n"
+		"mov %%ax, %%es\n"
+		"mov %%ax, %%ss\n"
+		: : : "rax", "memory"
+		);
+
+	// Load Task Register
+	__asm__ volatile("ltr %%ax" : : "a"(0x18));
 }

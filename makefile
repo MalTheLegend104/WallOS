@@ -9,6 +9,7 @@ include src/initrd/initrd.mk
 
 # This is for qemu:
 ARGS ?= -m 5G -M hpet=on -machine q35 -cpu max -smp 4
+# -d int -dfilter 0x0..0x1f,0x21..0xff 2>&1 | sed '/v=20/,/EFER=/d'
 # To add more devices, simply put them at any index 0-3, excluding 2.
 # Qemu mounts the cd drive at index 2 (secondary master drive)
 # ARGS += -drive file=hda.img,if=ide,media=disk,format=raw,index=0 \
