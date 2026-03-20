@@ -364,6 +364,7 @@ void kernel_main(unsigned int magic, multiboot_info* mbt_info) {
 	registerCommand((Command) { pci_command, 0, "pci", 0, 0 });
 	registerCommand((Command) { serial_cli_cmd, 0, "serial", 0, 0 });
 	registerCommand((Command) { virt_mem_cli, 0, "vmm", 0, 0 });
-	registerCommand((Command) { temp_cmd, 0, "temp", 0, 0 });
+	// registerCommand((Command) { temp_cmd, 0, "temp", 0, 0 });
+	registerCommand((Command) { cpu_info, 0, "cpu", 0, 0 });
 	terminalMain();
 }

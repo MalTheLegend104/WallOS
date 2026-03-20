@@ -19,7 +19,7 @@ size_t get_system_up_time() {
 	return system_execution_time;
 }
 
-// TODO, this should be an "internal" function, only accessable to the kernel.
+// TODO, this should be an "internal" function, only accessible to the kernel.
 // Most of this file should be. sleep() should be a syscall that only returns when done.
 void incriment_sys_time() {
 	//printf("e");

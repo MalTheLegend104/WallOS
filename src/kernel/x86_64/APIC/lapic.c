@@ -130,5 +130,6 @@ uint64_t calibrate_lapic_timer_with_tsc(uint64_t tsc_freq) {
 	uint32_t remaining = lapic_read(LAPIC_CURRENT_COUNT);
 	uint32_t elapsed = 0xFFFFFFFF - remaining;
 
-	return (uint64_t) elapsed * 100 * 16;            // LAPIC bus Hz
+	// return (uint64_t) elapsed * 100 * 16;            // LAPIC bus Hz
+	return (uint64_t) elapsed * 100;
 }

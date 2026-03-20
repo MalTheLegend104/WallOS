@@ -62,6 +62,16 @@ extern "C" {
 	 */
 	void arch_init_cpus();
 
+	/**
+	 * @brief CLI interface for the CPU subsystem.
+	 * Expected to at least have some form of debug information.
+	 *
+	 * @param argc Regular CLI argc
+	 * @param argv Regular CLI argv
+	 * @return int Return status
+	 */
+	int cpu_info(int argc, char** argv);
+
 #ifdef __cplusplus
 }
 #endif 

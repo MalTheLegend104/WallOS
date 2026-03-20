@@ -36,6 +36,8 @@
  */
 
 // This limits the amount of space (statically allocated) used by the scheduler.
-// I see ZERO reason WallOS will run on anything with more than 16 cores.
+// I see ZERO reason WallOS will run on anything with more than 64 cores.
 // If it does, this is easy to change and recompile.
-#define WALLOS_SYSTEM_MAX_CPU 32
+// For initial setup before the scheduler is implemented, we use this in ways it shouldn't be used.
+// If this comment is still here, know that scheduler_cpu.c relies on this in a bad way.
+#define WALLOS_SYSTEM_MAX_CPU 64
