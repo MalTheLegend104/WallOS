@@ -1,14 +1,20 @@
-#include <acpi.h>
 #include <stdint.h>
-#include <cpu_io.h>
-#include <memory/virtual_mem.h>
 #include <stdio.h>
 
-#ifdef WALLOS_USE_ACPICA
-ACPI_TABLE_MCFG* mcfg = NULL;
-#endif
+#include <acpi/acpi_api.h>
+#include <cpu_io.h>
+#include <memory/virtual_mem.h>
+#include <drivers/serial.h>
+
+#include <panic.h>
+
 /**
- * Class and Subclass lookup
+ * @brief Returns a human-readable description of a PCI device class.
+ *
+ * @param base_class PCI base class code (upper byte of class code field).
+ * @param sub_class PCI subclass code (middle byte of class code field).
+ *
+ * @return Constant string relating to provided device class.
  */
 const char* pci_get_class_info(uint8_t base_class, uint8_t sub_class) {
 	switch (base_class) {
@@ -77,100 +83,181 @@ const char* pci_get_class_info(uint8_t base_class, uint8_t sub_class) {
 	}
 }
 
-/**
- * Read PCI Configuration Space
- * Handles both ECAM (MMIO) and Legacy (Port 0xCF8/0xCFC)
+/* Due to the way I've structured the VMM, a local cache of virtual pages and corresponding addresses is the best way to deal with the needed MMIO regions.
+ * This prevents a ton of unnecessary mapping if the MMIO region is overlapped with another 2MB page.
  */
-uint32_t pci_config_read32(uint16_t seg, uint8_t bus, uint8_t slot, uint8_t func, uint16_t offset) {
-#ifdef WALLOS_USE_ACPICA
-	if (mcfg) {
-		// Find the correct MCFG allocation for this segment and bus
-		int entry_count = (mcfg->Header.Length - sizeof(ACPI_TABLE_MCFG)) / sizeof(ACPI_MCFG_ALLOCATION);
-		ACPI_MCFG_ALLOCATION* allocs = (ACPI_MCFG_ALLOCATION*) (mcfg + 1);
+// I arbitrarily chose 64, I don't think we'll need anywhere near 128MB of virtual address space for this. 
+#define PCI_MMIO_CACHE_SIZE 64
 
-		for (int i = 0; i < entry_count; i++) {
-			if (allocs[i].PciSegment == seg &&
-				bus >= allocs[i].StartBusNumber &&
-				bus <= allocs[i].EndBusNumber) {
+typedef struct {
+	uintptr_t phys_base; // 2MB-aligned physical base
+	uintptr_t virt_base;
+} PCIMMIOMapping;
 
-				// Calculate ECAM address
-				// Address = Base + ((Bus - Start) << 20 | Slot << 15 | Func << 12 | Offset)
-				uintptr_t phys_addr = (uintptr_t) allocs[i].Address +
-					(((uintptr_t) bus - allocs[i].StartBusNumber) << 20) |
-					((uintptr_t) slot << 15) |
-					((uintptr_t) func << 12) |
-					(offset & 0xFFF);
+PCIMMIOMapping pci_mmio_cache[PCI_MMIO_CACHE_SIZE];
+size_t pci_mmio_cache_count = 0;
 
-				// Map and read
-				volatile uint32_t* virt_addr = (volatile uint32_t*) mapKernelLocation(phys_addr, 4);
-				return *virt_addr;
-			}
+/**
+ * @brief Looks up or maps the 2MB page containing the given physical address.
+ *
+ * @param phys_addr Physical address to be mapped
+ * @return uintptr_t the virtual address corresponding to the physical address.
+ */
+uintptr_t pci_get_or_map_page(uintptr_t phys_addr) {
+	uintptr_t phys_base = phys_addr & ~0x1FFFFF; // 2MB-align
+
+	// Check the cache first
+	for (size_t i = 0; i < pci_mmio_cache_count; i++) {
+		if (pci_mmio_cache[i].phys_base == phys_base) {
+			return pci_mmio_cache[i].virt_base + (phys_addr - phys_base);
 		}
 	}
 
-	// Legacy PCI Configuration Mechanism #1
-	uint32_t address = (uint32_t) ((1U << 31) | ((uint32_t) bus << 16) |
-		((uint32_t) slot << 11) | ((uint32_t) func << 8) | (offset & 0xFC));
+	// If not cached, map it
+	if (pci_mmio_cache_count >= PCI_MMIO_CACHE_SIZE) {
+		panic_s("PCI MMIO page cache exhausted.");
+	}
+
+	uintptr_t virt_base = mapSequentialKernelPagesWithFlags(1, phys_base, PDE_FLAGS_UC_2MB);
+	if (!virt_base) panic_s("Failed to map PCI MMIO page.");
+
+	pci_mmio_cache[pci_mmio_cache_count++] = (PCIMMIOMapping){ phys_base, virt_base };
+
+	return virt_base + (phys_addr - phys_base);
+}
+
+
+/**
+ * @brief Reads a 32-bit value from PCI configuration space using CPU ports.
+ *
+ * Address calculation follows the standard ECAM layout:
+ * - Bus:      bits [20-27]
+ * - Device:   bits [15-19]
+ * - Function: bits [12-14]
+ * - Offset:   bits [00-11]
+ *
+ * @param entry Pointer to the MCFG entry describing the ECAM region.
+ * @param bus PCI bus number (must be within entry->start_bus to entry->end_bus).
+ * @param slot PCI device number (0-31).
+ * @param func PCI function number (0-7).
+ * @param offset Register offset within the PCI configuration space (must be 4-byte aligned).
+ * @return The 32-bit value read from the specified PCI configuration register.
+ */
+uint32_t pci_read_legacy(uint8_t bus, uint8_t slot, uint8_t func, uint8_t offset) {
+	uint32_t address = (uint32_t) ((bus << 16) | (slot << 11) | (func << 8) | (offset & 0xFC) | ((uint32_t) 0x80000000));
 	outl(0xCF8, address);
 	return inl(0xCFC);
-#endif
 }
 
 /**
- * Recursive Bus Scan
+ * @brief Reads a 32-bit value from PCI configuration space using ECAM (MCFG).
+ *
+ * Address calculation follows the standard ECAM layout:
+ * - Bus:      bits [20-27]
+ * - Device:   bits [15-19]
+ * - Function: bits [12-14]
+ * - Offset:   bits [00-11]
+ *
+ * @param entry Pointer to the MCFG entry describing the ECAM region.
+ * @param bus PCI bus number (must be within entry->start_bus to entry->end_bus).
+ * @param slot PCI device number (0-31).
+ * @param func PCI function number (0-7).
+ * @param offset Register offset within the PCI configuration space (must be 4-byte aligned).
+ * @return The 32-bit value read from the specified PCI configuration register.
  */
-void pci_scan_bus(uint16_t seg, uint8_t bus) {
-#ifdef WALLOS_USE_ACPICA
-	for (uint8_t slot = 0; slot < 32; slot++) {
-		uint32_t id_reg = pci_config_read32(seg, bus, slot, 0, 0x00);
-		if ((id_reg & 0xFFFF) == 0xFFFF) continue;
+uint32_t pci_read_mcfg(MCFGEntry* entry, uint8_t bus, uint8_t slot, uint8_t func, uint8_t offset) {
+	uintptr_t phys_addr = (uintptr_t) entry->base_addr + (((bus - entry->start_bus) << 20) | (slot << 15) | (func << 12) | offset);
 
-		for (uint8_t func = 0; func < 8; func++) {
-			uint32_t dev_id_reg = pci_config_read32(seg, bus, slot, func, 0x00);
-			if ((dev_id_reg & 0xFFFF) == 0xFFFF) continue;
+	uintptr_t virt_addr = pci_get_or_map_page(phys_addr);
+	return *(volatile uint32_t*) virt_addr;
+}
 
-			uint32_t class_reg = pci_config_read32(seg, bus, slot, func, 0x08);
-			uint32_t header_reg = pci_config_read32(seg, bus, slot, func, 0x0C);
+/**
+ * @brief Enumerates and reports PCI functions for a given device on a bus.
+ *
+ * @param entry Pointer to the MCFG entry describing the ECAM region. If NULL, legacy PCI configuration access is used.
+ * @param bus PCI bus number.
+ * @param device PCI device number (slot) on the bus (0-31).
+ */
+void check_device(MCFGEntry* entry, uint8_t bus, uint8_t device) {
+	for (uint8_t func = 0; func < 8; func++) {
+		// I hate this ternary, but it's the nicest way to do this.
+		uint32_t reg0 = (entry) ? pci_read_mcfg(entry, bus, device, func, 0) : pci_read_legacy(bus, device, func, 0);
 
-			uint8_t base_class = (class_reg >> 24) & 0xFF;
-			uint8_t sub_class = (class_reg >> 16) & 0xFF;
-			uint8_t header_type = (header_reg >> 16) & 0xFF;
+		uint16_t vendor_id = reg0 & 0xFFFF;
+		if (vendor_id == 0xFFFF) {
+			// This is kinda the "universal" sign that it isn't there.
+			// At the very least, the device is broken and we don't wanna deal with it.
+			if (func == 0) return;
+			// If we're not func 0, another func may exist.
+			continue;
+		}
 
-			// Updated Log with the new class info function
-			printf("[%04x:%02x:%02x.%d] ID %04x:%04x | %s\n",
-				seg, bus, slot, func,
-				(uint16_t) (dev_id_reg & 0xFFFF), (uint16_t) (dev_id_reg >> 16),
-				pci_get_class_info(base_class, sub_class));
+		uint16_t device_id = (reg0 >> 16) & 0xFFFF;
 
-			// Is this a PCI-to-PCI Bridge?
-			if (base_class == 0x06 && sub_class == 0x04) {
-				uint32_t bus_reg = pci_config_read32(seg, bus, slot, func, 0x18);
-				uint8_t secondary_bus = (bus_reg >> 8) & 0xFF;
-				pci_scan_bus(seg, secondary_bus);
+		// Read Register 0x08: Class (bits 31-24), Subclass (bits 23-16), ProgIF, RevID
+		uint32_t reg2 = (entry) ? pci_read_mcfg(entry, bus, device, func, 0x08) : pci_read_legacy(bus, device, func, 0x08);
+
+		uint8_t base_class = (reg2 >> 24) & 0xFF;
+		uint8_t sub_class = (reg2 >> 16) & 0xFF;
+
+		const char* class_name = pci_get_class_info(base_class, sub_class);
+
+		printf_color(PRINT_COLOR_CYAN, PRINT_DEFAULT_BG, "[%02x:%02x.%d] %04x:%04x - %s\n", bus, device, func, vendor_id, device_id, class_name);
+		printf_serial("[PCI][%02x:%02x.%d] %04x:%04x - %s\r\n", bus, device, func, vendor_id, device_id, class_name);
+
+		// Check Header Type to see if it's a multi-function device
+		uint32_t reg3 = (entry) ? pci_read_mcfg(entry, bus, device, func, 0x0C) : pci_read_legacy(bus, device, func, 0x0C);
+		uint8_t header_type = (reg3 >> 16) & 0xFF;
+
+		// If not multi-function (bit 7 clear) and we are on func 0, don't check func 1-7
+		if (func == 0 && !(header_type & 0x80)) break;
+	}
+}
+
+/**
+ * @brief Scans a PCI bus and enumerates all devices and subordinate buses.
+ *
+ * @param entry Pointer to the MCFG entry describing the ECAM region. If NULL, legacy PCI configuration access is used.
+ * @param bus PCI bus number to scan.
+ */
+void scan_bus(MCFGEntry* entry, uint8_t bus) {
+	for (uint8_t dev = 0; dev < 32; dev++) {
+		// Read Vendor ID of Function 0
+		uint32_t reg0 = (entry) ? pci_read_mcfg(entry, bus, dev, 0, 0) : pci_read_legacy(bus, dev, 0, 0);
+		if ((reg0 & 0xFFFF) == 0xFFFF) continue;
+
+		// Check if this is a bridge (Header Type 0x01)
+		uint32_t reg3 = (entry) ? pci_read_mcfg(entry, bus, dev, 0, 0x0C) : pci_read_legacy(bus, dev, 0, 0x0C);
+		uint8_t header_type = (reg3 >> 16) & 0xFF;
+
+		// Always check the device/functions
+		check_device(entry, bus, dev);
+
+		// If it's a bridge, extract the secondary bus and scan IT
+		if ((header_type & 0x7F) == 0x01) {
+			uint32_t reg6 = (entry) ? pci_read_mcfg(entry, bus, dev, 0, 0x18) : pci_read_legacy(bus, dev, 0, 0x18);
+			uint8_t secondary_bus = (reg6 >> 8) & 0xFF;
+			if (secondary_bus != 0) {
+				scan_bus(entry, secondary_bus);
 			}
-
-			if (func == 0 && !(header_type & 0x80)) break;
 		}
 	}
-#endif
 }
 
 /**
- * 3. Entry Point
+ * @brief Enumerate the PCI bus to discover connected devices.
+ *
+ * If the MCFG (PCIe) isn't present, we use legacy I/O ports.
  */
-void pci_init_discovery() {
-#ifdef WALLOS_USE_ACPICA
-	ACPI_STATUS status = AcpiGetTable((char*) "MCFG", 1, (ACPI_TABLE_HEADER**) &mcfg);
+void pci_discover(void) {
+	MCFGTable* mcfg = get_mcfg();
 
-	if (ACPI_SUCCESS(status)) {
-		int entry_count = (mcfg->Header.Length - sizeof(ACPI_TABLE_MCFG)) / sizeof(ACPI_MCFG_ALLOCATION);
-		ACPI_MCFG_ALLOCATION* allocs = (ACPI_MCFG_ALLOCATION*) (mcfg + 1);
-
-		for (int i = 0; i < entry_count; i++) {
-			pci_scan_bus(allocs[i].PciSegment, allocs[i].StartBusNumber);
-		}
-	} else {
-		pci_scan_bus(0, 0);
+	if (mcfg) {
+		printf_color(PRINT_COLOR_LIGHT_CYAN, PRINT_DEFAULT_BG, "Enumerating via MCFG (ECAM)...\n");
+		scan_bus(&mcfg->entries[0], mcfg->entries[0].start_bus);
+	} else { // If NULL, we fallback to "Configuration Method #1" (great naming scheme PCI...)
+		printf_color(PRINT_COLOR_LIGHT_CYAN, PRINT_DEFAULT_BG, "MCFG not found. Falling back to Legacy IO Ports...\n");
+		scan_bus(NULL, 0);
 	}
-#endif
 }

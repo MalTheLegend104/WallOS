@@ -28,6 +28,10 @@ bool acpi_is_present(void) {
 	return false;
 }
 
+bool is_acpi_setup_complete = false;
+bool acpi_setup_complete(void) { return is_acpi_setup_complete; }
+void acpi_set_setup_completed(void) { is_acpi_setup_complete = true; }
+
 __attribute__((noreturn)) void acpi_shutdown(void) {
 	printf("Initiating ACPI shutdown...\n");
 
@@ -42,15 +46,13 @@ __attribute__((noreturn)) void acpi_shutdown(void) {
 	}
 
 	// Disable interrupts before final shutdown
-	asm volatile("cli");
+	WALLOS_CLI();
 
 	status = AcpiEnterSleepState(5);
 	if (ACPI_FAILURE(status)) {
 		printf("Failed to enter sleep state S5: %s\n", AcpiFormatException(status));
 		goto shutdown_failed;
 	}
-
-	// If we get here, shutdown failed
 
 #elifdef WALLOS_USE_UACPI
 
@@ -62,7 +64,7 @@ __attribute__((noreturn)) void acpi_shutdown(void) {
 	}
 
 	// Disable interrupts before final shutdown
-	asm volatile("cli");
+	WALLOS_CLI();
 
 	status = uacpi_enter_sleep_state(UACPI_SLEEP_STATE_S5);
 	if (uacpi_unlikely_error(status)) {
@@ -75,6 +77,8 @@ __attribute__((noreturn)) void acpi_shutdown(void) {
 shutdown_failed:
 	// If we get here, shutdown failed
 	printf("ACPI shutdown failed, system halted. It's safe to force shutdown the computer.\n");
+	// TODO: REVISIT THIS AFTER SMP HAS BEEN FINISHED
+	// ALL CPUS MUST HANG PERMANENTLY
 	WALLOS_HANG();
 }
 
@@ -97,7 +101,7 @@ __attribute__((noreturn)) void acpi_reboot(void) {
 	if (status == UACPI_STATUS_OK) {
 		// Wait a bit for reset to take effect
 		for (int i = 0; i < 1000000; i++) {
-			asm volatile("pause");
+			WALLOS_PAUSE();
 		}
 	}
 #endif
@@ -114,12 +118,12 @@ __attribute__((noreturn)) void acpi_reboot(void) {
 
 	// Wait a bit
 	for (int i = 0; i < 1000000; i++) {
-		asm volatile("pause");
+		WALLOS_PAUSE();
 	}
 
 	// Method 2: Triple fault (last resort)
 	printf("Keyboard controller reset failed, triggering triple fault...\n");
-	asm volatile("cli");
+	WALLOS_CLI();
 
 	// Load invalid IDT to cause triple fault
 	struct {
@@ -127,10 +131,11 @@ __attribute__((noreturn)) void acpi_reboot(void) {
 		uint64_t base;
 	} __attribute__((packed)) invalid_idt = { 0, 0 };
 
-	asm volatile("lidt %0" : : "m"(invalid_idt));
-	asm volatile("int $0x00"); // Trigger interrupt with invalid IDT
+	__asm__ volatile("lidt %0" : : "m"(invalid_idt));
+	__asm__ volatile("int $0x00"); // Trigger interrupt with invalid IDT
 
 	// Should never reach here
+	printf("Failed to restart, somehow...\nIt's safe to force shutdown the computer.\n");
 	WALLOS_HANG();
 }
 
@@ -139,8 +144,6 @@ acpi_status_t acpi_sleep(uint8_t state);
 acpi_status_t acpi_get_resources(const acpi_handle_t handle, acpi_mem_resource_t* mem, size_t* mem_count, acpi_irq_resource_t* irq, size_t* irq_count);
 
 acpi_status_t acpi_get_pci_routing(const acpi_handle_t pci_root, acpi_pci_route_t* routes, size_t* route_count);
-
-acpi_status_t acpi_enumerate_cpus(acpi_cpu_info_t* cpus, size_t* cpu_count);
 
 void acpi_dump_namespace(void);
 void acpi_dump_tables(void);

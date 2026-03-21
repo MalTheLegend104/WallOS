@@ -9,9 +9,16 @@
  * Current headers:
  * - MADT (APIC)
  * - HPET
+ * - MCFG
  */
 
 #include <stdint.h>
+
+// ------------------------------------------------------------------------------------------------
+// ------------------------------------------------------------------------------------------------
+// MADT (APIC)
+// ------------------------------------------------------------------------------------------------
+// ------------------------------------------------------------------------------------------------
 
 typedef struct {
 	uint8_t type;      // 0 = Processor Local APIC, 1 = IO APIC, etc.
@@ -48,6 +55,12 @@ typedef struct {
 	uint32_t entry_count;  // number of entries
 } MADTTable __attribute__((packed));
 
+// ------------------------------------------------------------------------------------------------
+// ------------------------------------------------------------------------------------------------
+// HPET
+// ------------------------------------------------------------------------------------------------
+// ------------------------------------------------------------------------------------------------
+
 typedef struct {
 	uint64_t base_addr;        // physical MMIO address
 	uint8_t  hpet_number;      // ACPI HPET ID
@@ -57,5 +70,25 @@ typedef struct {
 
 	uint64_t main_counter;
 } HPETTable __attribute__((packed));
+
+// ------------------------------------------------------------------------------------------------
+// ------------------------------------------------------------------------------------------------
+// MCFG
+// ------------------------------------------------------------------------------------------------
+// ------------------------------------------------------------------------------------------------
+
+// One ECAM region (PCI segment group)
+typedef struct {
+	uint64_t base_addr;     // Physical MMIO base (ECAM)
+	uint16_t segment;       // PCI segment group
+	uint8_t  start_bus;     // First bus in this region
+	uint8_t  end_bus;       // Last bus in this region
+} MCFGEntry __attribute__((packed));
+
+// Generalized MCFG table representation
+typedef struct {
+	MCFGEntry* entries;     // Array of ECAM regions
+	uint32_t   entry_count; // Number of regions
+} MCFGTable __attribute__((packed));
 
 #endif // WALLOS_ACPI_GENERIC_TABLES_H

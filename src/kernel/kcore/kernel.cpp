@@ -152,7 +152,9 @@ int pci_command(int argc, char** argv) {
 	(void) argc;
 	(void) argv;
 
-	pci_init_discovery();
+	// pci_init_discovery();
+
+	pci_discover();
 
 	return 0;
 }

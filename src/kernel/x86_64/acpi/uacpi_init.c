@@ -1,6 +1,6 @@
 #include <uacpi/acpi.h>
 
-#include <acpi/acpi_init.h>
+
 
 #include <uacpi/uacpi.h>
 #include <uacpi/event.h>
@@ -23,6 +23,9 @@
 #include <drivers/serial.h>
 #include <klibc/logger.h>
 
+#include <acpi/acpi_init.h>
+#include <acpi/acpi_api.h>
+
 #ifdef WALLOS_USE_UACPI
 
 void init_failure(const char* str) {
@@ -30,8 +33,7 @@ void init_failure(const char* str) {
 	printf("uACPI initialization failed: %s\n", str);
 	printf_serial("uACPI initialization failed: %s\r\n", str);
 
-	asm volatile("cli");
-	asm volatile("hlt");
+	WALLOS_CLI_HLT();
 	panic_sa(msg, 2);
 }
 
@@ -75,6 +77,8 @@ void initialize_acpi(void) {
 	}
 
 	logger(INFO, "uACPI namespace initialized.\n");
+
+	acpi_set_setup_completed();
 }
 
 #include <memory/kernel_alloc.h>

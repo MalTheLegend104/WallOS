@@ -7,9 +7,11 @@
 extern "C" {
 #endif
 
-	void pci_init_discovery();
-	void pci_scan_bus(uint16_t seg, uint8_t bus);
-	uint32_t pci_config_read32(uint16_t seg, uint8_t bus, uint8_t slot, uint8_t func, uint16_t offset);
+	// void pci_init_discovery();
+	// void pci_scan_bus(uint16_t seg, uint8_t bus);
+	// uint32_t pci_config_read32(uint16_t seg, uint8_t bus, uint8_t slot, uint8_t func, uint16_t offset);
+
+	void pci_discover();
 
 #ifdef __cplusplus
 }

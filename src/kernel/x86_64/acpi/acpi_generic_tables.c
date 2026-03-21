@@ -191,8 +191,79 @@ HPETTable* parse_hpet() {
 	return hpet;
 }
 
+#define MCFG_ALLOCATION_SIZE 16
+
+MCFGTable* parse_mcfg() {
+	MCFGTable* mcfg = (MCFGTable*) kalloc(sizeof(MCFGTable));
+	if (!mcfg) return NULL;
+	memset(mcfg, 0, sizeof(MCFGTable));
+
+#if defined(WALLOS_USE_ACPICA)
+	ACPI_TABLE_MCFG* acpi_mcfg;
+	if (ACPI_FAILURE(AcpiGetTable(ACPI_SIG_MCFG, 0, (ACPI_TABLE_HEADER**) &acpi_mcfg))) {
+		kfree(mcfg);
+		return NULL;
+	}
+
+	uint8_t* ptr = (uint8_t*) acpi_mcfg + sizeof(ACPI_TABLE_MCFG);
+	uint8_t* end = (uint8_t*) acpi_mcfg + acpi_mcfg->Header.Length;
+
+#elif defined(WALLOS_USE_UACPI)
+	struct uacpi_table tbl;
+	if (uacpi_table_find_by_signature("MCFG", &tbl) != UACPI_STATUS_OK) {
+		kfree(mcfg);
+		return NULL;
+	}
+
+	struct acpi_mcfg* uacpi_mcfg = (struct acpi_mcfg*) tbl.ptr;
+
+	uint8_t* ptr = (uint8_t*) uacpi_mcfg->entries;
+	uint8_t* end = (uint8_t*) uacpi_mcfg + uacpi_mcfg->hdr.length;
+#endif
+
+	uint32_t count = (end - ptr) / MCFG_ALLOCATION_SIZE;
+
+	printf_serial("[MCFG] Entry count: %u\r\n", count);
+
+	if (count == 0) {
+		printf_serial("[MCFG] No entries found in MCFG\r\n");
+		kfree(mcfg);
+		return NULL;
+	}
+
+	mcfg->entry_count = count;
+	mcfg->entries = (MCFGEntry*) kalloc(sizeof(MCFGEntry) * count);
+	if (!mcfg->entries) {
+		kfree(mcfg);
+		return NULL;
+	}
+	memset(mcfg->entries, 0, sizeof(MCFGEntry) * count);
+
+	for (uint32_t i = 0; i < count; i++) {                 // fix 2: single loop
+#if defined(WALLOS_USE_ACPICA)
+		ACPI_MCFG_ALLOCATION* alloc = (ACPI_MCFG_ALLOCATION*) (ptr + i * MCFG_ALLOCATION_SIZE);
+		mcfg->entries[i].base_addr = alloc->Address;
+		mcfg->entries[i].segment = alloc->PciSegment;
+		mcfg->entries[i].start_bus = alloc->StartBusNumber;
+		mcfg->entries[i].end_bus = alloc->EndBusNumber;
+#elif defined(WALLOS_USE_UACPI)
+		struct acpi_mcfg_allocation* alloc = (struct acpi_mcfg_allocation*) (ptr + i * MCFG_ALLOCATION_SIZE);
+		mcfg->entries[i].base_addr = alloc->address;
+		mcfg->entries[i].segment = alloc->segment;
+		mcfg->entries[i].start_bus = alloc->start_bus;
+		mcfg->entries[i].end_bus = alloc->end_bus;
+#endif
+		printf_serial("[MCFG] Entry %u: base=0x%llx seg=%u bus=%u..%u\r\n",
+			i, mcfg->entries[i].base_addr, mcfg->entries[i].segment,
+			mcfg->entries[i].start_bus, mcfg->entries[i].end_bus);
+	}
+
+	return mcfg;
+}
+
 static MADTTable* g_madt = NULL;
 static HPETTable* g_hpet = NULL;
+static MCFGTable* g_mcfg = NULL;
 
 MADTTable* get_madt() {
 	if (!g_madt)
@@ -204,4 +275,10 @@ HPETTable* get_hpet() {
 	if (!g_hpet)
 		g_hpet = parse_hpet();
 	return g_hpet;
+}
+
+MCFGTable* get_mcfg() {
+	if (!g_mcfg)
+		g_mcfg = parse_mcfg();
+	return g_mcfg;
 }

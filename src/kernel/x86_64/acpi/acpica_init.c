@@ -564,6 +564,8 @@ void initialize_acpi(void) {
 
 
 	logger(INFO, "ACPICA driver fully initialized.\n");
+	extern void acpi_set_setup_completed(void);
+	acpi_set_setup_completed();
 }
 
 
