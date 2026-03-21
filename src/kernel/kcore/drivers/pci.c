@@ -8,81 +8,6 @@
 
 #include <panic.h>
 
-/**
- * @brief Returns a human-readable description of a PCI device class.
- *
- * @param base_class PCI base class code (upper byte of class code field).
- * @param sub_class PCI subclass code (middle byte of class code field).
- *
- * @return Constant string relating to provided device class.
- */
-const char* pci_get_class_info(uint8_t base_class, uint8_t sub_class) {
-	switch (base_class) {
-		case 0x01: // Mass Storage Controller
-			switch (sub_class) {
-				case 0x00: return "SCSI Bus Controller";
-				case 0x01: return "IDE Controller";
-				case 0x02: return "Floppy Disk Controller";
-				case 0x05: return "ATA Controller";
-				case 0x06: return "SATA Controller (AHCI)";
-				case 0x07: return "Serial Attached SCSI";
-				case 0x08: return "Non-Volatile Memory (NVMe)";
-				default:   return "Mass Storage Controller";
-			}
-		case 0x02: // Network Controller
-			switch (sub_class) {
-				case 0x00: return "Ethernet Controller";
-				case 0x01: return "Token Ring Controller";
-				case 0x02: return "FDDI Controller";
-				case 0x03: return "ATM Controller";
-				case 0x04: return "ISDN Controller";
-				case 0x80: return "Network Controller (Other)";
-				default:   return "Network Controller";
-			}
-		case 0x03: // Display Controller
-			switch (sub_class) {
-				case 0x00: return "VGA Compatible Controller";
-				default:   return "Display Controller";
-			}
-		case 0x04: // Multimedia Controller
-			switch (sub_class) {
-				case 0x00: return "Multimedia Video Controller";
-				case 0x01: return "Multimedia Audio Controller";
-				case 0x03: return "High Definition Audio Controller";
-				default:   return "Multimedia Controller";
-			}
-		case 0x06: // Bridges
-			switch (sub_class) {
-				case 0x00: return "Host Bridge";
-				case 0x01: return "ISA Bridge";
-				case 0x02: return "EISA Bridge";
-				case 0x03: return "MCA Bridge";
-				case 0x04: return "PCI-to-PCI Bridge";
-				case 0x05: return "PCMCIA Bridge";
-				case 0x06: return "NuBus Bridge";
-				case 0x07: return "CardBus Bridge";
-				case 0x08: return "RACEway Bridge";
-				case 0x09: return "PCI-to-PCI Bridge (Semi-Transparent)";
-				case 0x0A: return "InfiniBand-to-PCI Host Bridge";
-				default:   return "Bridge Device";
-			}
-		case 0x07: // Communication Controller
-			switch (sub_class) {
-				case 0x00: return "Serial Controller (UART)";
-				case 0x01: return "Parallel Port";
-				default:   return "Communication Controller";
-			}
-		case 0x0C: // Serial Bus Controller
-			switch (sub_class) {
-				case 0x00: return "FireWire (IEEE 1394)";
-				case 0x03: return "USB Controller";
-				case 0x05: return "SMBus";
-				default:   return "Serial Bus Controller";
-			}
-		default: return "Unknown Device Type";
-	}
-}
-
 /* Due to the way I've structured the VMM, a local cache of virtual pages and corresponding addresses is the best way to deal with the needed MMIO regions.
  * This prevents a ton of unnecessary mapping if the MMIO region is overlapped with another 2MB page.
  */
@@ -172,6 +97,8 @@ uint32_t pci_read_mcfg(MCFGEntry* entry, uint8_t bus, uint8_t slot, uint8_t func
 	return *(volatile uint32_t*) virt_addr;
 }
 
+#include <drivers/pci_dev.h>
+
 /**
  * @brief Enumerates and reports PCI functions for a given device on a bus.
  *
@@ -201,10 +128,36 @@ void check_device(MCFGEntry* entry, uint8_t bus, uint8_t device) {
 		uint8_t base_class = (reg2 >> 24) & 0xFF;
 		uint8_t sub_class = (reg2 >> 16) & 0xFF;
 
-		const char* class_name = pci_get_class_info(base_class, sub_class);
+		const char* class_name = get_pci_class_name(base_class, sub_class);
 
-		printf_color(PRINT_COLOR_CYAN, PRINT_DEFAULT_BG, "[%02x:%02x.%d] %04x:%04x - %s\n", bus, device, func, vendor_id, device_id, class_name);
-		printf_serial("[PCI][%02x:%02x.%d] %04x:%04x - %s\r\n", bus, device, func, vendor_id, device_id, class_name);
+		// printf_color(PRINT_COLOR_CYAN, PRINT_DEFAULT_BG, "[%02x:%02x.%d] %04x:%04x - %s\n", bus, device, func, vendor_id, device_id, class_name);
+		// printf_serial("[PCI][%02x:%02x.%d] %04x:%04x - %s\r\n", bus, device, func, vendor_id, device_id, class_name);
+
+		const char* vendor_name = get_pci_vendor_name(vendor_id);
+		const char* device_name = get_pci_device_name(vendor_id, device_id);
+
+		// Fallbacks if your lookup returns NULL
+		if (!vendor_name) vendor_name = "Unknown Vendor";
+		if (!device_name) device_name = "Unknown Device";
+
+		printf_color(
+			PRINT_COLOR_CYAN, PRINT_DEFAULT_BG,
+			"[%02x:%02x.%u](%04x:%04x) %s, %s\n",
+			bus, device, func,
+			vendor_id, device_id,
+			vendor_name,
+			class_name
+		);
+
+		printf_serial(
+			"[PCI][%02x:%02x.%u](%04x:%04x) %-22s %-30s [%s][%02x:%02x]\r\n",
+			bus, device, func,
+			vendor_id, device_id,
+			vendor_name,
+			device_name,
+			class_name,
+			base_class, sub_class
+		);
 
 		// Check Header Type to see if it's a multi-function device
 		uint32_t reg3 = (entry) ? pci_read_mcfg(entry, bus, device, func, 0x0C) : pci_read_legacy(bus, device, func, 0x0C);
@@ -223,24 +176,33 @@ void check_device(MCFGEntry* entry, uint8_t bus, uint8_t device) {
  */
 void scan_bus(MCFGEntry* entry, uint8_t bus) {
 	for (uint8_t dev = 0; dev < 32; dev++) {
-		// Read Vendor ID of Function 0
+		// Check if device exists at Func 0
 		uint32_t reg0 = (entry) ? pci_read_mcfg(entry, bus, dev, 0, 0) : pci_read_legacy(bus, dev, 0, 0);
 		if ((reg0 & 0xFFFF) == 0xFFFF) continue;
 
-		// Check if this is a bridge (Header Type 0x01)
-		uint32_t reg3 = (entry) ? pci_read_mcfg(entry, bus, dev, 0, 0x0C) : pci_read_legacy(bus, dev, 0, 0x0C);
-		uint8_t header_type = (reg3 >> 16) & 0xFF;
-
-		// Always check the device/functions
+		// Parse all functions of this device (including bridges)
 		check_device(entry, bus, dev);
 
-		// If it's a bridge, extract the secondary bus and scan IT
-		if ((header_type & 0x7F) == 0x01) {
-			uint32_t reg6 = (entry) ? pci_read_mcfg(entry, bus, dev, 0, 0x18) : pci_read_legacy(bus, dev, 0, 0x18);
-			uint8_t secondary_bus = (reg6 >> 8) & 0xFF;
-			if (secondary_bus != 0) {
-				scan_bus(entry, secondary_bus);
+		// Check if any function of this device is a bridge that needs stepping into
+		for (uint8_t func = 0; func < 8; func++) {
+			uint32_t reg0 = (entry) ? pci_read_mcfg(entry, bus, dev, func, 0) : pci_read_legacy(bus, dev, func, 0);
+			if ((reg0 & 0xFFFF) == 0xFFFF) continue;
+
+			uint32_t reg3 = (entry) ? pci_read_mcfg(entry, bus, dev, func, 0x0C) : pci_read_legacy(bus, dev, func, 0x0C);
+			uint8_t header_type = (reg3 >> 16) & 0x7F;
+
+			if (header_type == 0x01) { // It's a bridge!
+				uint32_t reg6 = (entry) ? pci_read_mcfg(entry, bus, dev, func, 0x18) : pci_read_legacy(bus, dev, func, 0x18);
+				uint8_t secondary_bus = (reg6 >> 8) & 0xFF;
+
+				// Avoid infinite loops and don't scan back to parent
+				if (secondary_bus > bus) {
+					scan_bus(entry, secondary_bus);
+				}
 			}
+
+			// If func 0 is not multi-function, don't check other functions for bridges
+			if (func == 0 && !((reg3 >> 16) & 0x80)) break;
 		}
 	}
 }
@@ -255,7 +217,10 @@ void pci_discover(void) {
 
 	if (mcfg) {
 		printf_color(PRINT_COLOR_LIGHT_CYAN, PRINT_DEFAULT_BG, "Enumerating via MCFG (ECAM)...\n");
-		scan_bus(&mcfg->entries[0], mcfg->entries[0].start_bus);
+		for (int i = 0; i < mcfg->entry_count; i++) {
+			scan_bus(&mcfg->entries[i], mcfg->entries[i].start_bus);
+		}
+
 	} else { // If NULL, we fallback to "Configuration Method #1" (great naming scheme PCI...)
 		printf_color(PRINT_COLOR_LIGHT_CYAN, PRINT_DEFAULT_BG, "MCFG not found. Falling back to Legacy IO Ports...\n");
 		scan_bus(NULL, 0);

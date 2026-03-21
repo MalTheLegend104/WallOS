@@ -1,0 +1,42 @@
+# This is just a list of the most common PCI devices I've come across (and just common ones in general)
+# If something is weirdly specific, it's because it was in a device I tested on
+# The filter can be device specific as well, in this form: vendor:device (8086:1d41)
+
+# CORE CHIPSET & CPU VENDORS
+1000    # Broadcom
+1002    # AMD / ATI (Graphics and Chipsets)
+1022    # AMD (Advanced Micro Devices)
+102b	# Matrox Electronics Systems Ltd.
+1039    # SiS (Silicon Integrated Systems)
+10de    # NVIDIA Corporation
+1106    # VIA Technologies
+8086    # Intel Corporation
+
+# NETWORK & CONNECTIVITY
+10ec    # Realtek Semiconductor Co., Ltd.
+14e4    # Broadcom Inc.
+1ae9    # Wilocity (Qualcomm/Atheros)
+168c    # Qualcomm Atheros
+8087    # Intel (Bluetooth/Wireless specific)
+
+# COMMON PC OEMS (Motherboards/Systems)
+1028    # Dell
+103c    # HP / Hewlett-Packard
+17aa    # Lenovo
+1043    # ASUS (Asustek)
+1458    # Gigabyte Technology
+105b    # Foxconn
+1462    # MSI (Micro-Star International)
+1558    # Clevo
+
+# STORAGE & CONTROLLERS
+0106    # SATA AHCI Controller Class (Generic)
+104c    # Texas Instruments (USB/Firewire/Card Readers)
+1b21    # ASMedia Technology (Common USB 3.0/SATA expansion)
+1987    # Phison Electronics (NVMe Controllers)
+15ad    # VMware (Virtualization components)
+1af4    # Red Hat (Virtio / QEMU)
+
+# AUDIO & PERIPHERALS
+1102    # Creative Labs
+13f6    # C-Media Electronics

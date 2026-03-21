@@ -16,3 +16,5 @@ tools/wallos_netboot/boot/grub/net_settings.cfg
 
 # This is for my lab testing PXE server
 upload.sh
+
+tools/pci_dev/pci.ids
