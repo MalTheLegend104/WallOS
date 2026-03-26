@@ -511,7 +511,7 @@ void* kalloc(size_t bytes) {
 	}
 
 	// No space found, create new slab
-	printf_serial("[KALLOC] Requested memory allocation.\r\n\tBytes: 0x%llx ret: 0x%llx\r\n", bytes, WALLOS_RET_ADDR());
+	printf_serial("[KALLOC] Requested memory allocation. Bytes: 0x%llx\r\n", bytes);
 	initSlab(object_size);
 
 	spinlock_unlock(memlock);

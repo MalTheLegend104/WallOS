@@ -959,7 +959,7 @@ static const pci_device_t pci_devices[] = {
     {0x1002, 0x731b, "Navi 10 [Radeon Pro 5700]"},
     {0x1002, 0x731e, "TDC-150"},
     {0x1002, 0x731f, "Navi 10 [Radeon RX 5600 OEM/5600 XT / 5700/5700 XT]"},
-    {0x1002, 0x7340, "Navi 14 [Radeon RX 5500/5500M / Pro 5300/5500M]"},
+    {0x1002, 0x7340, "Navi 14 [Radeon RX 5500/5500M / Pro 5300/5300M/5500M]"},
     {0x1002, 0x7341, "Navi 14 [Radeon Pro W5500]"},
     {0x1002, 0x7347, "Navi 14 [Radeon Pro W5500M]"},
     {0x1002, 0x734f, "Navi 14 [Radeon Pro W5300M]"},
@@ -10298,6 +10298,11 @@ static const pci_device_t pci_devices[] = {
     {0x8086, 0xe37c, "Panther Lake I3C Host Controller #1"},
     {0x8086, 0xe37d, "Panther Lake USB 3.2 xHCI Controller"},
     {0x8086, 0xe37f, "Panther Lake Shared SRAM"},
+    {0x8086, 0xe431, "Panther Lake USB 3.2 xHCI Controller"},
+    {0x8086, 0xe434, "Panther Lake Thunderbolt 4 NHI #2"},
+    {0x8086, 0xe440, "Panther Lake PCH CNVi WiFi"},
+    {0x8086, 0xe476, "Panther Lake Bluetooth PCI Enumerator"},
+    {0x8086, 0xe47d, "Panther Lake USB 3.2 xHCI Controller"},
     {0x8086, 0xf1a5, "SSD 600P Series"},
     {0x8086, 0xf1a6, "SSD DC P4101/Pro 7600p/760p/E 6100p Series"},
     {0x8086, 0xf1a7, "SSD 700p Series"},
@@ -10347,7 +10352,7 @@ static const pci_vendor_t pci_vendors[] = {
     {0x1ae9, 5200, 6, "Wilocity Ltd."},
     {0x1af4, 5206, 46, "Red Hat, Inc."},
     {0x1b21, 5252, 35, "ASMedia Technology Inc."},
-    {0x8086, 5287, 4996, "Intel Corporation"},
+    {0x8086, 5287, 5001, "Intel Corporation"},
 };
 
 /* PCI Class and Subclass lookup table */

@@ -10,11 +10,18 @@ include src/initrd/initrd.mk
 # This is for qemu:
 ARGS ?= -m 5G -M hpet=on -machine q35 -cpu max -smp 4
 # -d int -dfilter 0x0..0x1f,0x21..0xff 2>&1 | sed '/v=20/,/EFER=/d'
+
 # To add more devices, simply put them at any index 0-3, excluding 2.
 # Qemu mounts the cd drive at index 2 (secondary master drive)
 # ARGS += -drive file=hda.img,if=ide,media=disk,format=raw,index=0 \
 #         -drive file=hda2.img,if=ide,media=disk,format=raw,index=1 \
 #         -drive file=hda3.img,if=ide,media=disk,format=raw,index=3
+
+# Uncomment this to add audio devices to the system.
+# ARGS +=  -audiodev sdl,id=snd0 \
+#   -device sb16,audiodev=snd0 \
+#   -device es1370,audiodev=snd0 \
+#   -device ac97,audiodev=snd0 
 
 # These make it much easier to change things whenever we are finally self hosted.
 WALLOS_C_COMPILER 	:= x86_64-wallos-gcc
@@ -236,6 +243,12 @@ initrd_temp:
 qemu: all
 # 	qemu-system-x86_64 -cdrom dist/x86_64/WallOS.iso  -cpu max $(ARGS)
 	qemu-system-x86_64 -bios /usr/share/ovmf/OVMF.fd -cdrom dist/x86_64/WallOS.iso $(ARGS)
+
+qemu_only: 
+	qemu-system-x86_64 -bios /usr/share/ovmf/OVMF.fd -cdrom dist/x86_64/WallOS.iso $(ARGS)
+
+qemu_bios:
+	qemu-system-x86_64 -cdrom dist/x86_64/WallOS.iso  -cpu max $(ARGS)
 
 clean: libs_clean initrd_clean
 	rm -rf build && echo "$(COLOR_GREEN)Cleaned build folder$(END_COLOR)"

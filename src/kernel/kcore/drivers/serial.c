@@ -17,13 +17,14 @@
 typedef struct {
 	uint16_t base;
 	bool present;
+	const char* port_name;
 } serial_port_t;
 
 static serial_port_t active_ports[] = {
-	{COM1, false},
-	{COM2, false},
-	{COM3, false},
-	{COM4, false}
+	{COM1, false, "COM1"},
+	{COM2, false, "COM2"},
+	{COM3, false, "COM3"},
+	{COM4, false, "COM4"}
 };
 
 #define PORT_COUNT (sizeof(active_ports) / sizeof(active_ports[0]))
@@ -89,6 +90,32 @@ void init_all_serial() {
 		if (detect_uart(active_ports[i].base)) {
 			if (init_serial(active_ports[i].base) == 0) active_ports[i].present = true;
 		}
+	}
+}
+
+#include <device/device_manager.h>
+
+void serial_register_devices() {
+	wallos_device_t* root_dev = create_device(DEV_INT_UART | DEV_INT_INTERFACE_ONLY, "serial");
+	register_device(root_dev);
+
+	for (int i = 0; i < PORT_COUNT; i++) {
+		if (!active_ports[i].present) continue;
+
+		wallos_device_t* dev = create_device(DEV_INT_PORT_IO | DEV_INT_UART, active_ports[i].port_name);
+		if (!dev) {
+			printf_serial("[SERIAL] Failed to allocate device for %s\r\n", active_ports[i].port_name);
+			continue;
+		}
+
+		dev->location.mmio.base_address = active_ports[i].base;
+		dev->parent = root_dev;
+
+		if (root_dev) {
+			dev->next_sibling = root_dev->first_child;
+			root_dev->first_child = dev;
+		}
+		register_device(dev);
 	}
 }
 

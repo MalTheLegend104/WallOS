@@ -28,6 +28,11 @@ extern "C" {
 	int serial_cli_cmd(int argc, char** argv);
 
 	int init_serial(uint16_t base_port);
+	/**
+	 * @brief Registers all connected serial devices to the Device Manager.
+	 * This should be called only after the kernel allocator is set up.
+	 */
+	void serial_register_devices();
 	int serial_received(uint16_t base_port);
 	char read_serial(uint16_t base_port);
 	int is_transmit_empty(uint16_t base_port);

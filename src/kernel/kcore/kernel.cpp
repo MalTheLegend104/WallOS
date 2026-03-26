@@ -225,6 +225,8 @@ void keyboard_debug() {
 	printf_serial("======================\r\n");
 }
 
+#include <device/device_manager.h>
+
 void kernel_main(unsigned int magic, multiboot_info* mbt_info) {
 	// ------------------------------------------------------------------------------------------------
 	// Very early init
@@ -355,6 +357,7 @@ void kernel_main(unsigned int magic, multiboot_info* mbt_info) {
 	// wait_for_esc();
 
 	setup_serial_interrupts();
+	serial_register_devices();
 
 	// After we're done checking features, we need to set up our terminal.
 	// Eventually this will be a userspace program. 
@@ -367,6 +370,7 @@ void kernel_main(unsigned int magic, multiboot_info* mbt_info) {
 	registerCommand((Command) { serial_cli_cmd, 0, "serial", 0, 0 });
 	registerCommand((Command) { virt_mem_cli, 0, "vmm", 0, 0 });
 	// registerCommand((Command) { temp_cmd, 0, "temp", 0, 0 });
+	registerCommand((Command) { device_cmd, 0, "device", dev_aliases, 1 });
 	registerCommand((Command) { cpu_info, 0, "cpu", 0, 0 });
 	terminalMain();
 }

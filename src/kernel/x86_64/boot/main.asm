@@ -204,7 +204,8 @@ long_mode_start:
 section .bss
 align 4096
 stack_bottom:
-	resb 32768
+	; resb 32768
+	resb 65536
 stack_top:
 
 section .text
