@@ -12,7 +12,7 @@
 #define SECONDARY_SECOND 3
 
 // Timeout value for busy-wait loops (adjust as needed)
-#define ATA_TIMEOUT 100000
+#define ATA_TIMEOUT 10000
 
 drive_info_t drive_zero{};
 drive_info_t drive_one{};

@@ -22,3 +22,7 @@
 #define WALLOS_RET_ADDR() __builtin_return_address(0)
 
 #define WALLOS_STATIC_ASSERT(cond, msg) typedef char static_assert_##msg[(cond) ? 1 : -1]
+
+/* Can be used to ensure that a function is run exactly once. */
+#define WALLOS_RUN_ONCE() static int _wallos_function_already_ran = 0; if (_wallos_function_already_ran) return; _wallos_function_already_ran = 1;
+

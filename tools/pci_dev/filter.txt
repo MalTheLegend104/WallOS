@@ -40,3 +40,6 @@
 # AUDIO & PERIPHERALS
 1102    # Creative Labs
 13f6    # C-Media Electronics
+
+# Misc
+80ee    # Virtualbox

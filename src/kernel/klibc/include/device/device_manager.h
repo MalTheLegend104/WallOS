@@ -255,7 +255,7 @@ extern "C" {
 	 * @param dev Device to list the tree from. NULL to
 	 * @return * void
 	 */
-	void print_device_tree(wallos_device_t* dev);
+	// void print_device_tree(wallos_device_t* dev);
 
 
 

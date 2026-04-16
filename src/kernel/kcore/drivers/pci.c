@@ -347,6 +347,8 @@ void scan_bus(MCFGEntry* entry, uint8_t bus, wallos_device_t* parent) {
  * If the MCFG (PCIe) isn't present, we use legacy I/O ports.
  */
 void pci_discover(void) {
+	WALLOS_RUN_ONCE();
+
 	MCFGTable* mcfg = get_mcfg();
 
 	// Create a root node so the device tree has something to hang PCI devices from

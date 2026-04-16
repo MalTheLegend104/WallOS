@@ -10311,6 +10311,8 @@ static const pci_device_t pci_devices[] = {
     {0x8086, 0xfaf0, "SSD 665p Series [Neptune Harbor Refresh]"},
     {0x8086, 0xfd80, "Wildcat Lake [Intel Graphics]"},
     {0x8086, 0xfd81, "Wildcat Lake [Intel Graphics]"},
+    {0x80ee, 0xbeef, "VirtualBox Graphics Adapter"},
+    {0x80ee, 0xcafe, "VirtualBox Guest Service"},
 };
 
 /*
@@ -10353,6 +10355,7 @@ static const pci_vendor_t pci_vendors[] = {
     {0x1af4, 5206, 46, "Red Hat, Inc."},
     {0x1b21, 5252, 35, "ASMedia Technology Inc."},
     {0x8086, 5287, 5001, "Intel Corporation"},
+    {0x80ee, 10288, 2, "InnoTek Systemberatung GmbH"},
 };
 
 /* PCI Class and Subclass lookup table */

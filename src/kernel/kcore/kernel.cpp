@@ -10,6 +10,7 @@
 #include <drivers/keyboard.h>
 #include <drivers/serial.h>
 #include <drivers/sata/pio.h>
+#include <drivers/pci.h>
 
 #include <klibc/kprint.h>
 #include <klibc/cpuid_calls.h>
@@ -44,7 +45,7 @@
  */
 extern "C" {
 	void kernel_main(unsigned int magic, multiboot_info* mbt_info);
-	void __cxa_pure_virtual() { }; // needed for pure virtual functions
+	void __cxa_pure_virtual() {}; // needed for pure virtual functions
 }
 
 #pragma GCC diagnostic ignored "-Wunused-parameter" 
@@ -147,17 +148,6 @@ void init_initrd() {
 }
 #endif // JANKY_INITRD_LOADER
 
-#include <drivers/pci.h>
-int pci_command(int argc, char** argv) {
-	(void) argc;
-	(void) argv;
-
-	// pci_init_discovery();
-
-	pci_discover();
-
-	return 0;
-}
 
 /**
  * This allows write-combining.
@@ -322,6 +312,27 @@ void kernel_main(unsigned int magic, multiboot_info* mbt_info) {
 	display_init_late();
 
 	// ------------------------------------------------------------------------------------------------
+	// Regular Interrupt Handlers
+	// ------------------------------------------------------------------------------------------------
+	Syscall::initialize();
+	setup_serial_interrupts();
+
+
+	// ------------------------------------------------------------------------------------------------
+	// ACPI
+	// ------------------------------------------------------------------------------------------------
+	uint64_t acpi_runtime = get_system_up_time();
+	initialize_acpi();
+	acpi_runtime = get_system_up_time() - acpi_runtime;
+	printf_color(PRINT_COLOR_PINK, PRINT_DEFAULT_BG, "ACPI Init took a total of %llu ms\n", acpi_runtime);
+
+	// ------------------------------------------------------------------------------------------------
+	// Device Discovery
+	// ------------------------------------------------------------------------------------------------
+	serial_register_devices();
+	pci_discover();
+
+	// ------------------------------------------------------------------------------------------------
 	// Drive detection (and eventual virtual FS setup)
 	// ------------------------------------------------------------------------------------------------
 	// I have no better spot to put this so it goes here.
@@ -329,35 +340,11 @@ void kernel_main(unsigned int magic, multiboot_info* mbt_info) {
 
 	// ------------------------------------------------------------------------------------------------
 	// ------------------------------------------------------------------------------------------------
-	// Regular Interrupt Handlers
+	// Everything after this point should be handoff code.
 	// ------------------------------------------------------------------------------------------------
 	// ------------------------------------------------------------------------------------------------
-	Syscall::initialize();
-
-	// ------------------------------------------------------------------------------------------------
-	// ------------------------------------------------------------------------------------------------
-	// ACPI
-	// ------------------------------------------------------------------------------------------------
-	// ------------------------------------------------------------------------------------------------
-	uint64_t acpi_runtime = get_system_up_time();
-	initialize_acpi();
-	acpi_runtime = get_system_up_time() - acpi_runtime;
-	printf_color(PRINT_COLOR_PINK, PRINT_DEFAULT_BG, "ACPI Init took a total of %llu ms\n", acpi_runtime);
-
-	// char* array[] = { (char*) "drive", (char*) "mount", (char*) "0" };
-	// drive_mount_cmd(3, array);
-
 	printf_serial("Ended kernel init... handing control to WallShell.\r\n");
 	printf_color(PRINT_COLOR_PINK, PRINT_DEFAULT_BG, "Ended kernel init... Press `ESC` to hand control to WallShell.\r\n");
-	// WALLOS_CLI_HLT();
-
-	// framebuffer();
-
-	// printf("");
-	// wait_for_esc();
-
-	setup_serial_interrupts();
-	serial_register_devices();
 
 	// After we're done checking features, we need to set up our terminal.
 	// Eventually this will be a userspace program. 
@@ -366,11 +353,9 @@ void kernel_main(unsigned int magic, multiboot_info* mbt_info) {
 	registerCommand((Command) { acpi_command, 0, "acpi", 0, 0 });
 	registerCommand((Command) { syscall_command, 0, "syscall", 0, 0 });
 	registerCommand((Command) { bootdev_command, 0, "bootdev", 0, 0 });
-	registerCommand((Command) { pci_command, 0, "pci", 0, 0 });
 	registerCommand((Command) { serial_cli_cmd, 0, "serial", 0, 0 });
 	registerCommand((Command) { virt_mem_cli, 0, "vmm", 0, 0 });
-	// registerCommand((Command) { temp_cmd, 0, "temp", 0, 0 });
-	registerCommand((Command) { device_cmd, 0, "device", dev_aliases, 1 });
+	registerCommand((Command) { device_cmd, 0, "device", dev_aliases, 1 }); // "dev" is the only alias.
 	registerCommand((Command) { cpu_info, 0, "cpu", 0, 0 });
 	terminalMain();
 }

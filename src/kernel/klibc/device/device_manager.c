@@ -235,26 +235,44 @@ void recalculate_device_path(wallos_device_t* dev) {
 	update_device_path_recursive(dev);
 }
 
-void print_device_tree_recursive(wallos_device_t* dev, int depth, const char* prefix, bool is_last) {
+void print_device_list_recursive(wallos_device_t* dev) {
+	DEV_FOR_EACH_CHILD(dev, child) {
+		const char* display_path = child->path ? child->path : "<no path>";
+		printf_color(PRINT_COLOR_LIGHT_GREEN, PRINT_DEFAULT_BG, "%s ", display_path);
+		printf_color(PRINT_COLOR_LIGHT_GREY, PRINT_DEFAULT_BG, "(0x%llx)\n", (uint64_t) child->interfaces);
+		printf_serial("[DEVMGR] %s dev=%p\r\n", display_path, child);
+		print_device_list_recursive(child);
+	}
+}
+
+int get_device_color(device_interface_t interfaces) {
+	if (interfaces == DEV_INT_INVALID)       return PRINT_COLOR_RED;
+	if (interfaces & DEV_INT_UNKNOWN)        return PRINT_COLOR_YELLOW;
+	if (interfaces & DEV_INT_INTERFACE_ONLY) return PRINT_COLOR_LIGHT_GREEN;
+	return PRINT_COLOR_WHITE;
+}
+
+void print_device_tree_recursive(wallos_device_t* dev, int depth, const char* prefix, bool is_last, int max_depth) {
 	const char* name = dev->name ? dev->name : "unknown";
+	int name_color = get_device_color(dev->interfaces);
 
 	if (depth == 0) {
 		// Root node. Just print the name, no connector
-		printf_color(PRINT_COLOR_WHITE, PRINT_DEFAULT_BG, "%s\n", name);
+		printf_color(name_color, PRINT_DEFAULT_BG, "%s\n", name);
 		printf_serial("%s\n", name);
 	} else {
 		// Print the inherited prefix from parent levels, then this node's connector
 		printf_color(PRINT_COLOR_LIGHT_GREY, PRINT_DEFAULT_BG, "%s", prefix);
 		printf_serial("%s", prefix);
 
-		const char* connector = is_last ? "\xc0\xc4\xc4" : "\xc3\xc4\xc4"; // └── or ├──
+		const char* connector = is_last ? "\xc0\xc4\xc4" : "\xc3\xc4\xc4";  // └── or ├──
 		printf_color(PRINT_COLOR_LIGHT_GREY, PRINT_DEFAULT_BG, "%s", connector);
 		printf_serial("%s", connector);
 
-		printf_color(PRINT_COLOR_WHITE, PRINT_DEFAULT_BG, "%s ", name);
+		printf_color(name_color, PRINT_DEFAULT_BG, "%s ", name);
 		printf_serial("%s ", name);
 
-		printf_color(PRINT_COLOR_LIGHT_GREY, PRINT_DEFAULT_BG, "(0x%llx)\n", (uint64_t) dev->interfaces);
+		printf_color(PRINT_COLOR_DARK_GREY, PRINT_DEFAULT_BG, "(0x%llx)\n", (uint64_t) dev->interfaces);
 		printf_serial("(0x%llx)\r\n", (uint64_t) dev->interfaces);
 	}
 
@@ -281,26 +299,29 @@ void print_device_tree_recursive(wallos_device_t* dev, int depth, const char* pr
 	}
 	child_prefix[prefix_len + 3] = '\0';
 
+	if (max_depth != -1 && depth >= max_depth) {
+		kfree(child_prefix);
+		return;
+	}
+
 	// Walk children — we need to know which one is last, so peek ahead
 	wallos_device_t* child = dev->first_child;
 	while (child) {
 		bool child_is_last = (child->next_sibling == NULL);
-		print_device_tree_recursive(child, depth + 1, child_prefix, child_is_last);
+		print_device_tree_recursive(child, depth + 1, child_prefix, child_is_last, max_depth);
 		child = child->next_sibling;
 	}
-
 	kfree(child_prefix);
 }
 
-void print_device_tree(wallos_device_t* dev) {
+void print_device_tree(wallos_device_t* dev, int max_depth) {
 	if (dev) {
-		print_device_tree_recursive(dev, 0, "", false);
+		print_device_tree_recursive(dev, 0, "", false, max_depth);
 		return;
 	}
-
 	for (device_node_t* node = device_registry; node; node = node->next) {
 		if (!node->dev->parent) {
-			print_device_tree_recursive(node->dev, 0, "", false);
+			print_device_tree_recursive(node->dev, 0, "", false, max_depth);
 		}
 	}
 }
@@ -333,11 +354,11 @@ int device_cmd(int argc, char** argv) {
 	if (argc < 2) {
 		printf_color(PRINT_COLOR_LIGHT_CYAN, PRINT_DEFAULT_BG, "Device commands:\n");
 		printf_color(PRINT_COLOR_WHITE, PRINT_DEFAULT_BG,
-			"  dev list           - List registered devices and their paths\n"
-			"  dev tree           - Display the full device hierarchy\n"
-			"  dev path <name>    - Print the cached path of a specific device\n"
-			"  dev info <name>    - Show detailed identity and topology info\n"
-			"  dev refresh <name> - Force recalculate path for a device and its children\n"
+			"  dev list [name]        - List registered devices (paths)\n"
+			"  dev tree [name] [-d n] - Display the full device hierarchy\n"
+			"  dev path <name>        - Get the path of a specific device\n"
+			"  dev info <name>        - Show identity and topology info\n"
+			"  dev refresh <name>     - Recalculate path for a device\n"
 		);
 
 		printf_serial("[DEVMGR] usage requested\r\n");
@@ -352,17 +373,26 @@ int device_cmd(int argc, char** argv) {
 	if (strcmp(cmd, "list") == 0) {
 		printf_color(PRINT_COLOR_LIGHT_CYAN, PRINT_DEFAULT_BG, "Registered devices:\n");
 
-		for (device_node_t* node = device_registry; node; node = node->next) {
-			wallos_device_t* dev = node->dev;
-
-			// No more kalloc/kfree here! Just use the cached dev->path
-			const char* display_path = dev->path ? dev->path : "<no path>";
-
+		if (argc >= 3) {
+			wallos_device_t* root = resolve_device(argv[2]);
+			if (!root) {
+				printf_color(PRINT_COLOR_LIGHT_RED, PRINT_DEFAULT_BG, "[error] device '%s' not found\n", argv[2]);
+				return -1;
+			}
+			// Print the root itself, then all descendants
+			const char* display_path = root->path ? root->path : "<no path>";
 			printf_color(PRINT_COLOR_LIGHT_GREEN, PRINT_DEFAULT_BG, "%s ", display_path);
-			printf_color(PRINT_COLOR_LIGHT_GREY, PRINT_DEFAULT_BG, "(0x%llx)\n", (uint64_t) dev->interfaces);
-
-			printf_serial("[DEVMGR] %s vid:did=%04x:%04x dev=%p\r\n",
-				display_path, dev->vendor_id, dev->device_id, dev);
+			printf_color(PRINT_COLOR_LIGHT_GREY, PRINT_DEFAULT_BG, "(0x%llx)\n", (uint64_t) root->interfaces);
+			print_device_list_recursive(root);
+		} else {
+			for (device_node_t* node = device_registry; node; node = node->next) {
+				wallos_device_t* dev = node->dev;
+				const char* display_path = dev->path ? dev->path : "<no path>";
+				printf_color(PRINT_COLOR_LIGHT_GREEN, PRINT_DEFAULT_BG, "%s ", display_path);
+				printf_color(PRINT_COLOR_LIGHT_GREY, PRINT_DEFAULT_BG, "(0x%llx)\n", (uint64_t) dev->interfaces);
+				printf_serial("[DEVMGR] %s vid:did=%04x:%04x dev=%p\r\n",
+					display_path, dev->vendor_id, dev->device_id, dev);
+			}
 		}
 		return 0;
 	}
@@ -372,8 +402,24 @@ int device_cmd(int argc, char** argv) {
 	// ------------------------------------------------------------------------
 	if (strcmp(cmd, "tree") == 0) {
 		printf_color(PRINT_COLOR_LIGHT_CYAN, PRINT_DEFAULT_BG, "Device tree:\n");
-		print_device_tree(NULL);
-		printf_serial("[DEVMGR] full tree dump requested\r\n");
+
+		wallos_device_t* root = NULL;
+		int max_depth = -1; // -1 = unlimited
+
+		for (int i = 2; i < argc; i++) {
+			if ((strcmp(argv[i], "--depth") == 0 || strcmp(argv[i], "-d") == 0) && i + 1 < argc) {
+				max_depth = (int) strtol(argv[++i], NULL, 10);
+			} else {
+				root = resolve_device(argv[i]);
+				if (!root) {
+					printf_color(PRINT_COLOR_LIGHT_RED, PRINT_DEFAULT_BG, "[error] device '%s' not found\n", argv[i]);
+					return -1;
+				}
+			}
+		}
+
+		print_device_tree(root, max_depth);
+		printf_serial("[DEVMGR] tree dump root=%p max_depth=%d\r\n", root, max_depth);
 		return 0;
 	}
 
@@ -417,7 +463,6 @@ int device_cmd(int argc, char** argv) {
 		printf_color(PRINT_COLOR_LIGHT_CYAN, PRINT_DEFAULT_BG, "Device info:\n");
 		printf_color(PRINT_COLOR_YELLOW, PRINT_DEFAULT_BG, "  Name: %s\n", dev_name);
 		printf_color(PRINT_COLOR_WHITE, PRINT_DEFAULT_BG, "  ID: %04x:%04x\n", dev->vendor_id, dev->device_id);
-		printf_color(PRINT_COLOR_LIGHT_GREY, PRINT_DEFAULT_BG, "  Interfaces: 0x%llx\n", (uint64_t) dev->interfaces);
 
 		print_device_flags(dev->interfaces);
 
