@@ -7,6 +7,7 @@
 #define LONG_MIN (~LONG_MAX)
 
 long strtol(const char* restrict nptr, char** restrict endptr, int base) {
+	if (nptr == NULL) return 0;
 	const char* p = nptr, * endp;
 	bool is_neg = 0, overflow = 0;
 	/* Need unsigned so (-LONG_MIN) can fit in these: */
@@ -78,6 +79,7 @@ long strtol(const char* restrict nptr, char** restrict endptr, int base) {
 #define LLONG_MAX ((long long)(~0ULL>>1))
 #define LLONG_MIN (~LLONG_MAX)
 long long strtoll(const char* restrict nptr, char** restrict endptr, int base) {
+	if (nptr == NULL) return 0;
 	const char* p = nptr, * endp;
 	bool is_neg = 0, overflow = 0;
 	/* Need unsigned so (-LLONG_MIN) can fit in these: */
@@ -146,6 +148,7 @@ long long strtoll(const char* restrict nptr, char** restrict endptr, int base) {
 
 #define ULLONG_MAX (~0ULL)
 unsigned long long strtoull(const char* restrict nptr, char** restrict endptr, int base) {
+	if (nptr == NULL) return 0;
 	const char* p = nptr, * endp;
 	bool overflow = 0;
 	unsigned long long n = 0ULL, cutoff;

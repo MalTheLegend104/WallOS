@@ -18,6 +18,7 @@
 }*/
 
 char* strcat(char* dest, const char* src) {
+	if (dest == NULL || src == NULL) return dest;
 	char* rdest = dest;
 	while (*dest)
 		dest++;

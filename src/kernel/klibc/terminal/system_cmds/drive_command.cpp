@@ -65,6 +65,124 @@ static uint8_t parse_ls_flags_string(const char* flag_str) {
 	return flags;
 }
 
+// ------------------------------------------------------------------------------------------------
+// Drive mkdir Command Implementation
+// ------------------------------------------------------------------------------------------------
+
+int drive_mkdir_cmd(int argc, char** argv) {
+	if (argc < 2) {
+		printf("Usage: drive mkdir <path>\n");
+		printf("Example: drive mkdir 0:/NEWDIR\n");
+		return 0;
+	}
+
+	const char* path = argv[1];
+	FRESULT res = f_mkdir(path);
+
+	if (res == FR_OK) {
+		printf("Directory created: %s\n", path);
+	} else if (res == FR_EXIST) {
+		printf("Error: '%s' already exists.\n", path);
+	} else {
+		printf("Error creating directory. FatFs code: %d\n", res);
+	}
+
+	return 0;
+}
+
+// ------------------------------------------------------------------------------------------------
+// Drive touch Command Implementation
+// ------------------------------------------------------------------------------------------------
+
+int drive_touch_cmd(int argc, char** argv) {
+	if (argc < 2) {
+		printf("Usage: drive touch <path>\n");
+		printf("Example: drive touch 0:/HELLO.TXT\n");
+		return 0;
+	}
+
+	const char* path = argv[1];
+	FIL fil;
+
+	// FA_OPEN_ALWAYS: opens if exists, creates if not. FA_WRITE needed to open writable.
+	FRESULT res = f_open(&fil, path, FA_WRITE | FA_OPEN_ALWAYS);
+
+	if (res == FR_OK) {
+		f_close(&fil);
+		printf("Touched: %s\n", path);
+	} else {
+		printf("Error touching file. FatFs code: %d\n", res);
+	}
+
+	return 0;
+}
+
+// ------------------------------------------------------------------------------------------------
+// Drive write Command Implementation
+// ------------------------------------------------------------------------------------------------
+// Usage:
+//   drive write <path> <text...>     -- Overwrites the file with the given text
+//   drive write -a <path> <text...>  -- Appends to the file instead
+
+int drive_write_cmd(int argc, char** argv) {
+	if (argc < 3) {
+		printf("Usage: drive write [-a] <path> <text...>\n");
+		printf("Example: drive write 0:/NOTE.TXT Hello world\n");
+		printf("Example: drive write -a 0:/NOTE.TXT More text\n");
+		return 0;
+	}
+
+	bool append = false;
+	int path_idx = 1;
+
+	if (strcmp(argv[1], "-a") == 0) {
+		if (argc < 4) {
+			printf("Error: Not enough arguments for append mode.\n");
+			return 0;
+		}
+		append = true;
+		path_idx = 2;
+	}
+
+	const char* path = argv[path_idx];
+	int text_start = path_idx + 1;
+
+	FIL fil;
+	FRESULT res;
+	BYTE mode = FA_WRITE | (append ? FA_OPEN_APPEND : FA_CREATE_ALWAYS);
+
+	res = f_open(&fil, path, mode);
+	if (res != FR_OK) {
+		printf("Error opening file for writing. FatFs code: %d\n", res);
+		return 0;
+	}
+
+	// Write each remaining argv token separated by spaces
+	UINT bw;
+	for (int i = text_start; i < argc; i++) {
+		if (i > text_start) {
+			f_write(&fil, " ", 1, &bw);
+		}
+
+		const char* word = argv[i];
+		res = f_write(&fil, word, strlen(word), &bw);
+
+		if (res != FR_OK) {
+			printf("Write error at argument %d. FatFs code: %d\n", i, res);
+			f_close(&fil);
+			return 0;
+		}
+	}
+
+	// Newline at end of written content
+	f_write(&fil, "\n", 1, &bw);
+	f_sync(&fil);
+	f_close(&fil);
+
+	printf("%s to: %s\n", append ? "Appended" : "Written", path);
+	return 0;
+}
+
 int drive_ls_cmd(int argc, char** argv) {
 	uint8_t flags = LS_FLAG_NONE;
 	const char* path = NULL;
@@ -482,7 +600,7 @@ int drive_cat_cmd(int argc, char** argv) {
 int drive_command(int argc, char** argv) {
 	if (argc < 2 || (argc > 1 && strcmp(argv[1], "help") == 0)) {
 		printf("I'm too lazy to add the help menu to this right now.\n");
-		printf("Usage: drive <info|test|mount|unmount|cat>\n");
+		printf("Usage: drive <info|test|mount|unmount|cat|ls|tree|mkdir|touch|write>\n");
 		return 0;
 	}
 
@@ -515,6 +633,18 @@ int drive_command(int argc, char** argv) {
 
 	else if (strcmp(sub_argv[0], "tree") == 0) {
 		return drive_tree_cmd(sub_argc, sub_argv);
+	}
+
+	else if (strcmp(sub_argv[0], "mkdir") == 0) {
+		return drive_mkdir_cmd(sub_argc, sub_argv);
+	}
+
+	else if (strcmp(sub_argv[0], "touch") == 0) {
+		return drive_touch_cmd(sub_argc, sub_argv);
+	}
+
+	else if (strcmp(sub_argv[0], "write") == 0) {
+		return drive_write_cmd(sub_argc, sub_argv);
 	}
 
 	// Error for unrecognized sub-command
