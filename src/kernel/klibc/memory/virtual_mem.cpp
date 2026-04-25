@@ -650,6 +650,39 @@ void Memory::FreeUserPage(uintptr_t addr) {
 
 }
 
+uintptr_t virt_to_phys(uintptr_t addr) {
+	int pml4_index = GET_PML4_INDEX(addr);
+	int pdp_index = GET_PDPT_INDEX(addr);
+	int pde_index = GET_PAGE_DIR_INDEX(addr);
+	int pte_index = GET_PAGE_TABLE_INDEX(addr);
+
+	uint64_t* pdp_t = (uint64_t*) getFrame(pml4[pml4_index]);
+
+	// 1GB page
+	if (pdp_t[pdp_index] & (1ULL << POS_SIZE)) {
+		uintptr_t base = (uintptr_t) getFrame(pdp_t[pdp_index]);
+		uintptr_t offset = addr & ((1ULL << 30) - 1); // lower 30 bits
+		return base + offset;
+	}
+
+	uint64_t* pde_t = (uint64_t*) getFrame(pdp_t[pdp_index]);
+
+	// 2MB page
+	if (pde_t[pde_index] & (1ULL << POS_SIZE)) {
+		uintptr_t base = (uintptr_t) getFrame(pde_t[pde_index]);
+		uintptr_t offset = addr & ((1ULL << 21) - 1); // lower 21 bits
+		return base + offset;
+	}
+
+	uint64_t* pte_t = (uint64_t*) getFrame(pde_t[pde_index]);
+
+	// 4KB page
+	uintptr_t base = (uintptr_t) getFrame(pte_t[pte_index]);
+	uintptr_t offset = addr & 0xFFF; // lower 12 bits
+
+	return base + offset;
+}
+
 /* ============================================================
  * virt_mem_cli  —  interactive VMM debug interface
  * Add this block to the bottom of virtual_mem.cpp (or a new

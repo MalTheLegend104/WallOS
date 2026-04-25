@@ -2,6 +2,7 @@
 #define WALLOS_DEVICE_MANAGER_H
 
 #include <stdint.h>
+#include <stddef.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -169,6 +170,8 @@ extern "C" {
 // Device Descriptor
 // ------------------------------------------------------------------------------------------------
 // ------------------------------------------------------------------------------------------------
+	// Forward declare needed for the device struct to be able to track it's bound driver.
+	typedef struct wallos_driver wallos_driver_t;
 
 	typedef struct wallos_device {
 		device_interface_flags_t interfaces;
@@ -214,6 +217,7 @@ extern "C" {
 		} location;
 
 		void* driver_data; // Opaque pointer for the bound driver's private state
+		wallos_driver_t* bound_driver;
 	} wallos_device_t;
 
 // Traverse all direct children of a device
@@ -257,10 +261,6 @@ extern "C" {
 	 */
 	// void print_device_tree(wallos_device_t* dev);
 
-
-
-
-
 	wallos_device_t* find_device_by_name(const char* name);
 	wallos_device_t* find_device_by_path(const char* path);
 	wallos_device_t* resolve_device(const char* input);
@@ -269,6 +269,25 @@ extern "C" {
 	static const char* dev_aliases[] = { "dev" };
 	int device_cmd(int argc, char** argv);
 
+
+	/**
+	 * @brief Used internally by the device manager system to track all devices in a linked list.
+	 * This is meant to only be used internally, with a few other subsystems needing to touch the device registry.
+	 * If you're using this, be ABSOLUTELY sure it's the correct way to do it.
+	 */
+	typedef struct device_node {
+		wallos_device_t* dev;
+		struct device_node* next;
+	} device_node_t;
+
+	/**
+	 * @brief Get the internal device registry.
+	 * This should be used VERY carefully. There almost always a better way to access devices than this.
+	 * This should only be used when *every* device needs to be iterated over.
+	 *
+	 * @return device_node_t* Root node of the device registry.
+	 */
+	device_node_t* internal_get_dev_registry();
 #ifdef __cplusplus
 }
 #endif

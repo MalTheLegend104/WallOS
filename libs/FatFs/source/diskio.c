@@ -26,22 +26,25 @@ drive_info_t _initrd_drive = {
 	.atapi = false
 };
 
-// Helper to get drive info pointer based on pdrv
-static drive_info_t* get_drive_info_ptr(BYTE pdrv) {
-	switch (pdrv) {
-		case 0: return &_initrd_drive;
-		case 1: return &drive_zero;
-		case 2: return &drive_one;
-		case 3: return &drive_two;
-		case 4: return &drive_three;
-		default: return NULL;
-	}
+static drive_info_t* disk_map[] = {
+	&_initrd_drive, // pdrv 0
+	&drive_zero,    // pdrv 1
+	&drive_one,     // pdrv 2
+	&drive_two,     // pdrv 3
+	&drive_three    // pdrv 4
+};
+
+#define NUM_DRIVES (sizeof(disk_map) / sizeof(disk_map[0]))
+
+drive_info_t* get_drive_info_ptr(BYTE pdrv) {
+	if (pdrv >= NUM_DRIVES) return NULL;
+	return disk_map[pdrv];
 }
 
 DSTATUS disk_status(BYTE pdrv) {
 	drive_info_t* drive = get_drive_info_ptr(pdrv);
 
-	if (!drive) return STA_NOINIT;       // Invalid drive number
+	if (!drive) return STA_NOINIT;         // Invalid drive number
 	if (!drive->exists) return STA_NODISK; // Drive not connected
 
 	return 0;
@@ -54,7 +57,7 @@ DSTATUS disk_initialize(BYTE pdrv) {
 
 	// If not detected yet, try one last identification
 	if (!drive->exists) {
-		drive->exists = identify(pdrv);
+		drive->exists = identify(drive->hardware_id);
 	}
 
 	return drive->exists ? 0 : STA_NODISK;
@@ -64,45 +67,35 @@ DRESULT disk_read(BYTE pdrv, BYTE* buff, LBA_t sector, UINT count) {
 	drive_info_t* drive = get_drive_info_ptr(pdrv);
 	if (!drive || !drive->exists) return RES_NOTRDY;
 
-	if (pdrv == 0) {
-		// --- RamFS Read (Drive 0) ---
-		if (!_initrd_drive.exists) return RES_NOTRDY;
-
-		LBA_t offset = sector * FF_MIN_SS; // FF_MIN_SS is 512 bytes
-		size_t bytes_to_read = count * FF_MIN_SS;
-
-		if ((offset + bytes_to_read) > _initrd_size) {
-			return RES_PARERR; // Read beyond end of RAM buffer
-		}
-
-		// Copy data from the RAM buffer to the FatFs buffer
-		memcpy(buff, &_initrd_data[offset], bytes_to_read);
-
+	// Handle RamFS
+	if (drive == &_initrd_drive) {
+		LBA_t offset = sector * 512;
+		size_t bytes = count * 512;
+		if ((offset + bytes) > _initrd_size) return RES_PARERR;
+		memcpy(buff, &_initrd_data[offset], bytes);
 		return RES_OK;
 	}
+
 
 	// FatFs might request more sectors than PIO can handle in one go (255 limit on uint8_t).
 	// The driver takes uint8_t for sector_count.
 	// We must loop if count > 255.
 	// This would be easy to fix, but I don't really feel like it and this will all have to be rewritten for an actual SATA driver later on anyway.
 
+	// We handle SATA PIO via hardware_id
 	UINT remaining = count;
 	LBA_t current_lba = sector;
 	BYTE* current_buff = buff;
 
 	while (remaining > 0) {
 		uint8_t chunk = (remaining > 255) ? 255 : (uint8_t) remaining;
-
-		// Call your driver
-		if (!sata_pio_read28(pdrv, (uint32_t) current_lba, chunk, current_buff)) {
+		if (!sata_pio_read28(drive->hardware_id, (uint32_t) current_lba, chunk, current_buff)) {
 			return RES_ERROR;
 		}
-
 		remaining -= chunk;
 		current_lba += chunk;
-		current_buff += (chunk * 512); // Advance buffer by 512 bytes per sector
+		current_buff += (chunk * 512);
 	}
-
 	return RES_OK;
 }
 
@@ -111,7 +104,7 @@ DRESULT disk_write(BYTE pdrv, const BYTE* buff, LBA_t sector, UINT count) {
 	if (!drive || !drive->exists) return RES_NOTRDY;
 
 	if (pdrv == 0) {
-		// --- RamFS Write (Drive 0) ---
+		// RamFS Write (Drive 0)
 		if (!_initrd_drive.exists) return RES_NOTRDY;
 
 		LBA_t offset = sector * FF_MIN_SS;
@@ -134,7 +127,7 @@ DRESULT disk_write(BYTE pdrv, const BYTE* buff, LBA_t sector, UINT count) {
 	while (remaining > 0) {
 		uint8_t chunk = (remaining > 255) ? 255 : (uint8_t) remaining;
 
-		if (!sata_pio_write28(pdrv, (uint32_t) current_lba, chunk, current_buff)) {
+		if (!sata_pio_write28(drive->hardware_id, (uint32_t) current_lba, chunk, current_buff)) {
 			return RES_ERROR;
 		}
 
@@ -180,3 +173,8 @@ DRESULT disk_ioctl(BYTE pdrv, BYTE cmd, void* buff) {
 DWORD get_fattime(void) {
 	return get_system_msdos_time();
 }
+
+/* These are needed for exFAT and LFN */
+#include <memory/kernel_alloc.h>
+void* ff_memalloc(UINT msize) { return kalloc((size_t) msize); }
+void ff_memfree(void* mblock) { kfree(mblock); }

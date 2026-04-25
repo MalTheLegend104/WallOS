@@ -13,13 +13,30 @@ extern "C" {
 
 	void pci_discover();
 
-
-
 	typedef struct {
 		uint8_t base_class;
 		uint8_t sub_class; /* 0xFF indicates the base class name itself */
 		const char* short_name;
 	} pci_class_short_t;
+
+	// Config space reads
+	uint32_t pci_config_read32(uint8_t bus, uint8_t slot, uint8_t func, uint8_t offset);
+	uint16_t pci_config_read16(uint8_t bus, uint8_t slot, uint8_t func, uint8_t offset);
+	uint8_t  pci_config_read8(uint8_t bus, uint8_t slot, uint8_t func, uint8_t offset);
+
+	// Config space writes
+	void pci_config_write32(uint8_t bus, uint8_t slot, uint8_t func, uint8_t offset, uint32_t value);
+	void pci_config_write16(uint8_t bus, uint8_t slot, uint8_t func, uint8_t offset, uint16_t value);
+	void pci_config_write8(uint8_t bus, uint8_t slot, uint8_t func, uint8_t offset, uint8_t  value);
+
+	// BAR helpers
+	uintptr_t pci_read_bar(uint8_t bus, uint8_t slot, uint8_t func, uint8_t bar_index, int* is_io_out, int* is_64_out);
+	size_t    pci_bar_size(uint8_t bus, uint8_t slot, uint8_t func, uint8_t bar_index);
+
+	// Command register helpers
+	void pci_set_bus_master(uint8_t bus, uint8_t slot, uint8_t func, int enable);
+	void pci_set_mem_space(uint8_t bus, uint8_t slot, uint8_t func, int enable);
+	void pci_set_io_space(uint8_t bus, uint8_t slot, uint8_t func, int enable);
 
 
 	// ------------------------------------------------------------------------------------------------

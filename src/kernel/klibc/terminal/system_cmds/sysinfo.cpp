@@ -120,7 +120,7 @@ int sysinfo(int argc, char** argv) {
 	// print_logo();
 	printf("\n");
 
-	printValue("OS: ", "%s\n", WALLOS_VERSION);
+	printValue("OS: ", "%s\n", WALLOS_VERSION_STR);
 	printUptime();
 	printValue("Packages: ", "No package manager yet.\n");
 	printValue("Shell: ", "%s\n", WALLOS_SHELL_VERSION);
@@ -138,7 +138,7 @@ int sysinfo(int argc, char** argv) {
  */
 void sysinfo_boot() {
 	printValue("General System Info:\n", "");
-	printValue("OS:     ", "%s\n", WALLOS_VERSION);
+	printValue("OS:     ", "%s\n", WALLOS_VERSION_STR);
 	printValue("Shell:  ", "%s\n", WALLOS_SHELL_VERSION);
 	printValue("GUI:    ", "Default (VGA Text Mode)\n");
 	printValue("CPU:    ", "%s\n", Features::getCPUName());

@@ -5,6 +5,17 @@
  */
 #pragma once
 
+// ------------------------------------------------------------------------------------------------
+// Versioning
+// ------------------------------------------------------------------------------------------------
+#include "wallos_version.h"
+
+// ------------------------------------------------------------------------------------------------
+// ------------------------------------------------------------------------------------------------
+// ACPI
+// ------------------------------------------------------------------------------------------------
+// ------------------------------------------------------------------------------------------------
+
 /* ACPI Modules.
  *
  * I intend on supporting both ACPICA (for correctness), and uACPI (for ease of development).
@@ -19,11 +30,11 @@
 #define WALLOS_USE_ACPICA 1
 // #define WALLOS_USE_UACPI 1
 
-#if !defined(WALLOS_USE_ACPICA) && !defined(WALLOS_USE_UACPI)
-#error "Must have one ACPI subsystem enabled."
-#elif defined(WALLOS_USE_ACPICA) && defined(WALLOS_USE_UACPI)
-#error "Must have only one ACPI subsystem enabled, not both."
-#endif
+// ------------------------------------------------------------------------------------------------
+// ------------------------------------------------------------------------------------------------
+// Scheduling/CPU related
+// ------------------------------------------------------------------------------------------------
+// ------------------------------------------------------------------------------------------------
 
 // Defines the amount of IOAPIC we allow.
 // This is defined statically for simplicity.
@@ -41,3 +52,18 @@
 // For initial setup before the scheduler is implemented, we use this in ways it shouldn't be used.
 // If this comment is still here, know that scheduler_cpu.c relies on this in a bad way.
 #define WALLOS_SYSTEM_MAX_CPU 64
+
+
+// ------------------------------------------------------------------------------------------------
+// ------------------------------------------------------------------------------------------------
+// Error Checking
+// Checks for critical config items to make sure they are defined to sensible values
+// ------------------------------------------------------------------------------------------------
+// ------------------------------------------------------------------------------------------------
+/* 1 and only 1 ACPI subsystem should ever be present. */
+#if !defined(WALLOS_USE_ACPICA) && !defined(WALLOS_USE_UACPI)
+#error "Must have one ACPI subsystem enabled."
+#elif defined(WALLOS_USE_ACPICA) && defined(WALLOS_USE_UACPI)
+#error "Must have only one ACPI subsystem enabled, not both."
+#endif
+

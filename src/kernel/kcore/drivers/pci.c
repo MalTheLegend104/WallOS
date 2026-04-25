@@ -369,3 +369,182 @@ void pci_discover(void) {
 		scan_bus(NULL, 0, pci_root);
 	}
 }
+
+/**
+ * @brief Finds the MCFG entry covering a given bus, or NULL for legacy fallback.
+ */
+static MCFGEntry* pci_find_mcfg_entry(uint8_t bus) {
+	MCFGTable* mcfg = get_mcfg();
+	if (!mcfg) return NULL;
+
+	for (int i = 0; i < mcfg->entry_count; i++) {
+		MCFGEntry* e = &mcfg->entries[i];
+		if (bus >= e->start_bus && bus <= e->end_bus)
+			return e;
+	}
+	return NULL;
+}
+
+/**
+ * @brief Writes a 32-bit value to PCI configuration space using legacy I/O ports.
+ */
+static void pci_write_legacy(uint8_t bus, uint8_t slot, uint8_t func,
+	uint8_t offset, uint32_t value) {
+	uint32_t address = (uint32_t) ((bus << 16) | (slot << 11) | (func << 8)
+		| (offset & 0xFC) | 0x80000000);
+	outl(0xCF8, address);
+	outl(0xCFC, value);
+}
+
+/**
+ * @brief Writes a 32-bit value to PCI configuration space using ECAM (MCFG).
+ */
+static void pci_write_mcfg(MCFGEntry* entry, uint8_t bus, uint8_t slot,
+	uint8_t func, uint8_t offset, uint32_t value) {
+	uintptr_t phys_addr = (uintptr_t) entry->base_addr
+		+ (((bus - entry->start_bus) << 20)
+		| (slot << 15) | (func << 12) | offset);
+
+	uintptr_t virt_addr = pci_get_or_map_page(phys_addr);
+	*(volatile uint32_t*) virt_addr = value;
+}
+
+uint32_t pci_config_read32(uint8_t bus, uint8_t slot, uint8_t func, uint8_t offset) {
+	MCFGEntry* entry = pci_find_mcfg_entry(bus);
+	return entry ? pci_read_mcfg(entry, bus, slot, func, offset)
+		: pci_read_legacy(bus, slot, func, offset);
+}
+
+uint16_t pci_config_read16(uint8_t bus, uint8_t slot, uint8_t func, uint8_t offset) {
+	uint32_t val = pci_config_read32(bus, slot, func, offset & ~0x3);
+	return (val >> ((offset & 2) * 8)) & 0xFFFF;
+}
+
+uint8_t pci_config_read8(uint8_t bus, uint8_t slot, uint8_t func, uint8_t offset) {
+	uint32_t val = pci_config_read32(bus, slot, func, offset & ~0x3);
+	return (val >> ((offset & 3) * 8)) & 0xFF;
+}
+
+void pci_config_write32(uint8_t bus, uint8_t slot, uint8_t func,
+	uint8_t offset, uint32_t value) {
+	MCFGEntry* entry = pci_find_mcfg_entry(bus);
+	if (entry)
+		pci_write_mcfg(entry, bus, slot, func, offset, value);
+	else
+		pci_write_legacy(bus, slot, func, offset, value);
+}
+
+void pci_config_write16(uint8_t bus, uint8_t slot, uint8_t func,
+	uint8_t offset, uint16_t value) {
+	uint32_t shift = (offset & 2) * 8;
+	uint32_t mask = ~(0xFFFFu << shift);
+	uint32_t old = pci_config_read32(bus, slot, func, offset & ~0x3);
+	pci_config_write32(bus, slot, func, offset & ~0x3,
+		(old & mask) | ((uint32_t) value << shift));
+}
+
+void pci_config_write8(uint8_t bus, uint8_t slot, uint8_t func,
+	uint8_t offset, uint8_t value) {
+	uint32_t shift = (offset & 3) * 8;
+	uint32_t mask = ~(0xFFu << shift);
+	uint32_t old = pci_config_read32(bus, slot, func, offset & ~0x3);
+	pci_config_write32(bus, slot, func, offset & ~0x3,
+		(old & mask) | ((uint32_t) value << shift));
+}
+
+/**
+ * @brief Reads a BAR and returns its base address with the type/IO bits masked off.
+ *        Returns 0 if the BAR is unimplemented.
+ *
+ * @param bar_index  0-5
+ * @param is_io_out  Optional; set to 1 if the BAR is I/O space, 0 if memory.
+ * @param is_64_out  Optional; set to 1 if this is a 64-bit memory BAR.
+ */
+uintptr_t pci_read_bar(uint8_t bus, uint8_t slot, uint8_t func,
+	uint8_t bar_index, int* is_io_out, int* is_64_out) {
+	if (bar_index > 5) return 0;
+
+	uint8_t  offset = 0x10 + bar_index * 4;
+	uint32_t bar = pci_config_read32(bus, slot, func, offset);
+
+	if (bar == 0 || bar == 0xFFFFFFFF) return 0;
+
+	int is_io = bar & 0x1;
+	if (is_io_out) *is_io_out = is_io;
+	if (is_64_out) *is_64_out = 0;
+
+	if (is_io) {
+		return (uintptr_t) (bar & ~0x3u);
+	}
+
+	// Memory BAR: bits [2:1] encode the type
+	int type = (bar >> 1) & 0x3;
+	if (type == 0x2) { // 64-bit BAR
+		if (bar_index > 4) return 0; // no room for the upper half
+
+		uint32_t bar_hi = pci_config_read32(bus, slot, func, offset + 4);
+		if (is_64_out) *is_64_out = 1;
+		return (uintptr_t) ((uint64_t) (bar & ~0xFu) | ((uint64_t) bar_hi << 32));
+	}
+
+	// 32-bit memory BAR
+	return (uintptr_t) (bar & ~0xFu);
+}
+
+/**
+ * @brief Reads the size of a BAR by writing all-ones and reading back.
+ *        Restores the original value afterward.
+ *
+ * @param bar_index  0-5
+ * @return Size in bytes, or 0 if unimplemented.
+ */
+size_t pci_bar_size(uint8_t bus, uint8_t slot, uint8_t func, uint8_t bar_index) {
+	if (bar_index > 5) return 0;
+
+	uint8_t  offset = 0x10 + bar_index * 4;
+	uint32_t original = pci_config_read32(bus, slot, func, offset);
+
+	if (original == 0 || original == 0xFFFFFFFF) return 0;
+
+	pci_config_write32(bus, slot, func, offset, 0xFFFFFFFF);
+	uint32_t readback = pci_config_read32(bus, slot, func, offset);
+	pci_config_write32(bus, slot, func, offset, original); // restore
+
+	// Mask off the type bits and invert
+	// Yes this is ugly, just ignore it
+	uint32_t mask = (original & 0x1) ? ~0x3u : ~0xFu;
+	readback &= mask;
+	if (!readback) return 0;
+
+	return (size_t) (~readback + 1);
+}
+
+/**
+ * @brief Enables or disables Bus Mastering for a device (needed for DMA).
+ */
+void pci_set_bus_master(uint8_t bus, uint8_t slot, uint8_t func, int enable) {
+	uint16_t cmd = pci_config_read16(bus, slot, func, 0x04);
+	if (enable) cmd |= (1 << 2);
+	else cmd &= ~(1 << 2);
+	pci_config_write16(bus, slot, func, 0x04, cmd);
+}
+
+/**
+ * @brief Enables or disables Memory Space access for a device.
+ */
+void pci_set_mem_space(uint8_t bus, uint8_t slot, uint8_t func, int enable) {
+	uint16_t cmd = pci_config_read16(bus, slot, func, 0x04);
+	if (enable) cmd |= (1 << 1);
+	else cmd &= ~(1 << 1);
+	pci_config_write16(bus, slot, func, 0x04, cmd);
+}
+
+/**
+ * @brief Enables or disables I/O Space access for a device.
+ */
+void pci_set_io_space(uint8_t bus, uint8_t slot, uint8_t func, int enable) {
+	uint16_t cmd = pci_config_read16(bus, slot, func, 0x04);
+	if (enable) cmd |= (1 << 0);
+	else cmd &= ~(1 << 0);
+	pci_config_write16(bus, slot, func, 0x04, cmd);
+}

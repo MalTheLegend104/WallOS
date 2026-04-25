@@ -73,6 +73,11 @@ slab_header_t* span_slab_end;
 allocated_span_t* first_span;
 allocated_span_t* last_span;
 
+// We keep a separate list of chunks that are exclusively under the 4GB mark. 
+// This list should be very short, it's basically dedicated to very specific drivers
+slab_header_t* dma32_slab_head = NULL;
+
+
 uint64_t calculatePadding(uint64_t bitlist_size, uint64_t chunksize) {
 	return PAGE_2MB_SIZE - sizeof(slab_header_t) - bitlist_size - (bitlist_size * chunksize * 8);
 }
@@ -162,6 +167,34 @@ void initSlab(uint64_t object_size) {
 	//printSlabInfo(header, base, bls, padding);
 }
 
+#include <memory/physical_mem.hpp>
+
+/**
+ * @brief Initializes a new 2MB slab using 32-bit physical memory
+ */
+slab_header_t* initSlab32(uint64_t object_size) {
+	// Uses your new 32-bit physical allocator
+	uintptr_t phys = Memory::PhysicalAlloc2MB_32bit();
+	if (!phys) return NULL;
+
+	// Map it into the kernel virtual address space
+	// TODO: This needs a new 32 bit friendly version
+	uintptr_t base = Memory::MapSequentialKernelPages(1, phys);
+
+	slab_header_t* header = (slab_header_t*) base;
+	header->object_size = object_size;
+	header->next_slab = NULL;
+
+	uint64_t bls = calculateBitlistSize(object_size);
+	header->chunk_count = bls * 8;
+	memset((uint8_t*) header + sizeof(slab_header_t), 0, bls);
+
+	uint64_t padding = calculatePadding(bls, object_size);
+	header->chunk_base = base + sizeof(slab_header_t) + bls + padding;
+
+	return header;
+}
+
 #include <memory/spinlock.h>
 
 spinlock_t* memlock;
@@ -200,6 +233,11 @@ void initKernelAllocator() {
 
 	initSlab(PAGE_ENTRY);
 	printf("\t%u Byte Header Initialized.\n", PAGE_ENTRY);
+
+	// This is broken, causes an infinite loop
+	// I didn't even try to debug it.
+	// initSlab32(PAGE_ENTRY);
+	// printf("\t32-Bit DMA (%u Bytes) Header Initialized.\n", PAGE_ENTRY);
 
 	createSpanList();
 	printf("\t%u Byte Header Initialized.\n", sizeof(allocated_span_t));
@@ -344,6 +382,18 @@ void removeSpan(allocated_span_t* span) {
 
 void kfree(void* ptr) {
 	spinlock_lock(memlock);
+
+	if ((uintptr_t) ptr <= 0x100000000) {
+		slab_header_t* h = dma32_slab_head;
+		while (h != NULL) {
+			if ((uintptr_t) ptr > (uintptr_t) h && (uintptr_t) ptr < (uintptr_t) h + PAGE_2MB_SIZE) {
+				spinlock_unlock(memlock);
+				return;
+			}
+			h = h->next_slab;
+		}
+	}
+
 	slab_header_t* header = first_slab;
 	while (header != NULL) {
 		// If the addr is after the starting addr of the header and before the end address it's in that slab
@@ -373,75 +423,6 @@ void kfree(void* ptr) {
 }
 
 #include <drivers/serial.h>
-// void* kalloc(size_t bytes) {
-// 	printf("kalloc called: BYTES: 0x%llx", bytes);
-// 	printf_serial("kalloc called: BYTES: 0x%llx", bytes);
-// 	if (bytes > PAGE_2MB_SIZE) {
-// 		// For stupidly large objects, we're just going to allocate consecutive blocks and return the base pointer.
-// 		// This cannot be freed properly. This will be properly handled later.
-// 		// The only object larger than 2MB that we allocate is the framebuffer right now, which is never freed anyway.
-// 		return (void*) Memory::MapSequentialKernelPages(((int) (bytes / PAGE_2MB_SIZE)) + 1);
-// 	}
-
-// 	size_t object_size = 2;
-// 	if (bytes % 8 == 0) object_size = 8;
-// 	else if (bytes % 4 == 0) object_size = 4;
-// 	else if (bytes % 2 != 0) bytes++;
-// 	size_t amount_of_objects = bytes / object_size;
-
-// 	slab_header_t* header = first_slab;
-// 	size_t chunk_number = 0;
-// 	while (header != NULL) {
-// 		if (header->object_size != object_size) {
-// 			header = header->next_slab;
-// 			continue;
-// 		}
-
-// 		size_t consecutive_chunks = 0;
-// 		chunk_number = 0;
-// 		for (size_t i = 0; i < header->chunk_count / 8; i++) {
-// 			if (consecutive_chunks == 0) chunk_number = i * 8;
-// 			for (int j = 1; j <= 8; j++) {
-// 				if (!GET_BIT(BITLIST_BASE(header)[i], j)) {
-// 					if (consecutive_chunks == 0) chunk_number = (i * 8) + j;
-
-// 					consecutive_chunks++;
-
-// 					if (consecutive_chunks == amount_of_objects) {
-// 						for (size_t k = 0; k < amount_of_objects; k++) {
-// 							setChunkUsed(header, chunk_number + k);
-// 						}
-// 						// printf("i: %llu -> j: %llu\nchunk#: %llu\n", i, j, chunk_number);
-// 						// printf("Header: 0x%llx -> bitlist_base: 0x%llx\n", header, BITLIST_BASE(header));
-// 						// printf("chunk count: %llu -> object_size: %llu\n", header->chunk_count, header->object_size);
-// 						// printf("chunk base: 0x%llx\n\n", header->chunk_base);
-// 						goto finish;
-// 					}
-// 				} else {
-// 					consecutive_chunks = 0;
-// 				}
-// 			}
-// 		}
-// 		header = header->next_slab;
-// 	}
-
-// finish:
-// 	printf("header: 0x%llx\r\n", header);
-// 	printf_serial("header: 0x%llx\r\n", header);
-// 	if (header == NULL) {
-// 		initSlab(object_size);
-// 		printf("recursion");
-// 		printf_serial("recursion");
-// 		return kalloc(bytes);
-// 	} else {
-// 		//printf("chunk #: %llu\n", (chunk_number - 1));
-// 		uintptr_t ptr = (header->chunk_base + ((chunk_number - 1) * object_size));
-// 		if (amount_of_objects > 1)
-// 			addSpan(ptr, amount_of_objects);
-// 		return (void*) ptr;
-// 	}
-// }
-
 void* kalloc(size_t bytes) {
 	spinlock_lock(memlock);
 
@@ -516,6 +497,54 @@ void* kalloc(size_t bytes) {
 
 	spinlock_unlock(memlock);
 	return kalloc(bytes);
+}
+
+/**
+ * @brief Allocates a 4096-byte chunk guaranteed to be below 4GB physical.
+ */
+void* kalloc_32bit_4k() {
+	spinlock_lock(memlock);
+
+	slab_header_t* header = dma32_slab_head;
+	const size_t object_size = 4096;
+
+	while (header != NULL) {
+		// We only store 4096-byte chunks in this list, but safety first
+		if (header->object_size == object_size) {
+			for (size_t chunk = 1; chunk <= header->chunk_count; chunk++) {
+				size_t byte_idx = (chunk - 1) / 8;
+				size_t bit_idx = ((chunk - 1) % 8) + 1;
+
+				if (!GET_BIT(BITLIST_BASE(header)[byte_idx], bit_idx)) {
+					setChunkUsed(header, chunk);
+					uintptr_t ptr = header->chunk_base + ((chunk - 1) * object_size);
+
+					spinlock_unlock(memlock);
+					return (void*) ptr;
+				}
+			}
+		}
+		header = header->next_slab;
+	}
+
+	// If we reach here, we need a new 32-bit slab
+	printf_serial("[KALLOC32] Allocating new 32-bit DMA slab (4KB objects)\r\n");
+	slab_header_t* new_slab = initSlab32(object_size);
+
+	if (!new_slab) {
+		printf_serial("[KALLOC32] FATAL: Out of 32-bit physical memory!\r\n");
+		spinlock_unlock(memlock);
+		return NULL;
+	}
+
+	// Add to the 32-bit specific list
+	new_slab->next_slab = dma32_slab_head;
+	dma32_slab_head = new_slab;
+
+	spinlock_unlock(memlock);
+
+	// Recurse once to grab the first chunk from the new slab
+	return kalloc_32bit_4k();
 }
 
 #pragma GCC pop_options

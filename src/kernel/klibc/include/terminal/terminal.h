@@ -1,9 +1,7 @@
 #ifndef TERMINAL_H
 #define TERMINAL_H
 
-// For lack of a better spot to put this, the OS version is going to be defined here
-// TODO, put this somewhere else in the kernel. It has to be in klibc because it gets linked before kcore
-#define WALLOS_VERSION "WallOS v0.1"
+// TODO: This should be changed whenever we actually add real WallShell to this
 #define WALLOS_SHELL_VERSION "WallShell v1.0"
 
 #include <stdint.h>

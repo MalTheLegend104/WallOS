@@ -14,12 +14,12 @@
 
 // Simple singly-linked list of all registered devices.
 // The device manager owns this list; subsystems hold pointers into it.
-typedef struct device_node {
-	wallos_device_t* dev;
-	struct device_node* next;
-} device_node_t;
 
 static device_node_t* device_registry = NULL;
+
+device_node_t* internal_get_dev_registry() {
+	return device_registry;
+}
 
 // ------------------------------------------------------------------------------------------------
 // ------------------------------------------------------------------------------------------------

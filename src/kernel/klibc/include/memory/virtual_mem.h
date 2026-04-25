@@ -125,6 +125,7 @@ extern "C" {
 	 */
 	uintptr_t mapSequentialKernelPagesWithFlags(size_t pages, uintptr_t phys_base_addr, uint64_t flags);
 
+	uintptr_t virt_to_phys(uintptr_t addr);
 #ifdef __cplusplus
 }
 #endif // __cplusplus

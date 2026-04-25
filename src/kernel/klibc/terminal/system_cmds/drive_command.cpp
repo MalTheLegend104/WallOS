@@ -436,6 +436,43 @@ void construct_drive_path(int pdrv, char* path_buffer) {
 	path_buffer[2] = '\0';
 }
 
+// int drive_mount_cmd(int argc, char** argv) {
+// 	if (argc < 2) {
+// 		printf("Usage: drive mount <drive_number>\n");
+// 		return 0;
+// 	}
+
+// 	int pdrv = argv[1][0] - '0';
+// 	if (pdrv < 0 || pdrv >= FF_VOLUMES) {
+// 		printf("Invalid drive number (0-%d).\n", FF_VOLUMES - 1);
+// 		return 0;
+// 	}
+
+// 	if (drive_mounted[pdrv]) {
+// 		printf("Drive %d is already mounted.\n", pdrv);
+// 		return 0;
+// 	}
+
+// 	// --- REPLACEMENT FOR SPRINTF ---
+// 	char path[3]; // Needs 3 bytes: 'D', ':', '\0'
+// 	construct_drive_path(pdrv, path);
+// 	// --------------------------------
+
+// 	printf("Attempting to mount Drive %d...\n", pdrv);
+
+// 	FRESULT res = f_mount(&fs_objects[pdrv], path, 1);
+
+// 	if (res == FR_OK) {
+// 		drive_mounted[pdrv] = true;
+// 		printf("Drive %d mounted successfully.\n", pdrv);
+// 	} else {
+// 		printf("Failed to mount Drive %d. FatFs error: %d\n", pdrv, res);
+// 		printf("(Check if 'drive info %d' shows it's present.)\n", pdrv);
+// 	}
+
+// 	return 0;
+// }
+
 int drive_mount_cmd(int argc, char** argv) {
 	if (argc < 2) {
 		printf("Usage: drive mount <drive_number>\n");
@@ -453,13 +490,13 @@ int drive_mount_cmd(int argc, char** argv) {
 		return 0;
 	}
 
-	// --- REPLACEMENT FOR SPRINTF ---
-	char path[3]; // Needs 3 bytes: 'D', ':', '\0'
-	construct_drive_path(pdrv, path);
-	// --------------------------------
+	char path[3];
+	construct_drive_path(pdrv, path); // Creates "0:", "1:", etc.
 
 	printf("Attempting to mount Drive %d...\n", pdrv);
 
+	// Use pdrv directly as the index for fs_objects
+	// This matches the mapping in disk_map[]
 	FRESULT res = f_mount(&fs_objects[pdrv], path, 1);
 
 	if (res == FR_OK) {
@@ -467,7 +504,6 @@ int drive_mount_cmd(int argc, char** argv) {
 		printf("Drive %d mounted successfully.\n", pdrv);
 	} else {
 		printf("Failed to mount Drive %d. FatFs error: %d\n", pdrv, res);
-		printf("(Check if 'drive info %d' shows it's present.)\n", pdrv);
 	}
 
 	return 0;
@@ -480,15 +516,19 @@ int drive_mount_cmd(int argc, char** argv) {
  * @param pdrv Drive number
  */
 bool mount_drive(int pdrv) {
+	if (pdrv < 0 || pdrv >= FF_VOLUMES) return false;
+
 	if (drive_mounted[pdrv]) {
-		printf("Drive %d is already mounted.\n", pdrv);
-		return false;
+		return true;
 	}
 
-	char buf[10];
-	itoa(pdrv, buf, 10);
-	char* cmd[] = { "mount",  buf };
+	char buf[2];
+	buf[0] = (char) (pdrv + '0');
+	buf[1] = '\0';
 
+	char* cmd[] = { (char*) "mount", buf };
+
+	// This calls drive_mount_cmd which now maps 0 -> RamFS via diskio.cpp
 	drive_mount_cmd(2, cmd);
 
 	return drive_mounted[pdrv];

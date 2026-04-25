@@ -11,7 +11,7 @@
 #define SECONDARY_FIRST  2
 #define SECONDARY_SECOND 3
 
-// Timeout value for busy-wait loops (adjust as needed)
+// Timeout value for busy-wait loops
 #define ATA_TIMEOUT 10000
 
 drive_info_t drive_zero{};
@@ -188,6 +188,11 @@ bool identify(int drive_number) {
 void detect_ide_drives() {
 	printf("Checking for drives...\n");
 
+	drive_zero.hardware_id = 0;  // PRIMARY_FIRST
+	drive_one.hardware_id = 1;   // PRIMARY_SECOND
+	drive_two.hardware_id = 2;   // SECONDARY_FIRST
+	drive_three.hardware_id = 3; // SECONDARY_SECOND
+
 	drive_zero.exists = identify(PRIMARY_FIRST);
 	if (drive_zero.exists) {
 		printf("Drive 0 detected.\n");
@@ -217,30 +222,29 @@ void detect_ide_drives() {
 	}
 }
 
-int get_capacity_bytes(const sata_device_identify* device) {
-	uint64_t sectors = device->user_addressable_sectors;  // Assume 28-bit by default
+uint64_t get_capacity_bytes(const sata_device_identify* device) {
+	uint64_t sectors = device->user_addressable_sectors;
 
-	// If 48-bit LBA is supported, use the 48-bit sector count
 	if (device->command_set_active.big_lba) {
 		sectors = ((uint64_t) device->max48_bit_lba[1] << 32) | device->max48_bit_lba[0];
 	}
 
-	// Sector size is typically 512 bytes
 	return (sectors * 512);
 }
 
-int get_capacity_mb(const sata_device_identify* device) {
+uint64_t get_capacity_mb(const sata_device_identify* device) {
 	return (get_capacity_bytes(device) / 1024 / 1024);
 }
 
-void print_sata_device_info(drive_info_t* info) {
+#include <drivers/sata/atapi_pio.h>
+void print_sata_device_info(drive_info_t* info, int drive_number) {
 	if (!info->exists) {
 		printf("Drive not connected.\n");
 		return;
 	}
 
 	if (info->atapi) {
-		printf("ATAPI device connected.\n");
+		print_atapi_device_info(drive_number);
 		return;
 	}
 
@@ -473,44 +477,63 @@ int sata_test_cmd(int argc, char** argv) {
 	return 0;
 }
 
+// This is *not* the correct way to do this.
+// That said, this is the easiest way to do this...
+extern uint8_t* _initrd_data;
+extern uint64_t _initrd_size;
+extern "C" {
+	// This is in some distant place in the FatFS binary.
+	extern drive_info_t* get_drive_info_ptr(unsigned char pdrv);
+}
+
+#include <drivers/sata/atapi_pio.h>
 int get_drive_info(const int argc, char** argv) {
+	// If a specific drive number is provided
 	if (argc > 1) {
-		if (strcmp(argv[1], "0") == 0) print_sata_device_info(&drive_zero);
-		else if (strcmp(argv[1], "1") == 0) print_sata_device_info(&drive_one);
-		else if (strcmp(argv[1], "2") == 0) print_sata_device_info(&drive_two);
-		else if (strcmp(argv[1], "3") == 0) print_sata_device_info(&drive_three);
-		else printf("Unrecognized drive number.\n");
+		int pdrv = argv[1][0] - '0';
+
+		if (pdrv == 0) {
+			printf("Drive 0: RamFS (initrd)\n");
+			printf("Size: %llu Bytes\n", _initrd_size);
+			return 0;
+		}
+
+		// Map FatFS pdrv 1-4 back to hardware pointers for detailed info
+		drive_info_t* drive = get_drive_info_ptr(pdrv);
+		if (drive && drive->exists) {
+			// We pass drive->hardware_id so the low-level print knows which SATA port it is
+			print_sata_device_info(drive, drive->hardware_id);
+		} else {
+			printf("Drive %d not connected or invalid.\n", pdrv);
+		}
 		return 0;
 	}
 
-	printf("The following drives are connected:\n");
+	printf("The following drives are mapped:\n");
 
-	if (drive_zero.exists) {
-		printf("drive0 -> ");
-		if (!drive_zero.atapi) printf("%d Bytes", get_capacity_bytes(&(drive_zero.identify)));
-		else printf("ATAPI");
-		printf("\n");
-	}
+	// Loop through our FatFS mapping (0 to 4)
+	for (int i = 0; i < 5; i++) {
+		drive_info_t* drive = get_drive_info_ptr(i);
 
-	if (drive_one.exists) {
-		printf("drive1 -> ");
-		if (!drive_one.atapi) printf("%d Bytes", get_capacity_bytes(&(drive_one.identify)));
-		else printf("ATAPI");
-		printf("\n");
-	}
+		if (i == 0) {
+			printf("drive0 (RamFS) -> %llu Bytes\n", _initrd_size);
+			continue;
+		}
 
-	if (drive_two.exists) {
-		printf("drive2 -> ");
-		if (!drive_two.atapi) printf("%d Bytes", get_capacity_bytes(&(drive_two.identify)));
-		else printf("ATAPI");
-		printf("\n");
-	}
-
-	if (drive_three.exists) {
-		printf("drive3 -> ");
-		if (!drive_three.atapi) printf("%d Bytes", get_capacity_bytes(&(drive_three.identify)));
-		else printf("ATAPI");
-		printf("\n");
+		if (drive && drive->exists) {
+			printf("drive%d (SATA)  -> ", i);
+			if (!drive->atapi) {
+				printf("%llu Bytes", get_capacity_bytes(&(drive->identify)));
+			} else {
+				uint32_t last_lba, block_size;
+				// Use the hardware_id for the ATAPI call
+				if (atapi_read_capacity(drive->hardware_id, &last_lba, &block_size))
+					printf("ATAPI, %llu Bytes", (uint64_t) (last_lba + 1) * block_size);
+				else
+					printf("ATAPI (no media)");
+			}
+			printf("\n");
+		}
 	}
 
 	return 0;

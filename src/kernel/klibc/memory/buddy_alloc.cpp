@@ -123,6 +123,43 @@ uint32_t buddy_alloc(uint8_t order) {
 	return block_idx;
 }
 
+uint32_t buddy_alloc_32(uint8_t order) {
+	for (uint8_t found_order = order; found_order <= MAX_ORDER; found_order++) {
+		uint32_t current_idx = free_lists[found_order];
+
+		while (current_idx != 0xFFFFFFFF) {
+			uintptr_t phys_addr = idx_to_addr(current_idx);
+			uintptr_t block_size = (1ULL << found_order) * PAGE_SIZE;
+
+			// Check if the block is entirely below 4GB (0xFFFFFFFF)
+			if (phys_addr + block_size <= 0x100000000ULL) {
+				// Found one! Remove it from the middle of the list
+				remove_from_list(found_order, current_idx);
+
+				// Re-use your existing split logic
+				uint32_t block_idx = current_idx;
+				uint8_t temp_order = found_order;
+				while (temp_order > order) {
+					temp_order--;
+					uint32_t buddy_idx = block_idx + (1 << temp_order);
+					mem_map[buddy_idx].order = temp_order;
+					mem_map[buddy_idx].is_free = true;
+					mem_map[block_idx].order = temp_order;
+					push_to_list(temp_order, buddy_idx);
+				}
+
+				mem_map[block_idx].order = order;
+				mem_map[block_idx].is_free = false;
+				return block_idx;
+			}
+			// Move to the next block in the same order list
+			current_idx = mem_map[current_idx].next;
+		}
+	}
+
+	return 0xFFFFFFFF; // No 32-bit blocks available
+}
+
 void buddy_free(uint32_t index, uint8_t order) {
 	// Bounds check
 	if (index >= total_system_pages) {
@@ -671,6 +708,47 @@ uintptr_t Memory::PhysicalAlloc2MBSequential(size_t page_count) {
 	return result;
 }
 
+uint32_t phys_alloc_32bit(uint8_t order) {
+	for (uint8_t found_order = order; found_order <= MAX_ORDER; found_order++) {
+		uint32_t current_idx = free_lists[found_order];
+
+		while (current_idx != 0xFFFFFFFF) {
+			uintptr_t phys_addr = idx_to_addr(current_idx);
+			uintptr_t block_size = (1ULL << found_order) * PAGE_SIZE;
+
+			// Check if the block is entirely below 4GB (0xFFFFFFFF)
+			if (phys_addr + block_size <= 0x100000000ULL) {
+				// Found one
+				// Remove it from the middle of the list
+				remove_from_list(found_order, current_idx);
+
+				// Reuse existing split logic
+				uint32_t block_idx = current_idx;
+				uint8_t temp_order = found_order;
+				while (temp_order > order) {
+					temp_order--;
+					uint32_t buddy_idx = block_idx + (1 << temp_order);
+					mem_map[buddy_idx].order = temp_order;
+					mem_map[buddy_idx].is_free = true;
+					mem_map[block_idx].order = temp_order;
+					push_to_list(temp_order, buddy_idx);
+				}
+
+				mem_map[block_idx].order = order;
+				mem_map[block_idx].is_free = false;
+				return block_idx;
+			}
+			// Move to the next block in the same order list
+			current_idx = mem_map[current_idx].next;
+		}
+	}
+
+	return 0xFFFFFFFF; // No 32-bit blocks available
+}
+
+uintptr_t Memory::PhysicalAlloc2MB_32bit() {
+	phys_alloc_32bit(9);
+}
 
 uintptr_t Memory::PhysicalMarkAllocated(uintptr_t addr, size_t len) {
 	uint32_t start_idx = addr_to_idx(ALIGN_DOWN(addr, PAGE_SIZE));

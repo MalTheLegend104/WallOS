@@ -216,6 +216,7 @@ void keyboard_debug() {
 }
 
 #include <device/device_manager.h>
+#include <drivers/driver_manager.h>
 
 void kernel_main(unsigned int magic, multiboot_info* mbt_info) {
 	// ------------------------------------------------------------------------------------------------
@@ -331,12 +332,17 @@ void kernel_main(unsigned int magic, multiboot_info* mbt_info) {
 	// ------------------------------------------------------------------------------------------------
 	serial_register_devices();
 	pci_discover();
+	// uhci_register();
 
 	// ------------------------------------------------------------------------------------------------
 	// Drive detection (and eventual virtual FS setup)
 	// ------------------------------------------------------------------------------------------------
 	// I have no better spot to put this so it goes here.
 	detect_ide_drives();
+
+	// register_usb_controller_drivers();
+
+	dm_bind_all_registered();
 
 	// ------------------------------------------------------------------------------------------------
 	// ------------------------------------------------------------------------------------------------
@@ -357,5 +363,6 @@ void kernel_main(unsigned int magic, multiboot_info* mbt_info) {
 	registerCommand((Command) { virt_mem_cli, 0, "vmm", 0, 0 });
 	registerCommand((Command) { device_cmd, 0, "device", dev_aliases, 1 }); // "dev" is the only alias.
 	registerCommand((Command) { cpu_info, 0, "cpu", 0, 0 });
+	registerCommand((Command) { driver_cli, 0, "driver", 0, 0 });
 	terminalMain();
 }

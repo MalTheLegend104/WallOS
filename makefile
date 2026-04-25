@@ -8,7 +8,19 @@ include libs/libs.mk
 include src/initrd/initrd.mk
 
 # This is for qemu:
-ARGS ?= -m 5G -M hpet=on -machine q35 -cpu max -smp 4
+ARGS ?= -m 5G -M hpet=on -machine q35 -cpu max -smp 4 -serial stdio
+
+# This adds one of each type of USB host controllers
+# OHCI, UHCI, EHCI, and XHCI
+ARGS += \
+  -device piix3-usb-uhci,id=uhci0
+#   -device usb-kbd \
+#   -device usb-mouse
+#   -device usb-ehci,id=ehci0 \
+#   -device pci-ohci,id=ohci \
+#   -device qemu-xhci,id=xhci
+
+# This filters the outputs from -d int (very poorly), to at least attempt to remove the timer interrupts
 # -d int -dfilter 0x0..0x1f,0x21..0xff 2>&1 | sed '/v=20/,/EFER=/d'
 
 # To add more devices, simply put them at any index 0-3, excluding 2.
@@ -18,10 +30,10 @@ ARGS ?= -m 5G -M hpet=on -machine q35 -cpu max -smp 4
 #         -drive file=hda3.img,if=ide,media=disk,format=raw,index=3
 
 # Uncomment this to add audio devices to the system.
-# ARGS +=  -audiodev sdl,id=snd0 \
-#   -device sb16,audiodev=snd0 \
-#   -device es1370,audiodev=snd0 \
-#   -device ac97,audiodev=snd0 
+ARGS +=  -audiodev sdl,id=snd0 \
+  -device sb16,audiodev=snd0 \
+  -device es1370,audiodev=snd0 \
+  -device ac97,audiodev=snd0 
 
 # These make it much easier to change things whenever we are finally self hosted.
 WALLOS_C_COMPILER 	:= x86_64-wallos-gcc

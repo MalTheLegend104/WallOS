@@ -28,6 +28,7 @@
 105b    # Foxconn
 1462    # MSI (Micro-Star International)
 1558    # Clevo
+106b    # Apple
 
 # STORAGE & CONTROLLERS
 0106    # SATA AHCI Controller Class (Generic)
@@ -36,6 +37,9 @@
 1987    # Phison Electronics (NVMe Controllers)
 15ad    # VMware (Virtualization components)
 1af4    # Red Hat (Virtio / QEMU)
+1b36    # Red Hat
+1274    # Ensoniq
+
 
 # AUDIO & PERIPHERALS
 1102    # Creative Labs
