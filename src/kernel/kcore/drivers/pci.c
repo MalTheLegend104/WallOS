@@ -279,7 +279,7 @@ wallos_device_t* check_device(MCFGEntry* entry, uint8_t bus, uint8_t device, wal
 		if (!name) name = class_name;
 
 		printf_color(PRINT_COLOR_CYAN, PRINT_DEFAULT_BG, "[%02x:%02x.%u](%04x:%04x) %s, %s\n", bus, device, func, vendor_id, device_id, vendor_name, name);
-		printf_serial("[PCI] Created device: 0x%llx\r\n", dev);
+		// printf_serial("[PCI] Created device: 0x%llx\r\n", dev);
 		printf_serial(
 			"[PCI] [%02x:%02x.%u](%04x:%04x) %-22s %-30s [%s][%02x:%02x]\r\n",
 			bus, device, func,

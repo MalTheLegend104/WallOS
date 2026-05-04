@@ -217,6 +217,7 @@ void keyboard_debug() {
 
 #include <device/device_manager.h>
 #include <drivers/driver_manager.h>
+#include <drivers/sata/ahci.h>
 
 void kernel_main(unsigned int magic, multiboot_info* mbt_info) {
 	// ------------------------------------------------------------------------------------------------
@@ -339,6 +340,7 @@ void kernel_main(unsigned int magic, multiboot_info* mbt_info) {
 	// ------------------------------------------------------------------------------------------------
 	// I have no better spot to put this so it goes here.
 	detect_ide_drives();
+	ahci_register_driver();
 
 	// register_usb_controller_drivers();
 

@@ -44,7 +44,7 @@ typedef struct {
 			uint16_t flags;			// Polarity and Trigger Mode
 		} override;
 	};
-} MADTEntry __attribute__((packed));
+} __attribute__((packed)) MADTEntry;
 
 // Generalized MADT table representation
 typedef struct {
@@ -53,7 +53,7 @@ typedef struct {
 
 	MADTEntry* entries;    // pointer to an array of entries
 	uint32_t entry_count;  // number of entries
-} MADTTable __attribute__((packed));
+} __attribute__((packed)) MADTTable;
 
 // ------------------------------------------------------------------------------------------------
 // ------------------------------------------------------------------------------------------------
@@ -69,7 +69,7 @@ typedef struct {
 	uint8_t  flags;            // 0 = not periodic, 1 = periodic
 
 	uint64_t main_counter;
-} HPETTable __attribute__((packed));
+} __attribute__((packed)) HPETTable;
 
 // ------------------------------------------------------------------------------------------------
 // ------------------------------------------------------------------------------------------------
@@ -83,12 +83,12 @@ typedef struct {
 	uint16_t segment;       // PCI segment group
 	uint8_t  start_bus;     // First bus in this region
 	uint8_t  end_bus;       // Last bus in this region
-} MCFGEntry __attribute__((packed));
+} __attribute__((packed)) MCFGEntry;
 
 // Generalized MCFG table representation
 typedef struct {
 	MCFGEntry* entries;     // Array of ECAM regions
 	uint32_t   entry_count; // Number of regions
-} MCFGTable __attribute__((packed));
+}__attribute__((packed)) MCFGTable;
 
 #endif // WALLOS_ACPI_GENERIC_TABLES_H

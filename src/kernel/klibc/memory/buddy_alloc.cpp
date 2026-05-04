@@ -754,8 +754,7 @@ uintptr_t Memory::PhysicalMarkAllocated(uintptr_t addr, size_t len) {
 	uint32_t start_idx = addr_to_idx(ALIGN_DOWN(addr, PAGE_SIZE));
 	uint32_t end_idx = addr_to_idx(ALIGN_UP(addr + len, PAGE_SIZE));
 
-	if (end_idx > total_system_pages)
-		end_idx = total_system_pages;
+	if (end_idx > total_system_pages) end_idx = total_system_pages;
 
 	for (uint32_t i = start_idx; i < end_idx; i++) {
 		Page* p = &mem_map[i];

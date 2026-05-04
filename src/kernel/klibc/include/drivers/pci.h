@@ -64,7 +64,7 @@ extern "C" {
 		{0x01, 0x03, "ipi"},          // IPI bus
 		{0x01, 0x04, "raid"},         // RAID
 		{0x01, 0x05, "ata"},          // ATA (PATA)
-		{0x01, 0x06, "sata"},         // SATA
+		{0x01, 0x06, "ahci"},         // SATA
 		{0x01, 0x07, "sas"},          // Serial Attached SCSI
 		{0x01, 0x08, "nvme"},         // NVMe
 		{0x01, 0x09, "ufs"},          // Universal Flash Storage

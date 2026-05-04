@@ -636,6 +636,48 @@ uintptr_t mapKernelLocation(uintptr_t addr, size_t len) {
 	return Memory::MapKernelLocation(addr, len);
 }
 
+uintptr_t Memory::MapKernelLocationWithFlags(uintptr_t addr, size_t len, uint64_t flags) {
+	// The offset from the 2MB boundary line to the base address.
+	size_t addr_offset = addr & 0x1FFFFF;
+	uintptr_t final_addr = addr + len;
+
+	// Calculate the start of the first 2MB page
+	uintptr_t base_page_addr = addr & ~0x1FFFFF;
+
+	// Calculate the start of the last 2MB page (by aligning the end address DOWN)
+	uintptr_t final_page_addr = (final_addr - 1) & ~0x1FFFFF;
+
+	// The number of pages is the distance between the first and last page, 
+	// divided by page size, plus 1 for the first page itself.
+	int page_count = ((final_page_addr - base_page_addr) / PAGE_2MB_SIZE) + 1;
+
+	// printf_serial("\tBase Page Addr: 0x%llx\r\n\tFinal Page Addr: 0x%llx\r\n\tBase Offset: 0x%llx\r\n", base_page_addr, final_page_addr, addr_offset);
+
+	// uintptr_t phys_base_addr = Memory::PhysicalMarkAllocated(addr, len);
+
+	// Mark the whole 2MB-aligned region as allocated
+	Memory::PhysicalMarkAllocated(base_page_addr, PAGE_2MB_SIZE);
+
+	// Use the 2MB-aligned base for mapping
+	uintptr_t phys_base_addr = base_page_addr;
+	// We're going to assume we have access to the memory at this point.
+	// The only way it returns NULL is if it's reserved or already mapped, which we're just going to assume means we have access.
+
+	// printf_serial("\tPhysical Base: 0x%llx\r\n", phys_base_addr);
+
+	// Now that the physical allocator knows we mapped it, we can tell the virtual manager to map it to the kernel address space.
+	uintptr_t allocated_addr = Memory::MapSequentialKernelPagesWithFlags(page_count, phys_base_addr, flags);
+	if (allocated_addr == 0) return allocated_addr;
+
+	// printf_serial("\tAllocated Virtual: 0x%llx\r\n", allocated_addr + addr_offset);
+
+	return (allocated_addr + addr_offset);
+}
+
+uintptr_t mapKernelLocationWithFlags(uintptr_t addr, size_t len, uint64_t flags) {
+	return Memory::MapKernelLocationWithFlags(addr, len, flags);
+}
+
 #pragma GCC diagnostic ignored "-Wunused-parameter" 
 void Memory::FreeKernelPage(uintptr_t addr) {
 

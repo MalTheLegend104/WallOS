@@ -195,6 +195,36 @@ slab_header_t* initSlab32(uint64_t object_size) {
 	return header;
 }
 
+
+void* kalloc_dma_64(size_t size, uintptr_t* phys_out) {
+	if (size > PAGE_2MB_SIZE) {
+		printf_serial("[KALLOC] Requested DMA size of %d bytes (0x%x). Too large for current allocator...\r\n", size, size);
+		return NULL;
+	}
+	// I'm too lazy to allocate smaller physical pages at the moment...
+	uintptr_t phys = Memory::PhysicalAlloc2MBSequential(1);
+	if (!phys) return NULL;
+
+	uintptr_t virt = Memory::MapSequentialKernelPages(1, phys);
+	if (!virt) return NULL;
+
+	// DMA memory MUST be zeroed to prevent hardware from reading garbage/old descriptor data.
+	memset((void*) virt, 0, PAGE_2MB_SIZE);
+
+	if (phys_out) *phys_out = phys;
+	return (void*) virt;
+}
+
+void kfree_dma(void* ptr, size_t size) {
+	uintptr_t virt = (uintptr_t) ptr;
+	uintptr_t phys = Memory::VirtToPhysBase(virt);
+
+	// I really need a way to do this....
+	// Memory::unmap(virt, size);
+
+	Memory::PhysicalDeAlloc2MB(virt);
+}
+
 #include <memory/spinlock.h>
 
 spinlock_t* memlock;

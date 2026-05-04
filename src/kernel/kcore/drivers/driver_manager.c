@@ -94,7 +94,9 @@ dm_error_t dm_unbind_device(struct wallos_device* dev) {
 
 
 void dm_bind_all_registered(void) {
-	printf_serial("[DEVMGR] Starting global driver binding phase...\r\n");
+	printf_serial("[DEVMGR] Starting global driver binding...\r\n");
+
+	printf_color(PRINT_COLOR_GREEN, PRINT_DEFAULT_BG, "Starting global driver binding...\n");
 
 	size_t bound_count = 0;
 	size_t total_count = 0;
@@ -113,6 +115,7 @@ void dm_bind_all_registered(void) {
 	}
 
 	printf_serial("[DEVMGR] Binding complete. %d/%d devices bound to drivers.\r\n", bound_count, total_count);
+	printf_color(PRINT_COLOR_GREEN, PRINT_DEFAULT_BG, "Binding complete. %d/%d devices bound to drivers.\r\n", bound_count, total_count);
 }
 
 int driver_cli(int argc, char** argv) {

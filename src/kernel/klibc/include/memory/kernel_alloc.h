@@ -2,6 +2,7 @@
 #define KERNEL_ALLOC_H
 
 #include <stddef.h>
+#include <stdint.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -10,6 +11,9 @@ extern "C" {
 	void initKernelAllocator();
 	void kfree(void* ptr);
 	void* kalloc(size_t bytes);
+
+	void* kalloc_dma_64(size_t size, uintptr_t* phys_out);
+	void kfree_dma(void* ptr, size_t size);
 
 #ifdef __cplusplus
 }

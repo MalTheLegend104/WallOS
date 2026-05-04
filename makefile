@@ -12,13 +12,19 @@ ARGS ?= -m 5G -M hpet=on -machine q35 -cpu max -smp 4 -serial stdio
 
 # This adds one of each type of USB host controllers
 # OHCI, UHCI, EHCI, and XHCI
-ARGS += \
-  -device piix3-usb-uhci,id=uhci0
+# ARGS += \
+#   -device piix3-usb-uhci,id=uhci0
 #   -device usb-kbd \
 #   -device usb-mouse
 #   -device usb-ehci,id=ehci0 \
 #   -device pci-ohci,id=ohci \
 #   -device qemu-xhci,id=xhci
+
+ARGS += -device ahci,id=ahci0 \
+  -drive file=hda.img,if=none,id=d1 \
+  -device ide-hd,drive=d1,bus=ahci0.0 \
+  -drive file=hda2.img,if=none,id=d2 \
+  -device ide-hd,drive=d2,bus=ahci0.1
 
 # This filters the outputs from -d int (very poorly), to at least attempt to remove the timer interrupts
 # -d int -dfilter 0x0..0x1f,0x21..0xff 2>&1 | sed '/v=20/,/EFER=/d'

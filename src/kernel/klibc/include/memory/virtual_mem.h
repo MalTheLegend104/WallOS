@@ -79,10 +79,12 @@ namespace Memory {
 	uintptr_t VirtToPhysBase(uintptr_t addr);
 	uintptr_t MapPreAllocMem(uintptr_t addr);
 	void mapFramebuffer(uintptr_t base_addr, size_t size, bool text_mode);
-	uintptr_t MapKernelLocation(uintptr_t addr, size_t len);
 	uintptr_t MapSequentialKernelPages(size_t pages);
 	uintptr_t MapSequentialKernelPages(size_t pages, uintptr_t base_addr);
 	uintptr_t MapSequentialKernelPagesWithFlags(size_t pages, uintptr_t phys_base_addr, uint64_t flags);
+
+	uintptr_t MapKernelLocation(uintptr_t addr, size_t len);
+	uintptr_t MapKernelLocationWithFlags(uintptr_t addr, size_t len, uint64_t flags);
 
 	void reserveMemory(uintptr_t base_addr, size_t size);
 
@@ -124,6 +126,8 @@ extern "C" {
 	 * @return uintptr_t The base virtual memory address corresponding to the provided physical addresses.
 	 */
 	uintptr_t mapSequentialKernelPagesWithFlags(size_t pages, uintptr_t phys_base_addr, uint64_t flags);
+
+	uintptr_t mapKernelLocationWithFlags(uintptr_t addr, size_t len, uint64_t flags);
 
 	uintptr_t virt_to_phys(uintptr_t addr);
 #ifdef __cplusplus
