@@ -1,6 +1,7 @@
 #include <terminal/commands/system_commands.h>
 #include <string.h>
 #include <stdio.h>
+#include <stdlib.h>
 
 #include <filesystem/wdm.h>
 #include <filesystem/vfs.h>
