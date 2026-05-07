@@ -2,6 +2,7 @@
 #define SYSTEMCOMMANDS_H
 
 #include <stdbool.h>
+#include <filesystem/wdm.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -18,7 +19,9 @@ extern "C" {
 	int sysinfo(int argc, char** argv);
 	void sysinfo_boot();
 
-	bool mount_drive(int pdrv);
+	// bool mount_drive(int pdrv);
+	// bool mount_drive(int pdrv, WDM_DriveHandle handle);
+	bool mount_drive(const char* vfs_path, WDM_DriveHandle handle, int pdrv);
 	int drive_command(int argc, char** argv);
 	int drive_command_help(int argc, char** argv);
 

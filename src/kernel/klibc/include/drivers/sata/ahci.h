@@ -3,6 +3,7 @@
 
 #include <stdint.h>
 #include <stddef.h>
+#include <filesystem/wdm.h>
 #include <drivers/driver_manager.h>
 #include <device/device_manager.h>
 
@@ -80,7 +81,7 @@ extern "C" {
 #define AHCI_SSTS_DET_PRESENT 0x03  // Device present and PHY comm established
 #define AHCI_SSTS_DET_OFFLINE 0x04  // PHY in offline mode
 
-// PxSIG — device type signatures
+// PxSIG - device type signatures
 #define AHCI_SIG_SATA  0x00000101  // SATA drive
 #define AHCI_SIG_ATAPI 0xEB140101  // SATAPI (ATAPI) device
 #define AHCI_SIG_SEMB  0xC33C0101  // Enclosure Management Bridge
@@ -187,6 +188,7 @@ extern "C" {
 	typedef struct {
 		int             present;         // Is a device connected
 		ahci_dev_type_t type;
+		WDM_DriveHandle wdm_handle;
 		uint32_t        port_idx;        // Which port number (0-31)
 		uintptr_t       port_base;       // MMIO address of port registers
 		ahci_port_mem_t* mem;            // DMA-accessible port memory

@@ -26,6 +26,12 @@ typedef enum {
 	BASE_OCTAL = 8
 } base_type;
 
+typedef struct {
+	char* buf;
+	size_t size;
+	size_t pos;
+} buffer_ctx;
+
 // We need to flush the display once we're done printing (in framebuffer mode).
 extern void display_flush();
 
@@ -33,36 +39,48 @@ int puts(const char* string) {
 	return printf("%s", string);
 }
 
-void os_putchar(int c) {
+void buffer_putchar(int c, void* ctx) {
+	buffer_ctx* b = (buffer_ctx*) ctx;
+
+	if (b->pos < b->size) {
+		b->buf[b->pos] = (char) c;
+	}
+	b->pos++; // always increment (even if truncated)
+}
+
+void os_putchar(int c, void* ctx) {
+	(void) ctx;
 	display_putc(c);
 }
-
-void os_putwchar(wchar_t c) {
-	os_putchar(c);
+void os_putwchar(wchar_t c, void* ctx) {
+	os_putchar(c, ctx);
 }
 
-int print_string(char* str, size_t precision, bool precision_specified, size_t field_width, bool left_justify) {
+// This lets us use the same central core vprintf parsing, and have the outputs differ
+typedef void (*putchar_fn)(int, void*);
+
+int print_string(char* str, size_t precision, bool precision_specified, size_t field_width, bool left_justify, putchar_fn putc_fn, void* ctx) {
 	int amount = 0;
-	size_t len = strlen(str);
+	size_t len = precision_specified ? strnlen(str, precision) : strlen(str);
 
 	if (!left_justify) {
 		if (field_width && len < field_width) {
 			for (size_t i = 0; i < field_width - len; i++) {
-				os_putchar(' ');
+				putc_fn(' ', ctx);
 			}
 		}
 	}
 
 	if (!precision_specified) {
 		while (*str != '\0') {
-			os_putchar(*str);
+			putc_fn(*str, ctx);
 			str++;
 			amount++;
 		}
 	} else {
 		for (size_t i = 0; i < precision; i++) {
 			if (*str == '\0') break;
-			os_putchar(*str);
+			putc_fn(*str, ctx);
 			str++;
 			amount++;
 		}
@@ -70,25 +88,25 @@ int print_string(char* str, size_t precision, bool precision_specified, size_t f
 
 	if (left_justify && field_width && amount < field_width) {
 		for (size_t i = amount; i < field_width; i++) {
-			os_putchar(' ');
+			putc_fn(' ', ctx);
 		}
 	}
 
 	return amount;
 }
 
-int print_wstring(wchar_t* str, size_t precision, bool precision_specified) {
+int print_wstring(wchar_t* str, size_t precision, bool precision_specified, putchar_fn putc_fn, void* ctx) {
 	int amount = 0;
 	if (!precision_specified) {
 		while (*str != '\0') {
-			os_putwchar(*str);
+			putc_fn(*str, ctx);
 			str++;
 			amount++;
 		}
 	} else {
 		for (size_t i = 0; i < precision; i++) {
 			if (*str == '\0') break;
-			os_putwchar(*str);
+			putc_fn(*str, ctx);
 			str++;
 			amount++;
 		}
@@ -202,7 +220,7 @@ void shift_right(char* buf, size_t buflen) {
 	}
 }
 
-size_t print_signed_int(intmax_t value, base_type base, size_t precision, size_t field_width, size_t padding, bool left_justified, bool prepend_space, bool prepend_sign) {
+size_t print_signed_int(intmax_t value, base_type base, size_t precision, size_t field_width, size_t padding, bool left_justified, bool prepend_space, bool prepend_sign, putchar_fn putc_fn, void* ctx) {
 	size_t written = 0;
 
 	if (precision > 19) precision = 19;
@@ -256,12 +274,12 @@ size_t print_signed_int(intmax_t value, base_type base, size_t precision, size_t
 		}
 	}
 
-	written += print_string(buf, 0, false, field_width, left_justified);
+	written += print_string(buf, 0, false, field_width, left_justified, putc_fn, ctx);
 
 	return written;
 }
 
-size_t print_unsigned_int(uintmax_t value, base_type base, size_t precision, size_t field_width, size_t padding, bool captial, bool alternate, bool left_justified) {
+size_t print_unsigned_int(uintmax_t value, base_type base, size_t precision, size_t field_width, size_t padding, bool captial, bool alternate, bool left_justified, putchar_fn putc_fn, void* ctx) {
 	size_t written = 0;
 
 	if (precision > 19) precision = 19;
@@ -327,7 +345,7 @@ size_t print_unsigned_int(uintmax_t value, base_type base, size_t precision, siz
 		}
 	}
 
-	written += print_string(buf, 0, false, field_width, left_justified);
+	written += print_string(buf, 0, false, field_width, left_justified, putc_fn, ctx);
 
 	return written;
 }
@@ -344,15 +362,15 @@ typedef enum {
 // Most of the rest of it is the same.
 // This printf is really only for internal kernel (and serial) purposes, so I don't really care about floats.
 // I wanted something small that would output something that was in the ballpark of a double's value.
-#pragma GCC diagnostic ignored "-Wunused-parameter"
-int print_float(long double value, float_type base, size_t precision, size_t field_width, size_t padding, bool captial, bool alternate, bool left_justified) {
+// #pragma GCC diagnostic ignored "-Wunused-parameter"
+int print_float(long double value, float_type base, size_t precision, size_t field_width, size_t padding, bool captial, bool alternate, bool left_justified, putchar_fn putc_fn, void* ctx) {
 	char conversion[1076], intPart_reversed[311];
-	int i, charCount = 0;
+	int charCount = 0;
 	double fp_int, fp_frac;
 
 	// If it's bigger than max it's got to be infinity.
 	if (value > DBL_MAX) {
-		print_string("inf", 0, false, field_width, left_justified);
+		print_string("inf", 0, false, field_width, left_justified, putc_fn, ctx);
 		goto end;
 	}
 
@@ -360,7 +378,7 @@ int print_float(long double value, float_type base, size_t precision, size_t fie
 	// This should in theory work (but might get optimized out)
 	// I dont really care either way, I'm staying away from floats in the kernel.
 	if (value != value) {
-		print_string("nan", 0, false, field_width, left_justified);
+		print_string("nan", 0, false, field_width, left_justified, putc_fn, ctx);
 		goto end;
 	}
 
@@ -372,7 +390,7 @@ int print_float(long double value, float_type base, size_t precision, size_t fie
 	}
 
 	//Reverse the integer part, if any
-	for (i = 0; i < charCount; i++) conversion[i] = intPart_reversed[charCount - i - 1];
+	for (int i = 0; i < charCount; i++) conversion[i] = intPart_reversed[charCount - i - 1];
 
 	conversion[charCount++] = '.'; //Decimal point
 
@@ -383,7 +401,7 @@ int print_float(long double value, float_type base, size_t precision, size_t fie
 	}
 
 	conversion[charCount] = '\0'; //String terminator
-	print_string(conversion, 0, false, field_width, left_justified);
+	print_string(conversion, 0, false, field_width, left_justified, putc_fn, ctx);
 
 end:
 	return charCount;
@@ -394,17 +412,7 @@ float_type calculate_float_shortest(long double value) {
 	return 0;
 }
 
-/* Writes the results to the output stream stdout. */
-int printf(const char* restrict format, ...) {
-	va_list arg;
-	int ret;
-	va_start(arg, format);
-	ret = vprintf(format, arg);
-	va_end(arg);
-	return ret;
-}
-
-int vprintf(const char* restrict format, va_list list) {
+int vprintf_internal(putchar_fn putc_fn, void* ctx, const char* format, va_list list) {
 	const char* current = format;
 	size_t written = 0;
 
@@ -458,39 +466,39 @@ int vprintf(const char* restrict format, va_list list) {
 				case 'i': {
 						switch (current_modifier) {
 							case TYPE_SHORT_SHORT: {
-									written += print_signed_int((intmax_t) va_arg(list, int), BASE_DECIMAL, precision, field_width, padding, left_justified, prepend_space, prepend_sign);
+									written += print_signed_int((intmax_t) va_arg(list, int), BASE_DECIMAL, precision, field_width, padding, left_justified, prepend_space, prepend_sign, putc_fn, ctx);
 									break;
 								}
 							case TYPE_SHORT: {
-									written += print_signed_int((intmax_t) va_arg(list, int), BASE_DECIMAL, precision, field_width, padding, left_justified, prepend_space, prepend_sign);
+									written += print_signed_int((intmax_t) va_arg(list, int), BASE_DECIMAL, precision, field_width, padding, left_justified, prepend_space, prepend_sign, putc_fn, ctx);
 									break;
 								}
 							case TYPE_LONG: {
-									written += print_signed_int((intmax_t) va_arg(list, long), BASE_DECIMAL, precision, field_width, padding, left_justified, prepend_space, prepend_sign);
+									written += print_signed_int((intmax_t) va_arg(list, long), BASE_DECIMAL, precision, field_width, padding, left_justified, prepend_space, prepend_sign, putc_fn, ctx);
 									break;
 								}
 							case TYPE_LONG_LONG: {
-									written += print_signed_int((intmax_t) va_arg(list, long long), BASE_DECIMAL, precision, field_width, padding, left_justified, prepend_space, prepend_sign);
+									written += print_signed_int((intmax_t) va_arg(list, long long), BASE_DECIMAL, precision, field_width, padding, left_justified, prepend_space, prepend_sign, putc_fn, ctx);
 									break;
 								}
 							case TYPE_INTMAX_T: {
-									written += print_signed_int(va_arg(list, intmax_t), BASE_DECIMAL, precision, field_width, padding, left_justified, prepend_space, prepend_sign);
+									written += print_signed_int(va_arg(list, intmax_t), BASE_DECIMAL, precision, field_width, padding, left_justified, prepend_space, prepend_sign, putc_fn, ctx);
 									break;
 								}
 								// I legit dont think I can even get a signed size_t to be platform independent.
 								// I'm just going to pass it through as signed and see what happens.
 							case TYPE_SIZE_T: {
-									written += print_signed_int((intmax_t) va_arg(list, size_t), BASE_DECIMAL, precision, field_width, padding, left_justified, prepend_space, prepend_sign);
+									written += print_signed_int((intmax_t) va_arg(list, size_t), BASE_DECIMAL, precision, field_width, padding, left_justified, prepend_space, prepend_sign, putc_fn, ctx);
 									break;
 								}
 							case TYPE_PTRDIFF: {
-									written += print_signed_int((intmax_t) va_arg(list, ptrdiff_t), BASE_DECIMAL, precision, field_width, padding, left_justified, prepend_space, prepend_sign);
+									written += print_signed_int((intmax_t) va_arg(list, ptrdiff_t), BASE_DECIMAL, precision, field_width, padding, left_justified, prepend_space, prepend_sign, putc_fn, ctx);
 									break;
 								}
 								// We have Regular and Long Double here.
 								// We just pretend long double doesn't exist.
 							default: {
-									written += print_signed_int((intmax_t) va_arg(list, int), BASE_DECIMAL, precision, field_width, padding, left_justified, prepend_space, prepend_sign);
+									written += print_signed_int((intmax_t) va_arg(list, int), BASE_DECIMAL, precision, field_width, padding, left_justified, prepend_space, prepend_sign, putc_fn, ctx);
 									break;
 								}
 						}
@@ -517,39 +525,39 @@ int vprintf(const char* restrict format, va_list list) {
 
 						switch (current_modifier) {
 							case TYPE_SHORT_SHORT: {
-									written += print_unsigned_int(va_arg(list, unsigned int), base, precision, field_width, padding, capital, alternate_form, left_justified);
+									written += print_unsigned_int(va_arg(list, unsigned int), base, precision, field_width, padding, capital, alternate_form, left_justified, putc_fn, ctx);
 									break;
 								}
 							case TYPE_SHORT: {
-									written += print_unsigned_int((uintmax_t) va_arg(list, unsigned int), base, precision, field_width, padding, capital, alternate_form, left_justified);
+									written += print_unsigned_int((uintmax_t) va_arg(list, unsigned int), base, precision, field_width, padding, capital, alternate_form, left_justified, putc_fn, ctx);
 									break;
 								}
 							case TYPE_LONG: {
-									written += print_unsigned_int((uintmax_t) va_arg(list, unsigned long), base, precision, field_width, padding, capital, alternate_form, left_justified);
+									written += print_unsigned_int((uintmax_t) va_arg(list, unsigned long), base, precision, field_width, padding, capital, alternate_form, left_justified, putc_fn, ctx);
 									break;
 								}
 							case TYPE_LONG_LONG: {
-									written += print_unsigned_int((uintmax_t) va_arg(list, unsigned long long), base, precision, field_width, padding, capital, alternate_form, left_justified);
+									written += print_unsigned_int((uintmax_t) va_arg(list, unsigned long long), base, precision, field_width, padding, capital, alternate_form, left_justified, putc_fn, ctx);
 									break;
 								}
 							case TYPE_INTMAX_T: {
-									written += print_unsigned_int(va_arg(list, uintmax_t), base, precision, field_width, padding, capital, alternate_form, left_justified);
+									written += print_unsigned_int(va_arg(list, uintmax_t), base, precision, field_width, padding, capital, alternate_form, left_justified, putc_fn, ctx);
 									break;
 								}
 							// I legit dont think I can even get a signed size_t to be platform independent.
 							// I'm just going to pass it through as signed and see what happens.
 							case TYPE_SIZE_T: {
-									written += print_unsigned_int((uintmax_t) va_arg(list, size_t), base, precision, field_width, padding, capital, alternate_form, left_justified);
+									written += print_unsigned_int((uintmax_t) va_arg(list, size_t), base, precision, field_width, padding, capital, alternate_form, left_justified, putc_fn, ctx);
 									break;
 								}
 							case TYPE_PTRDIFF: {
-									written += print_unsigned_int((uintmax_t) va_arg(list, ptrdiff_t), base, precision, field_width, padding, capital, alternate_form, left_justified);
+									written += print_unsigned_int((uintmax_t) va_arg(list, ptrdiff_t), base, precision, field_width, padding, capital, alternate_form, left_justified, putc_fn, ctx);
 									break;
 								}
 								// We have Regular and Long Double here.
 								// We just pretend long double doesn't exist.
 							default: {
-									written += print_unsigned_int((uintmax_t) va_arg(list, unsigned int), base, precision, field_width, padding, capital, alternate_form, left_justified);
+									written += print_unsigned_int((uintmax_t) va_arg(list, unsigned int), base, precision, field_width, padding, capital, alternate_form, left_justified, putc_fn, ctx);
 									break;
 								}
 						}
@@ -605,7 +613,7 @@ int vprintf(const char* restrict format, va_list list) {
 
 						//printf("Value: %Lf", value);
 
-						written += print_float(value, type, precision, field_width, padding, capital, alternate_form, left_justified);
+						written += print_float(value, type, precision, field_width, padding, capital, alternate_form, left_justified, putc_fn, ctx);
 
 						break;
 					}
@@ -616,10 +624,10 @@ int vprintf(const char* restrict format, va_list list) {
 						if (current_modifier == TYPE_LONG) {
 							wchar_t c = (wchar_t) va_arg(list, int);
 							wchar_t str[] = { c, '\0' };
-							written += print_wstring(str, 0, false);
+							written += print_wstring(str, 0, false, putc_fn, ctx);
 						} else {
 							// The standard calls for us to take an int and convert to unsigned char
-							os_putchar((unsigned char) va_arg(list, int));
+							putc_fn((unsigned char) va_arg(list, int), ctx);
 							written++;
 						}
 						break;
@@ -629,11 +637,11 @@ int vprintf(const char* restrict format, va_list list) {
 					// Im not doing that, probably ever.
 						if (current_modifier == TYPE_LONG) {
 							wchar_t* str = va_arg(list, wchar_t*);
-							written += print_wstring(str, precision, precision_specified);
+							written += print_wstring(str, precision, precision_specified, putc_fn, ctx);
 						} else {
 							// The standard calls for us to take an int and convert to unsigned char
 							char* str = va_arg(list, char*);
-							written += print_string(str, precision, precision_specified, field_width, left_justified);
+							written += print_string(str, precision, precision_specified, field_width, left_justified, putc_fn, ctx);
 						}
 						break;
 					}
@@ -642,7 +650,7 @@ int vprintf(const char* restrict format, va_list list) {
 					// This is actually implementation defined.
 					// We're going to write the hex for it.
 						void* p = va_arg(list, void*);
-						written += print_unsigned_int((uintptr_t) p, BASE_HEX, 0, 0, 0, true, true, left_justified);
+						written += print_unsigned_int((uintptr_t) p, BASE_HEX, 0, 0, 0, true, true, left_justified, putc_fn, ctx);
 						break;
 					}
 #ifdef WALLOS_ENABLE_PRINTF_N
@@ -700,7 +708,7 @@ int vprintf(const char* restrict format, va_list list) {
 								}
 						}
 						break;
-			}
+					}
 #endif // WALLOS_ENABLE_PRINTF_N
 				// ------------------------------------------------------------------------------------------------
 				// Flags
@@ -924,13 +932,13 @@ int vprintf(const char* restrict format, va_list list) {
 						break;
 					}
 				default: {
-						os_putchar(*current);
+						putc_fn(*current, ctx);
 						written++;
 						break;
 					}
-		}
-	} else {
-			os_putchar(*current);
+			}
+		} else {
+			putc_fn(*current, ctx);
 			written++;
 		}
 
@@ -947,8 +955,56 @@ int vprintf(const char* restrict format, va_list list) {
 			padding = 0;
 			current++;
 		}
+	}
+	return (int) written;
 }
 
+int vprintf(const char* format, va_list list) {
+	int ret = vprintf_internal(os_putchar, NULL, format, list);
 	display_flush();
-	return (int) written;
+	return ret;
+}
+
+/* Writes the results to the output stream stdout. */
+int printf(const char* restrict format, ...) {
+	va_list arg;
+	int ret;
+	va_start(arg, format);
+	ret = vprintf(format, arg);
+	va_end(arg);
+	return ret;
+}
+
+int vsnprintf(char* str, size_t size, const char* format, va_list list) {
+	buffer_ctx ctx = {
+		.buf = str,
+		.size = (size > 0) ? size - 1 : 0, // reserve space for null
+		.pos = 0
+	};
+
+	int written = vprintf_internal(buffer_putchar, &ctx, format, list);
+
+	// Make sure it's null terminated
+	if (size > 0) {
+		size_t term = (ctx.pos < ctx.size) ? ctx.pos : ctx.size;
+		str[term] = '\0';
+	}
+
+	return written;
+}
+
+int snprintf(char* str, size_t size, const char* format, ...) {
+	va_list args;
+	va_start(args, format);
+	int ret = vsnprintf(str, size, format, args);
+	va_end(args);
+	return ret;
+}
+
+int sp_sprintf(char* str, const char* format, ...) {
+	va_list args;
+	va_start(args, format);
+	int ret = vsnprintf(str, SIZE_MAX, format, args);
+	va_end(args);
+	return ret;
 }

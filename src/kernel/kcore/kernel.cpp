@@ -218,6 +218,10 @@ void keyboard_debug() {
 #include <device/device_manager.h>
 #include <drivers/driver_manager.h>
 #include <drivers/sata/ahci.h>
+#include <filesystem/wdm.h>
+#include <filesystem/initrd.h>
+#include <filesystem/vfs.h>
+#include <filesystem/fatfs_vfs.h>
 
 void kernel_main(unsigned int magic, multiboot_info* mbt_info) {
 	// ------------------------------------------------------------------------------------------------
@@ -285,7 +289,7 @@ void kernel_main(unsigned int magic, multiboot_info* mbt_info) {
 	 * I don't entirely know if I want to keep that as an explicit path or
 	 * hide it in /initrd in the virtual FS whenever we get one set up.
 	 */
-	mount_drive(0);
+	// mount_drive(0);
 
 	// ------------------------------------------------------------------------------------------------
 	// Early Interrupt Handlers
@@ -341,6 +345,15 @@ void kernel_main(unsigned int magic, multiboot_info* mbt_info) {
 	// I have no better spot to put this so it goes here.
 	detect_ide_drives();
 	ahci_register_driver();
+
+	WDM_Init();
+	WDM_DriveHandle initrd = initrd_wdm_init(INITRD_FLAG_NONE);
+	if (!initrd) panic_s("initrd: WDM registration failed");
+	// mount_drive(0, initrd); // pdrv 0, same as before
+	// fatfs_vfs_ctx_t* ctx = fatfs_vfs_alloc_ctx(initrd, 9);
+	// VFS_Mount("/initrd", initrd, &fatfs_vfs_ops, ctx);
+
+	mount_drive("/initrd", initrd, 0);
 
 	// register_usb_controller_drivers();
 

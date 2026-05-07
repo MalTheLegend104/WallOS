@@ -12,10 +12,12 @@
 #ifdef __cplusplus
 extern "C" {
 #endif
+	int vsnprintf(char* str, size_t size, const char* format, va_list list);
+	int vprintf(const char* format, va_list list);
 
-	int vprintf(const char* format, va_list arg);
 	int printf(const char* format, ...);
-	int puts(const char* string);
+	int snprintf(char* str, size_t size, const char* format, ...);
+	int sprintf(char* str, const char* format, ...);
 
 	// Custom Extensions
 	size_t int_to_string(intmax_t value, int base, char* buf, size_t buflen);

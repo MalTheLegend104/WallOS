@@ -31,8 +31,33 @@ extern "C" {
 	DRESULT disk_write(BYTE pdrv, const BYTE* buff, LBA_t sector, UINT count);
 	DRESULT disk_ioctl(BYTE pdrv, BYTE cmd, void* buff);
 
+#include <stdbool.h>
 
-	/* Disk Status Bits (DSTATUS) */
+	typedef struct WDM_Drive* WDM_DriveHandle;
+
+	/**
+	 * @brief Associate a FatFs physical drive number with a WDM handle.
+	 *
+	 * Must be called before f_mount() for the corresponding volume.
+	 * Calling again on the same pdrv replaces the previous handle.
+	 *
+	 * @param pdrv   FatFs physical drive number (0 ... FF_VOLUMES-1).
+	 * @param handle An initialised, registered WDM drive handle.
+	 *
+	 * @return true on success, false if pdrv is out of range or handle is NULL.
+	 */
+	bool ff_register_drive(BYTE pdrv, WDM_DriveHandle handle);
+
+	/**
+	 * @brief Deregister a FatFs physical drive number.
+	 *
+	 * Call after f_unmount() to release the association.
+	 *
+	 * @param pdrv FatFs physical drive number.
+	 */
+	void ff_unregister_drive(BYTE pdrv);
+
+/* Disk Status Bits (DSTATUS) */
 
 #define STA_NOINIT      0x01    /* Drive not initialized */
 #define STA_NODISK      0x02    /* No medium in the drive */

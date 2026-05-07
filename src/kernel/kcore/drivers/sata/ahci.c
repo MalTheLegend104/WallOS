@@ -15,7 +15,10 @@
 
 #define AHCI_MMIO_FLAGS  (BIT_PRESENT | BIT_WRITE | BIT_PCD | BIT_SIZE)
 
+// Forward declares to prevent having to put things in the header that shouldn't be there.
+
 wallos_driver_t ahci_driver;
+WDM_DriveHandle ahci_wdm_register_port(ahci_port_t* port, uint32_t slot_count);
 
 // Oh look, it's this stupid way of doing this again.
 // Defined in yet another spot....
@@ -576,11 +579,18 @@ void ahci_attach(wallos_device_t* dev) {
 
 		if (type == AHCI_DEV_SATA) {
 			printf_serial("[AHCI] Issuing IDENTIFY on port %u... ", i);
-			port_identify(port, ctrl->slot_count);
+			int res = port_identify(port, ctrl->slot_count);
+			if (res != 0) { printf_serial("Failed identify.\r\n"); continue; }
 			printf_serial("complete.\r\n", i);
-			printf_serial("(model='%s' serial='%s' sectors=%llu) ",
-				port->model, port->serial,
-				(unsigned long long)port->sector_count);
+
+			WDM_DriveHandle wdm_handle = ahci_wdm_register_port(port, ctrl->slot_count);
+			if (!wdm_handle) {
+				printf_serial("[AHCI][WARN] port %u: WDM registration failed, "
+					"drive will not be accessible\r\n", i);
+			}
+			// Store the handle in the port so ahci_detach can unregister it
+			port->wdm_handle = wdm_handle;
+
 
 			printf_color(PRINT_COLOR_LIGHT_CYAN, PRINT_DEFAULT_BG, "\tModel: %s (Sectors: %llu, Size: %llu)\n", port->model, port->sector_count, port->sector_count * port->sector_size);
 
@@ -631,6 +641,11 @@ void ahci_detach(wallos_device_t* dev) {
 		ahci_port_t* port = &ctrl->ports[i];
 		if (!port->present) continue;
 
+		if (port->wdm_handle) {
+			WDM_Unregister(port->wdm_handle);
+			port->wdm_handle = NULL;
+		}
+
 		port_stop_cmd(port);
 
 		if (port->mem) {
@@ -655,8 +670,11 @@ void ahci_detach(wallos_device_t* dev) {
 	printf_serial("[AHCI] controller detached\r\n");
 }
 
+
+// ------------------------------------------------------------------------------------------------
 // ------------------------------------------------------------------------------------------------
 // Driver Registration
+// ------------------------------------------------------------------------------------------------
 // ------------------------------------------------------------------------------------------------
 
 wallos_driver_t ahci_driver = {
@@ -681,4 +699,106 @@ void ahci_register_driver(void) {
 	} else {
 		printf_serial("[AHCI] driver registered\r\n");
 	}
+}
+
+// ------------------------------------------------------------------------------------------------
+// ------------------------------------------------------------------------------------------------
+// WDM Glue
+// ------------------------------------------------------------------------------------------------
+// ------------------------------------------------------------------------------------------------
+typedef struct {
+	ahci_port_t* port;
+	uint32_t slot_count; // Copied from ctrl so the vtable doesn't need ctrl
+} ahci_wdm_ctx_t;
+
+WDM_Status ahci_wdm_read(void* ctx, WDM_LBA lba, uint32_t count, void* buf, WDM_IOFlags flags) {
+	(void) flags; // Polling only for now, we dont care about the DMA flag
+	ahci_wdm_ctx_t* c = (ahci_wdm_ctx_t*) ctx;
+	int r = ahci_read_sectors(c->port, lba, count, buf);
+	if (r == 0) return WDM_OK;
+	return WDM_ERR_IO;
+}
+
+WDM_Status ahci_wdm_write(void* ctx, WDM_LBA lba, uint32_t count, const void* buf, WDM_IOFlags flags) {
+	ahci_wdm_ctx_t* c = (ahci_wdm_ctx_t*) ctx;
+
+	int r = ahci_write_sectors(c->port, lba, count, buf);
+	if (r != 0) return WDM_ERR_IO;
+
+	// If the caller wants a synchronous commit, issue a cache flush immediately
+	if (flags & WDM_FLAG_SYNC) {
+		ahci_fis_h2d_t fis;
+		memset(&fis, 0, sizeof(fis));
+		fis.fis_type = AHCI_FIS_TYPE_H2D;
+		fis.pmport_c = AHCI_FIS_H2D_C_BIT;
+		fis.command = ATA_CMD_FLUSH_CACHE_EXT;
+		fis.device = 0;
+		if (ahci_issue_ata(c->port, c->slot_count, &fis, NULL, 0, 0) != 0) return WDM_ERR_IO;
+	}
+
+	return WDM_OK;
+}
+
+WDM_Status ahci_wdm_flush(void* ctx) {
+	ahci_wdm_ctx_t* c = (ahci_wdm_ctx_t*) ctx;
+
+	ahci_fis_h2d_t fis;
+	memset(&fis, 0, sizeof(fis));
+	fis.fis_type = AHCI_FIS_TYPE_H2D;
+	fis.pmport_c = AHCI_FIS_H2D_C_BIT;
+	fis.command = ATA_CMD_FLUSH_CACHE_EXT;
+	fis.device = 0;
+
+	int r = ahci_issue_ata(c->port, c->slot_count, &fis, NULL, 0, 0);
+	return (r == 0) ? WDM_OK : WDM_ERR_IO;
+}
+
+void ahci_wdm_on_detach(void* ctx) {
+	// The port memory is owned by ahci_ctrl_t and freed in ahci_detach.
+	// All we own here is the context struct itself.
+	kfree(ctx);
+}
+
+static const WDM_DriverOps ahci_wdm_ops = {
+	.read = ahci_wdm_read,
+	.write = ahci_wdm_write,
+	.flush = ahci_wdm_flush,
+	.trim = NULL, // HDDs don't support TRIM
+	.on_attach = NULL, // Nothing extra needed at registration time
+	.on_detach = ahci_wdm_on_detach,
+};
+
+// Called from ahci_attach after a port is identified and its child device registered.
+// Returns the WDM handle on success, NULL on failure.
+WDM_DriveHandle ahci_wdm_register_port(ahci_port_t* port, uint32_t slot_count) {
+	ahci_wdm_ctx_t* ctx = (ahci_wdm_ctx_t*) kalloc(sizeof(ahci_wdm_ctx_t));
+	if (!ctx) {
+		printf_serial("[AHCI][ERROR] port %u: failed to alloc WDM context\r\n", port->port_idx);
+		return NULL;
+	}
+	ctx->port = port;
+	ctx->slot_count = slot_count;
+
+	WDM_DriveInfo info;
+	memset(&info, 0, sizeof(info));
+	info.sector_count = port->sector_count;
+	info.sector_size = port->sector_size;
+	info.physical_sector = port->sector_size; // Refine with word 106 if needed
+	info.optimal_xfer = 128; // 64K at 512B/sector, safe conservative estimate
+	info.removable = false;
+	info.read_only = false;
+	info.dma_capable = true;
+	strncpy(info.model, port->model, sizeof(info.model) - 1);
+	strncpy(info.serial, port->serial, sizeof(info.serial) - 1);
+
+	WDM_DriveHandle handle = NULL;
+	WDM_Status st = WDM_Register(&ahci_wdm_ops, ctx, &info, &handle);
+	if (st != WDM_OK) {
+		printf_serial("[AHCI][ERROR] port %u: WDM_Register failed (%d)\r\n", port->port_idx, (int) st);
+		kfree(ctx);
+		return NULL;
+	}
+
+	printf_serial("[AHCI] port %u registered with WDM\r\n", port->port_idx);
+	return handle;
 }

@@ -8,6 +8,7 @@
 extern "C" {
 #endif
 	size_t strlen(const char*);
+	size_t strnlen(const char* str, size_t max);
 	void strrev(char* arr, int start, int end);
 	long strtol(const char* str, char** endptr, int base);
 	long long strtoll(const char* __restrict__ nptr, char** __restrict__ endptr, int base);
