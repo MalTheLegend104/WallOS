@@ -178,6 +178,14 @@ section .text
 long_mode_start:
 	lgdt [GDT64Pointer64]
 
+    ; Perform a higher half jump
+    lea rax, [rel .upper_half]
+    mov rbx, KERNEL_VIRTUAL_BASE
+    add rax, rbx
+    jmp rax
+
+.upper_half:
+
    	mov ax, 0x10
 	mov ds, ax
 	mov es, ax
@@ -185,20 +193,11 @@ long_mode_start:
 	mov gs, ax
 	mov ss, ax
 
-	call enable_sse_main
-
-	; Zero uninitialized memory so there's no junk
-	mov rdi, _bss_start_
-	mov rcx, _bss_end_
-	sub rcx, _bss_start_
-	xor rax, rax
-	rep stosb
-
 	mov rsp, stack_top
 
-	mov edi, DWORD[multiboot_data_magic]
+    mov edi, DWORD[multiboot_data_magic]
     mov esi, DWORD[multiboot_data_address]
-	call kernel_main
+    call kernel_main
     hlt
 
 section .bss
