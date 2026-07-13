@@ -585,8 +585,7 @@ void ahci_attach(wallos_device_t* dev) {
 
 			WDM_DriveHandle wdm_handle = ahci_wdm_register_port(port, ctrl->slot_count);
 			if (!wdm_handle) {
-				printf_serial("[AHCI][WARN] port %u: WDM registration failed, "
-					"drive will not be accessible\r\n", i);
+				printf_serial("[AHCI][WARN] port %u: WDM registration failed, " "drive will not be accessible\r\n", i);
 			}
 			// Store the handle in the port so ahci_detach can unregister it
 			port->wdm_handle = wdm_handle;
@@ -619,6 +618,11 @@ void ahci_attach(wallos_device_t* dev) {
 				child->next_sibling = dev->first_child;
 				dev->first_child = child;
 				register_device(child);
+
+				// This takes the load of having to deal with partitions off of us. 
+				// In theory, this takes care of everything we need to take care of, including registering the device.
+				WDM_Status stat = WDM_ScanAndRegisterPartitions(wdm_handle, child);
+				if (stat != 0) printf_serial("[AHCI][WARN] stat = %d\r\n", stat);
 			} else {
 				printf_serial("[AHCI][ERROR] port %u: failed to create child device\r\n", i);
 			}
@@ -632,7 +636,27 @@ void ahci_attach(wallos_device_t* dev) {
 	printf_color(PRINT_COLOR_LIGHT_CYAN, PRINT_DEFAULT_BG, "[AHCI] Finished attaching controller (%s).\n", dev->name);
 }
 
+void remove_ahci_dev_tree(wallos_device_t* root) {
+	if (!root) return;
+
+	// Recursively tear down all children first
+	wallos_device_t* child = root->first_child;
+	while (child) {
+		wallos_device_t* next = child->next_sibling;
+		remove_ahci_dev_tree(child);
+		child = next;
+	}
+
+	if (root->name) {
+		kfree((void*) root->name);
+		root->name = NULL;
+	}
+
+	remove_device(root);
+}
+
 void ahci_detach(wallos_device_t* dev) {
+	// TODO: whenever we add the partition support into WDM, we need to make sure to properly clean up the child partition devices.
 	if (!dev || !dev->driver_data) return;
 
 	ahci_ctrl_t* ctrl = (ahci_ctrl_t*) dev->driver_data;
@@ -642,6 +666,7 @@ void ahci_detach(wallos_device_t* dev) {
 		if (!port->present) continue;
 
 		if (port->wdm_handle) {
+			// this will recursively clean up the child partition devices
 			WDM_Unregister(port->wdm_handle);
 			port->wdm_handle = NULL;
 		}
@@ -658,7 +683,7 @@ void ahci_detach(wallos_device_t* dev) {
 	wallos_device_t* child = dev->first_child;
 	while (child) {
 		wallos_device_t* next = child->next_sibling;
-		remove_device(child);
+		remove_ahci_dev_tree(child);
 		child = next;
 	}
 	dev->first_child = NULL;

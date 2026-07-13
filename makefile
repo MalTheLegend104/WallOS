@@ -41,6 +41,8 @@ ARGS +=  -audiodev sdl,id=snd0 \
   -device es1370,audiodev=snd0 \
   -device ac97,audiodev=snd0 
 
+# ARGS += -d int -dfilter 0x0..0x1f,0x21..0xff 2>&1 | sed '/v=20/,/EFER=/d'
+
 # These make it much easier to change things whenever we are finally self hosted.
 WALLOS_C_COMPILER 	:= x86_64-wallos-gcc
 WALLOS_CXX_COMPILER := x86_64-wallos-g++

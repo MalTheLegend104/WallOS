@@ -407,6 +407,7 @@ extern "C" {
 		WDM_DriveHandle handle,
 		WDM_DriveInfo* out
 	);
+
 #ifdef WALLOS_WDM_DMA
 	/**
 	 * @brief Allocate a DMA-safe buffer
@@ -492,6 +493,71 @@ extern "C" {
 		void* user_data
 	);
 #endif
+
+// TODO: This should probably be in it's own ifdef
+// I kinda plan on making WDM an open source module on it's own, I think it could be useful in embedded contexts
+
+	typedef struct {
+		uint8_t  type_guid[16];
+		uint8_t  unique_guid[16];
+		char     partition_name[72]; // Sized to hold 36 UTF-16 chars / 72 bytes
+		uint64_t attributes;
+	} WDM_PartitionMeta;
+
+	/**
+	 * @brief Register a partition associated with a parent drive.
+	 *
+	 * Behaves like WDM_Register, but links the new drive handle to a parent.
+	 * If the parent is unregistered (via WDM_Unregister), this partition will automatically be torn down.
+	 *
+	 * @param parent handle of the parent drive
+	 * @param ops    pointer to the driver's vtable
+	 * @param ctx    opaque driver context
+	 * @param info   partition geometry / capability information
+	 * @param out    receives the handle on success
+	 */
+	WDM_Status WDM_RegisterPartition(
+		WDM_DriveHandle      parent,
+		const WDM_DriverOps* ops,
+		void* ctx,
+		const WDM_DriveInfo* info,
+		WDM_DriveHandle* out
+	);
+
+	/**
+	 * @brief Creates a logical block device mapped to a sub-region of a parent drive.
+	 *
+	 * @param parent The physical drive handle.
+	 * @param start  Starting LBA of the partition.
+	 * @param length Number of sectors in the partition.
+	 * @param meta   Optional partition metadata (e.g., from GPT). Pass NULL for MBR/Raw.
+	 * @return WDM_DriveHandle The logical drive handle, or NULL on failure.
+	 */
+	WDM_DriveHandle WDM_AddPartition(WDM_DriveHandle parent, WDM_LBA start, WDM_LBA length, const WDM_PartitionMeta* meta);
+
+	/**
+	 * @brief Retrieves partition-specific metadata if the handle is a logical partition.
+	 *
+	 * @param handle The drive handle.
+	 * @param meta   Pointer to the metadata structure to populate.
+	 * @return WDM_Status WDM_OK if metadata was populated, WDM_ERR_UNSUPPORTED if
+	 *                    the handle is a physical drive or lacks metadata.
+	 */
+	WDM_Status WDM_GetPartitionMetadata(WDM_DriveHandle handle, WDM_PartitionMeta* meta);
+
+	// We forward declare this here. This is actually in the device manager
+	struct wallos_device;
+
+	/**
+	 * Scans the parent drive for MBR/GPT partition entries, and mounts them if they exist.
+	 * It will also register them with the device registry, as children of the provided parent.
+	 *
+	 * @param wdm_parent Parent drive to scan
+	 * @param dev_parent Parent device
+	 * @retval WDM_ERR_INVALID
+	 * @retval
+	 */
+	WDM_Status WDM_ScanAndRegisterPartitions(WDM_DriveHandle wdm_parent, struct wallos_device* dev_parent);
 
 #ifdef __cplusplus
 }

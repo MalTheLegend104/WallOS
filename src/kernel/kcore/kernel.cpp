@@ -222,6 +222,8 @@ void keyboard_debug() {
 #include <filesystem/initrd.h>
 #include <filesystem/vfs.h>
 #include <filesystem/fatfs_vfs.h>
+#include <klibc/internal_calls.h>
+#include <klibc/kernel_rng.h>
 
 void kernel_main(unsigned int magic, multiboot_info* mbt_info) {
 	// ------------------------------------------------------------------------------------------------
@@ -245,6 +247,8 @@ void kernel_main(unsigned int magic, multiboot_info* mbt_info) {
 	cpu_features f = cpuFeatures();
 	Features::checkFeatures(&f);
 	// Features::enableFeatures();
+
+	rng_seed(rdtsc());
 
 	// This inits the first 22 interrupts + the PIT interrupt (PIT is disabled at this point).
 	initIDT();

@@ -529,6 +529,19 @@ void* kalloc(size_t bytes) {
 	return kalloc(bytes);
 }
 
+void* kcalloc(size_t count, size_t size) {
+	if (count == 0 || size == 0) return NULL;
+	if (count > SIZE_MAX / size) return NULL; // overflow check
+
+	size_t total = count * size;
+	void* ret = kalloc(total);
+	if (ret != NULL) {
+		// zero the memory
+		memset(ret, 0, total);
+	}
+	return ret;
+}
+
 /**
  * @brief Allocates a 4096-byte chunk guaranteed to be below 4GB physical.
  */
