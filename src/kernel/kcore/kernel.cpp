@@ -389,4 +389,6 @@ void kernel_main(unsigned int magic, multiboot_info* mbt_info) {
 
 	char* cmd[] = { "dev", "info", "usb0" };
 	device_cmd(3, cmd);
+
+	while (true) WALLOS_HLT();
 }

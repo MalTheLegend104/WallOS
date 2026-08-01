@@ -23,7 +23,7 @@ extern "C" {
 		uint32_t dboff;          // 0x14
 		uint32_t rtsoff;         // 0x18
 		uint32_t hccparams2;     // 0x1C
-
+		// there is technically a VTIO register after HCCPARAMS2, but we wont use it and it's not necessarily present on all controllers.
 	} __attribute__((packed)) xhci_cap_regs_t;
 	_Static_assert(offsetof(xhci_cap_regs_t, caplength) == 0x00, "caplength offset");
 	_Static_assert(offsetof(xhci_cap_regs_t, hciversion) == 0x02, "hciversion offset");
@@ -43,9 +43,9 @@ extern "C" {
 		uint32_t pagesize;       // 0x08
 		uint32_t reserved0[2];
 		uint32_t dnctrl;         // 0x14
-		uint64_t crcr;                    // 0x18
+		uint64_t crcr;           // 0x18
 		uint32_t reserved1[4];
-		uint64_t dcbaap;                  // 0x30
+		uint64_t dcbaap;         // 0x30
 		uint32_t config;         // 0x38
 
 		// Port registers follow here
@@ -78,6 +78,36 @@ extern "C" {
 	_Static_assert(offsetof(xhci_doorbell_regs_t, db) == 0x00, "db offset");
 	_Static_assert(sizeof(xhci_doorbell_regs_t) == 0x400, "xhci_doorbell_regs_t size");
 
+	typedef struct {
+		uint16_t xhci_extended_cap_ptr;
+		uint8_t max_psa_size;
+		bool cfc;  // Contiguous Frame ID
+		bool sec;  // Stopped EDTLA
+		bool spc;  // Stopped Short Packet
+		bool pae;  //  Parse All Event
+		bool nss;  // No Secondary SID Support
+		bool ltc;  // Latency Tolerance Messaging
+		bool lhrc; // Light HC Reset
+		bool pind; // Port Indicators
+		bool ppc;  // Port Power Control
+		bool csz;  // Context Size
+		bool bnc;  // BW Negotiation
+		bool ac64; // 64 Addressing
+	} hccparams1_t;
+
+	typedef struct {
+		bool vtc; // Virtualization Based Trusted I/O 
+		bool gsc; // Get/Set Extended Property 
+		bool etc_tsc; // Extended TBC TRB Status 
+		bool etc; // Extended TBC 
+		bool cic; // Configuration Information 
+		bool lec; // Large ESIT Payload 
+		bool ctc; // Compliance Transition 
+		bool fsc; // Force Save Context 
+		bool cmc; // Configure Endpoint Command Max Exit Latency Too Large 
+		bool u3c; // U3 Entry 
+	} hccparams2_t;
+
 
 	typedef struct {
 		uintptr_t mmio_base;
@@ -89,6 +119,7 @@ extern "C" {
 		volatile xhci_doorbell_regs_t* doorbell;
 
 		bool ac64;
+		bool csz;
 
 	} xhci_controller_t;
 
