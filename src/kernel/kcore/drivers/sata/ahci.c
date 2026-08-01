@@ -4,6 +4,7 @@
 #include <stdio.h>
 
 #include <cpu_io.h>
+#include <endian_bits.h>
 
 #include <drivers/serial.h>
 #include <drivers/pci.h>
@@ -35,14 +36,11 @@ static inline void ahci_udelay(uint32_t us) {
 // ------------------------------------------------------------------------------------------------
 // ------------------------------------------------------------------------------------------------
 
-static inline uint32_t mmio_read32(uintptr_t addr) { return *(volatile uint32_t*) addr; }
-static inline void mmio_write32(uintptr_t addr, uint32_t val) { *(volatile uint32_t*) addr = val; }
+static inline uint32_t hba_read(ahci_ctrl_t* ctrl, uint32_t reg) { return mmio_read32((volatile void*) (ctrl->abar + reg)); }
+static inline void hba_write(ahci_ctrl_t* ctrl, uint32_t reg, uint32_t val) { mmio_write32((volatile void*) (ctrl->abar + reg), val); }
 
-static inline uint32_t hba_read(ahci_ctrl_t* ctrl, uint32_t reg) { return mmio_read32(ctrl->abar + reg); }
-static inline void hba_write(ahci_ctrl_t* ctrl, uint32_t reg, uint32_t val) { mmio_write32(ctrl->abar + reg, val); }
-
-static inline uint32_t port_read(ahci_port_t* port, uint32_t reg) { return mmio_read32(port->port_base + reg); }
-static inline void port_write(ahci_port_t* port, uint32_t reg, uint32_t val) { mmio_write32(port->port_base + reg, val); }
+static inline uint32_t port_read(ahci_port_t* port, uint32_t reg) { return mmio_read32((volatile void*) (port->port_base + reg)); }
+static inline void port_write(ahci_port_t* port, uint32_t reg, uint32_t val) { mmio_write32((volatile void*) (port->port_base + reg), val); }
 
 // ------------------------------------------------------------------------------------------------
 // ------------------------------------------------------------------------------------------------

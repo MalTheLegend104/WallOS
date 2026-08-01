@@ -224,6 +224,7 @@ void keyboard_debug() {
 #include <filesystem/fatfs_vfs.h>
 #include <klibc/internal_calls.h>
 #include <klibc/kernel_rng.h>
+#include <drivers/usb/hosts/xhci.h>
 
 void kernel_main(unsigned int magic, multiboot_info* mbt_info) {
 	// ------------------------------------------------------------------------------------------------
@@ -360,6 +361,7 @@ void kernel_main(unsigned int magic, multiboot_info* mbt_info) {
 	mount_drive("/initrd", initrd, 0);
 
 	// register_usb_controller_drivers();
+	xhci_init();
 
 	dm_bind_all_registered();
 
@@ -383,5 +385,8 @@ void kernel_main(unsigned int magic, multiboot_info* mbt_info) {
 	registerCommand((Command) { device_cmd, 0, "device", dev_aliases, 1 }); // "dev" is the only alias.
 	registerCommand((Command) { cpu_info, 0, "cpu", 0, 0 });
 	registerCommand((Command) { driver_cli, 0, "driver", 0, 0 });
-	terminalMain();
+	// terminalMain();
+
+	char* cmd[] = { "dev", "info", "usb0" };
+	device_cmd(3, cmd);
 }

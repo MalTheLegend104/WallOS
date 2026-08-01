@@ -53,6 +53,9 @@
 // If this comment is still here, know that scheduler_cpu.c relies on this in a bad way.
 #define WALLOS_SYSTEM_MAX_CPU 64
 
+// This should probably be a compiler flag rather than defined here.
+// This tells the OS that we have 64 bit write/read rather than needing to split it up into 32bit write/read
+#define WALLOS_ARCH_64
 
 // ------------------------------------------------------------------------------------------------
 // ------------------------------------------------------------------------------------------------
