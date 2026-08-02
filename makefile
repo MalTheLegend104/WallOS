@@ -12,13 +12,13 @@ ARGS ?= -m 5G -M hpet=on -machine q35 -cpu max -smp 4 -serial stdio
 
 # This adds one of each type of USB host controllers
 # OHCI, UHCI, EHCI, and XHCI
-# ARGS += \
+ARGS += \
+  -device qemu-xhci,id=xhci \
+  -device usb-kbd 
 #   -device piix3-usb-uhci,id=uhci0
-#   -device usb-kbd \
 #   -device usb-mouse
 #   -device usb-ehci,id=ehci0 \
 #   -device pci-ohci,id=ohci \
-#   -device qemu-xhci,id=xhci
 
 ARGS += -device ahci,id=ahci0 \
   -drive file=hda.img,if=none,id=d1 \
