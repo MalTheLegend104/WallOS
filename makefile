@@ -79,8 +79,8 @@ FORCED_INCLUDES = -include $(CURDIR)/wallos_debug_macros.h -include $(CURDIR)/wa
 
 # Default things for all platforms. This includes things like LIBC, the WallOS, and compile flags.
 DEBUG_SYMBOLS   :=
-C_FLAGS 		:= -ffreestanding -std=gnu99 -Wall -Wextra -Wno-format -nostdlib -lgcc -mno-red-zone -O0 -mcmodel=kernel $(DEBUG_SYMBOLS) $(FORCED_INCLUDES)
-CPP_FLAGS 		:= -ffreestanding -std=c++11 -fno-rtti -Wall -Wextra -Wno-format -nostdlib -lgcc -mno-red-zone -O0 -mcmodel=kernel $(DEBUG_SYMBOLS) $(FORCED_INCLUDES)
+C_FLAGS 		:= -ffreestanding -std=gnu99 -Wall -Wextra -Wno-format -nostdlib -lgcc -mno-red-zone -O2 -mcmodel=kernel $(DEBUG_SYMBOLS) $(FORCED_INCLUDES)
+CPP_FLAGS 		:= -ffreestanding -std=c++11 -fno-rtti -Wall -Wextra -Wno-format -nostdlib -lgcc -mno-red-zone -O2 -mcmodel=kernel $(DEBUG_SYMBOLS) $(FORCED_INCLUDES)
 NASM_FLAGS 		:= $(DEBUG_SYMBOLS)
 LINKER_FLAGS 	:=
 

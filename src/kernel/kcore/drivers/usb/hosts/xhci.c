@@ -47,6 +47,14 @@ static inline uint64_t xhci_read_register(const volatile void* reg, bool ac64) {
 	return (uint64_t) mmio_read32(reg);
 }
 
+/**
+ * @brief Ensures previous memory operations complete before continuing.
+ *
+ */
+static inline void xhci_memory_fence() {
+	__atomic_thread_fence(__ATOMIC_SEQ_CST);
+}
+
 // Oh look it's this stupid function again...
 // TODO: we really need to abstract this out, this is x86 dependent
 static inline void xhci_delay_us(uint32_t us) {
@@ -204,6 +212,34 @@ void xhci_print_supported_protocol(const xhci_xec_supported_proto_t* proto) {
 	}
 }
 
+void xhci_print_port_protocols(xhci_controller_t* hc) {
+	if (!hc || !hc->first_xce) return;
+
+	xhci_extended_compat_t* current = hc->first_xce;
+	while (current != NULL) {
+		if (current->capability == XEC_SUPPORTED_PROTO && current->specific_data != NULL) {
+			xhci_xec_supported_proto_t* proto = (xhci_xec_supported_proto_t*) current->specific_data;
+
+			if (proto->comp_port_count > 0) {
+				uint8_t start_port = proto->comp_port_offset;
+				uint8_t end_port = start_port + proto->comp_port_count - 1;
+
+				if (start_port == end_port) {
+					printf_serial("[xHCI] Port %u is USB %u.%u\r\n", start_port, proto->rev_major, proto->rev_minor);
+					printf_color(PRINT_COLOR_PURPLE, PRINT_DEFAULT_BG, "[xHCI] Port %u is USB %u.%u\n", start_port, proto->rev_major, proto->rev_minor);
+				} else {
+					printf_serial("[xHCI] Ports %u-%u are USB %u.%u\r\n", start_port, end_port, proto->rev_major, proto->rev_minor);
+					printf_color(PRINT_COLOR_PURPLE, PRINT_DEFAULT_BG, "[xHCI] Ports %u-%u are USB %u.%u\n", start_port, end_port, proto->rev_major, proto->rev_minor);
+				}
+			} else {
+				printf_serial("[xHCI] No ports assigned to USB %u.%u\r\n", proto->rev_major, proto->rev_minor);
+				printf_color(PRINT_COLOR_PURPLE, PRINT_DEFAULT_BG, "[xHCI] No ports assigned to USB %u.%u\r\n", proto->rev_major, proto->rev_minor);
+			}
+		}
+		current = current->next_node;
+	}
+}
+
 void xhci_parse_legacy_support(uintptr_t cap_base, xhci_xec_legacy_support_t* legsup) {
 	uint32_t dw0 = mmio_read32((volatile void*) (cap_base + 0 * sizeof(uint32_t)));
 	uint32_t dw1 = mmio_read32((volatile void*) (cap_base + 1 * sizeof(uint32_t)));
@@ -330,6 +366,55 @@ void xhci_bios_handoff(uintptr_t cap_base, xhci_xec_legacy_support_t* legsup) {
 	}
 }
 
+void xhci_reset_controller(xhci_controller_t* hc) {
+	printf_serial("[xHCI] Resetting controller... ");
+	printf_color(PRINT_COLOR_PURPLE, PRINT_DEFAULT_BG, "[xHCI] Resetting controller...");
+
+	const uint32_t XHCI_USBCMD_HCRST = BIT(1);  // Host Controller Reset
+	const uint32_t XHCI_USBSTS_HCH = BIT(0);  // HC Halted
+	const uint32_t XHCI_USBSTS_CNR = BIT(11); // Controller Not Ready
+
+	// printf_serial("\r\nhc->cap = 0x%llx, hc->cap->caplength = 0x%llx, hc->op = 0x%llx, hc->op->usbcmd = 0x%llx\r\n", hc->cap, FIELD_GET(MASK_32_BYTE0, mmio_read32(&hc->cap->caplength)), hc->op, &hc->op->usbcmd);
+
+	// Clear Run/Stop bit
+	uint32_t usbcmd = mmio_read32(&hc->op->usbcmd);
+	BIT_CLEAR(usbcmd, 0); // BIT0 is Run/Stop
+	mmio_write32(&hc->op->usbcmd, usbcmd);
+
+	// Wait for HC to halt
+	while ((mmio_read32(&hc->op->usbsts) & XHCI_USBSTS_HCH) == 0) {
+		xhci_delay_us(1000);
+	}
+
+	printf_serial("controller halted. Issuing reset...\r\n");
+
+	// Issue Reset
+	usbcmd = mmio_read32(&hc->op->usbcmd);
+	BIT_SET(usbcmd, 1);
+	mmio_write32(&hc->op->usbcmd, usbcmd);
+
+	// Wait for reset to complete (HCRST clears to 0)
+	while ((mmio_read32(&hc->op->usbcmd) & XHCI_USBCMD_HCRST) != 0) {
+		xhci_delay_us(1000);
+	}
+
+	// Wait for CNR to clear
+	while ((mmio_read32(&hc->op->usbsts) & XHCI_USBSTS_CNR) != 0) {
+		xhci_delay_us(1000);
+	}
+
+	printf_serial("Controller successfully reset\r\n");
+	printf_color(PRINT_COLOR_PURPLE, PRINT_DEFAULT_BG, " done\n");
+}
+
+void xhci_write_max_slots(xhci_controller_t* hc, uint8_t slots) {
+	if (!hc || slots == 0) return;
+
+	uint32_t config_reg = mmio_read32(&hc->op->config);
+	FIELD_WRITE(config_reg, MASK_32_BYTE0, slots);
+	mmio_write32(&hc->op->config, config_reg);
+}
+
 #define XHCI_MMIO_FLAGS  (BIT_PRESENT | BIT_WRITE | BIT_PCD | BIT_SIZE)
 void xhci_attach(wallos_device_t* dev) {
 	if (!dev) return;
@@ -377,7 +462,7 @@ void xhci_attach(wallos_device_t* dev) {
 
 	/* CAPLENGTH, HCIVERSION */
 	// gets caplength and adds it to the mmio_base to get the operations address
-	hc->op = (volatile xhci_op_regs_t*) hc->mmio_base + mmio_read8_as32((volatile void*) hc->mmio_base);
+	hc->op = (volatile xhci_op_regs_t*) ((uintptr_t) hc->mmio_base + mmio_read8_as32(&hc->cap->caplength));
 
 	uint16_t hc_version = mmio_read16_as32(&hc->cap->hciversion);
 	// upper byte has major version, lower byte has minor & patch
@@ -392,6 +477,7 @@ void xhci_attach(wallos_device_t* dev) {
 	uint8_t max_ports = FIELD_GET(MASK_32_BYTE3, hcsparams1);
 	uint32_t max_interrupts = FIELD_GET(GENMASK(18, 8), hcsparams1);
 	uint8_t max_dev_slots = FIELD_GET(MASK_32_BYTE0, hcsparams1);
+	hc->max_slots = max_dev_slots;
 	printf_serial("[xHCI] Controller has %u max ports, %u max interrupters, %u max device slots.\r\n", max_ports, max_interrupts, max_dev_slots);
 	printf_color(PRINT_COLOR_PURPLE, PRINT_DEFAULT_BG, "[xHCI] Controller has %u max ports, %u max device slots.\n", max_ports, max_dev_slots);
 
@@ -421,13 +507,13 @@ void xhci_attach(wallos_device_t* dev) {
 	uint32_t dboff = mmio_read32(&hc->cap->dboff);
 	dboff = FIELD_GET(GENMASK(31, 2), dboff);
 	printf_serial("[xHCI] DBOFF = 0x%x\r\n", dboff);
-	hc->doorbell = (volatile xhci_doorbell_regs_t*) (hc->mmio_base + dboff);
+	hc->doorbell = (volatile xhci_doorbell_regs_t*) ((uintptr_t) hc->mmio_base + dboff);
 
 	/* RTSOFF */
 	uint32_t rtsoff = mmio_read32(&hc->cap->rtsoff);
 	rtsoff = FIELD_GET(GENMASK(31, 5), rtsoff);
 	printf_serial("[xHCI] RTSOFF = 0x%x\r\n", rtsoff);
-	hc->runtime = (volatile xhci_runtime_regs_t*) (hc->mmio_base + rtsoff);
+	hc->runtime = (volatile xhci_runtime_regs_t*) ((uintptr_t) hc->mmio_base + rtsoff);
 
 	/* HCCPARAMS2 */
 	uint32_t hccparams2_raw = mmio_read32(&hc->cap->hccparams2);
@@ -504,6 +590,34 @@ void xhci_attach(wallos_device_t* dev) {
 		}
 
 	}
+
+	xhci_print_port_protocols(hc);
+	xhci_reset_controller(hc);
+
+	// In order that the spec lists them:
+	// - Program MaxSlotsEn in CONFIG
+	// - Program DCBAAP
+	// - Program the CRCR
+	// - Init Interrupts (optional, wont do for now)
+	// Write USBCMD R/S bit to 1
+
+	xhci_write_max_slots(hc, max_dev_slots);
+	// we need the dcbaap now, 64 bit register so we need to use the wrapper
+	// page 441 of spec, section 6.1:
+	// The Device Context Base Address Array shall contain MaxSlotsEn + 1 entries.
+	// The maximum size of the Device Context Base Address Array is 256 64-bit entries, or 2K Bytes.
+	// We need this to be aligned at a 64 byte boundary
+	// We also need to write the physical address to the controller
+	hc->dcbaa_size = hc->max_slots + 1;
+	hc->dcbaa = kalloc_dma(hc->dcbaa_size * sizeof(uint64_t), DMA_ALIGN_64 | DMA_ZONE_ANY, PDE_FLAGS_UC_2MB, &hc->dcbaa_phys);
+	if (!hc->dcbaa) {
+		printf_serial("[xHCI][ERROR] Failed to allocate the DCBAA... \r\n");
+		printf_color(PRINT_COLOR_LIGHT_RED, PRINT_DEFAULT_BG, "[xHCI][ERROR] Failed to allocate the DCBAA... \r\n");
+		return;
+	}
+	xhci_write_register(&hc->op->dcbaap, hc->dcbaa_phys, hc->ac64);
+
+
 }
 
 void xhci_detach(wallos_device_t* dev) {

@@ -204,6 +204,12 @@ extern "C" {
 		xhci_extended_compat_t* first_xce;
 		xhci_extended_compat_t* last_xce;
 
+		uintptr_t dcbaa_phys;
+		uint64_t* dcbaa;
+		uint8_t dcbaa_size;
+
+		uint8_t max_slots;
+
 		bool ac64;
 		bool csz;
 

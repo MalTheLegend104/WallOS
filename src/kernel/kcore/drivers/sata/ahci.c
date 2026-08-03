@@ -560,7 +560,7 @@ void ahci_attach(wallos_device_t* dev) {
 
 		// Allocate DMA memory for command list + FIS + command table
 		uintptr_t phys_unused;
-		port->mem = (ahci_port_mem_t*) kalloc_dma_64(sizeof(ahci_port_mem_t), &phys_unused);
+		port->mem = (ahci_port_mem_t*) kalloc_dma(sizeof(ahci_port_mem_t), DMA_ZONE_ANY, 0, &phys_unused);
 		if (!port->mem) {
 			printf_serial("[AHCI][ERROR] port %u: DMA alloc failed\r\n", i);
 			port->present = 0;
@@ -672,7 +672,7 @@ void ahci_detach(wallos_device_t* dev) {
 		port_stop_cmd(port);
 
 		if (port->mem) {
-			kfree_dma(port->mem, sizeof(ahci_port_mem_t));
+			kfree_dma(port->mem);
 			port->mem = NULL;
 		}
 	}
