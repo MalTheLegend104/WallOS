@@ -12,6 +12,20 @@
 extern "C" {
 #endif
 
+// Number of interrupters we currently support. 
+// Change this (and ensure hc->interrupters is big enough) to support more.
+#define XHCI_INTERRUPTER_COUNT 1
+
+// Segments per interrupter's Event Ring Segment Table. 
+// I dont see us needing more than one but want to make sure we can if we need to
+#define XHCI_ERST_SEGMENTS_PER_INTERRUPTER 1
+
+// TRBs per event ring segment. 
+// Spec (6.5) requires each segment be between 16 and 4096 TRBs.
+#define XHCI_EVENT_RING_TRBS_PER_SEGMENT 256 // 256 * 16 bytes = one 4KiB page
+
+	_Static_assert(XHCI_EVENT_RING_TRBS_PER_SEGMENT >= 16 && XHCI_EVENT_RING_TRBS_PER_SEGMENT <= 4096, "xHCI event ring segments must be between 16 and 4096 TRBs");
+
 	typedef struct {
 		uint8_t caplength;       // 0x00
 		uint8_t reserved;
@@ -61,15 +75,29 @@ extern "C" {
 	_Static_assert(offsetof(xhci_op_regs_t, dcbaap) % 8 == 0, "dcbaap must be 8-byte aligned");
 	_Static_assert(sizeof(xhci_op_regs_t) == 0x3C, "xhci_op_regs_t size");
 
+	typedef struct {
+		uint32_t iman;      // 0x00 - Interrupter Management
+		uint32_t imod;      // 0x04 - Interrupter Moderation
+		uint32_t erstsz;    // 0x08 - Event Ring Segment Table Size
+		uint32_t reserved0; // 0x0C - RsvdP
+		uint64_t erstba;    // 0x10 - Event Ring Segment Table Base Address
+		uint64_t erdp;      // 0x18 - Event Ring Dequeue Pointer
+	} __attribute__((packed)) xhci_interrupter_regs_t;
+	_Static_assert(offsetof(xhci_interrupter_regs_t, imod) == 0x04, "imod offset");
+	_Static_assert(offsetof(xhci_interrupter_regs_t, erstsz) == 0x08, "erstsz offset");
+	_Static_assert(offsetof(xhci_interrupter_regs_t, erstba) == 0x10, "erstba offset");
+	_Static_assert(offsetof(xhci_interrupter_regs_t, erdp) == 0x18, "erdp offset");
+	_Static_assert(sizeof(xhci_interrupter_regs_t) == 0x20, "xhci_interrupter_regs_t size");
 
 	typedef struct {
 		uint32_t mfindex;        // 0x00
 		uint32_t reserved0[7];
 
-		// Interrupter registers follow
+		// Interrupter registers follow, starting at 0x20, one 0x20-byte block per interrupter.
+		xhci_interrupter_regs_t ir[];
 	} __attribute__((packed)) xhci_runtime_regs_t;
 	_Static_assert(offsetof(xhci_runtime_regs_t, mfindex) == 0x00, "mfindex offset");
-	_Static_assert(sizeof(xhci_runtime_regs_t) == 0x20, "xhci_runtime_regs_t size");
+	_Static_assert(offsetof(xhci_runtime_regs_t, ir) == 0x20, "ir array offset");
 
 
 	typedef struct {
@@ -191,6 +219,43 @@ extern "C" {
 		struct xhci_extended_compat* next_node;
 	} xhci_extended_compat_t;
 
+	typedef struct {
+		uint64_t parameter;
+		uint32_t status;
+		uint32_t control;
+	} __attribute__((packed)) trb_t;
+	_Static_assert(sizeof(trb_t) == 16, "TRBs must be 16 bytes");
+
+	typedef struct {
+		trb_t* trbs;
+		uintptr_t trbs_phys;
+		size_t trb_count;
+		size_t enqueue;
+		bool cycle;
+		trb_t* enqueue_trb;
+	} xhci_ring_t;
+
+	typedef struct {
+		uint64_t base;
+		uint32_t size; // size is only the lower 16 bits
+		uint32_t reserved; // reserved according to spec
+	} xhci_event_segment_table_t;
+
+	typedef struct {
+		/* Event Ring Segments (array of erst_size rings, one alloc each) */
+		xhci_ring_t* segments;
+
+		/* Event Ring Segment Table */
+		xhci_event_segment_table_t* erst;
+		uintptr_t erst_phys;
+		uint16_t erst_size;
+
+		/* Software's current dequeue position: which segment, and the TRB
+		 * index within that segment. */
+		uint16_t dequeue_segment;
+		size_t dequeue;
+		bool cycle;
+	} xhci_interrupter_t;
 
 	typedef struct {
 		uintptr_t mmio_base;
@@ -207,6 +272,11 @@ extern "C" {
 		uintptr_t dcbaa_phys;
 		uint64_t* dcbaa;
 		uint8_t dcbaa_size;
+
+		xhci_ring_t command_ring;
+		/* Interrupters (only interrupter 0 for now). */
+		uint16_t interrupter_count;
+		xhci_interrupter_t* interrupters;
 
 		uint8_t max_slots;
 

@@ -407,12 +407,122 @@ void xhci_reset_controller(xhci_controller_t* hc) {
 	printf_color(PRINT_COLOR_PURPLE, PRINT_DEFAULT_BG, " done\n");
 }
 
+bool xhci_ring_enqueue(xhci_ring_t* ring, const trb_t* trb) {
+	if (!ring || !trb) return false;
+
+	trb_t* dst = &ring->trbs[ring->enqueue];
+
+	/* Copy the TRB without its cycle bit. */
+	*dst = *trb;
+	FIELD_WRITE(dst->control, BIT(0), 0);
+
+	xhci_memory_fence();
+
+	FIELD_WRITE(dst->control, BIT(0), ring->cycle);
+
+	ring->enqueue++;
+
+	/* Link TLB */
+	if (ring->enqueue == ring->trb_count - 1) {
+		/* Skip over the Link TRB. The hardware consumes it, not us.
+		 * Since the Link TRB has TC=1, we also toggle our producer cycle state.
+		 */
+		ring->enqueue = 0;
+		ring->cycle = !ring->cycle;
+	}
+
+	return true;
+}
+
 void xhci_write_max_slots(xhci_controller_t* hc, uint8_t slots) {
 	if (!hc || slots == 0) return;
 
 	uint32_t config_reg = mmio_read32(&hc->op->config);
 	FIELD_WRITE(config_reg, MASK_32_BYTE0, slots);
 	mmio_write32(&hc->op->config, config_reg);
+}
+
+// Computes the physical address of the interrupter's current dequeue TRB.
+static inline uintptr_t xhci_interrupter_dequeue_phys(xhci_interrupter_t* ir) {
+	xhci_ring_t* seg = &ir->segments[ir->dequeue_segment];
+	return seg->trbs_phys + (ir->dequeue * sizeof(trb_t));
+}
+
+// Advances the interrupter's dequeue pointer by one TRB, wrapping to next segment as needed
+// CCS only toggles when we wrap back around to segment 0
+void xhci_interrupter_advance_dequeue(xhci_interrupter_t* ir) {
+	ir->dequeue++;
+	if (ir->dequeue >= ir->segments[ir->dequeue_segment].trb_count) {
+		ir->dequeue = 0;
+		ir->dequeue_segment++;
+		if (ir->dequeue_segment >= ir->erst_size) {
+			ir->dequeue_segment = 0;
+			ir->cycle = !ir->cycle;
+		}
+	}
+}
+
+// Writes the current dequeue pointer + DESI to ERDP and clears EHB so the controller is free to signal another interrupt for this interrupter.
+// Called once at init (dequeue at segment 0, TRB 0) and again after each batch of events software has finished draining.
+void xhci_interrupter_update_erdp(xhci_controller_t* hc, uint16_t index) {
+	xhci_interrupter_t* ir = &hc->interrupters[index];
+
+	uint64_t erdp_value = xhci_interrupter_dequeue_phys(ir) & GENMASK(63, 4);
+	FIELD_WRITE(erdp_value, GENMASK(2, 0), ir->dequeue_segment); // DESI
+	FIELD_WRITE(erdp_value, BIT_ULL(3), 1); // EHB - RW1C, always write 1 to clear
+
+	xhci_memory_fence();
+	xhci_write_register(&hc->runtime->ir[index].erdp, erdp_value, hc->ac64);
+}
+
+bool xhci_init_interrupter(xhci_controller_t* hc, uint16_t index) {
+	xhci_interrupter_t* ir = &hc->interrupters[index];
+
+	ir->erst_size = XHCI_ERST_SEGMENTS_PER_INTERRUPTER;
+
+	ir->segments = kcalloc(ir->erst_size, sizeof(xhci_ring_t));
+	if (!ir->segments) {
+		printf_serial("[xHCI][ERROR] Failed to allocate segment array for interrupter %u...\r\n", index);
+		printf_color(PRINT_COLOR_LIGHT_RED, PRINT_DEFAULT_BG, "[xHCI][ERROR] Failed to allocate segment array for interrupter %u...\n", index);
+		return false;
+	}
+
+	ir->erst = kalloc_dma(sizeof(xhci_event_segment_table_t) * ir->erst_size, DMA_ALIGN_64 | DMA_ZONE_ANY, PDE_FLAGS_UC_2MB, &ir->erst_phys);
+	if (!ir->erst) {
+		printf_serial("[xHCI][ERROR] Failed to allocate the ERST for interrupter %u...\r\n", index);
+		printf_color(PRINT_COLOR_LIGHT_RED, PRINT_DEFAULT_BG, "[xHCI][ERROR] Failed to allocate the ERST for interrupter %u...\n", index);
+		return false;
+	}
+
+	for (uint16_t seg = 0; seg < ir->erst_size; seg++) {
+		xhci_ring_t* ring = &ir->segments[seg];
+
+		ring->trb_count = XHCI_EVENT_RING_TRBS_PER_SEGMENT;
+		ring->trbs = kalloc_dma(ring->trb_count * sizeof(trb_t), DMA_ALIGN_64 | DMA_ZONE_ANY, PDE_FLAGS_UC_2MB, &ring->trbs_phys);
+		if (!ring->trbs) {
+			printf_serial("[xHCI][ERROR] Failed to allocate event ring segment %u for interrupter %u...\r\n", seg, index);
+			printf_color(PRINT_COLOR_LIGHT_RED, PRINT_DEFAULT_BG, "[xHCI][ERROR] Failed to allocate event ring segment %u for interrupter %u...\n", seg, index);
+			return false;
+		}
+		ring->enqueue = 0; // unused by software for event rings; the xHC owns "enqueue"
+
+		ir->erst[seg].base = ring->trbs_phys;
+		ir->erst[seg].size = ring->trb_count;
+	}
+
+	ir->dequeue_segment = 0;
+	ir->dequeue = 0;
+	ir->cycle = true; // Consumer Cycle State, toggles each time dequeue wraps back to segment 0
+
+	xhci_memory_fence();
+
+	// Program the runtime registers for this interrupter.
+	mmio_write32(&hc->runtime->ir[index].erstsz, ir->erst_size);
+	xhci_write_register(&hc->runtime->ir[index].erstba, ir->erst_phys, hc->ac64);
+	xhci_interrupter_update_erdp(hc, index); // ERDP -> segment 0, TRB 0, EHB cleared
+
+
+	return true;
 }
 
 #define XHCI_MMIO_FLAGS  (BIT_PRESENT | BIT_WRITE | BIT_PCD | BIT_SIZE)
@@ -615,8 +725,99 @@ void xhci_attach(wallos_device_t* dev) {
 		printf_color(PRINT_COLOR_LIGHT_RED, PRINT_DEFAULT_BG, "[xHCI][ERROR] Failed to allocate the DCBAA... \r\n");
 		return;
 	}
+	xhci_memory_fence(0);
 	xhci_write_register(&hc->op->dcbaap, hc->dcbaa_phys, hc->ac64);
 
+
+	/* I don't know why, but I struggled to understand the point of the CRCR when writing this, so this is a small summary.
+	 * The Command Ring is only for commands directed at the controller itself.
+	 * - Enable Slot
+	 * - Disable Slot
+	 * - Address Device
+	 * - Configure Endpoint
+	 * - Evaluate Context
+	 * - Reset Endpoint
+	 * - Stop Endpoint
+	 *
+	 * There is no recommended or defined size requirement, only:
+	 * - 64-byte alignment
+	 * - no TRB may cross a 64 KiB boundary
+	 * We use 4096 only because that's kinda the "standard" that most systems have settled on.
+	 * 4096 / 16 = 256 total TRBs (255 actually, last is Link TRB)
+	 *
+	 * From our point of view, the Command Ring is simply a queue of Command TRBs living in DMA-accessible memory.
+	 * We maintain an enqueue pointer indicating the next free TRB.
+	 * To submit a command, we write a new TRB at the enqueue position, advance the pointer (wrapping at the Link TRB), and ring Doorbell 0.
+	 * The xHC fetches and executes the command via DMA, advancing its own internal dequeue pointer.
+	 * Completion is reported asynchronously through the Event Ring.
+	 * We do not update CRCR or track the controller's dequeue pointer during normal operation.
+	 */
+	// The R/S bit is set to zero, so in theory the CRCR should be writeable, but we still check to make sure
+	uint64_t crcr_value = xhci_read_register(&hc->op->crcr, hc->ac64);
+	if (FIELD_GET(GENMASK(3, 3), crcr_value) != 0) {
+		// for some reason the command ring is running, we can try to write command abort
+		FIELD_WRITE(crcr_value, GENMASK(2, 2), 1);
+		xhci_write_register(&hc->op->crcr, crcr_value, hc->ac64);
+		// we're going to give it a little bit of time to stop before we check again.
+		xhci_delay_us(5);
+		crcr_value = xhci_read_register(&hc->op->crcr, hc->ac64);
+		if (FIELD_GET(GENMASK(3, 3), crcr_value) != 0) {
+			printf_serial("[xHCI][ERROR] Faulty Command Ring, can't stop it.\r\n");
+			printf_color(PRINT_COLOR_LIGHT_RED, PRINT_DEFAULT_BG, "[xHCI][ERROR] Faulty Command Ring, can't stop it.\n");
+			return; // TODO: we need a cleanup of some kind
+		}
+	}
+
+	// We want to start with a fresh value to avoid copying any lingering config bits
+	crcr_value = 0;
+
+	hc->command_ring.enqueue = 0;
+	hc->command_ring.cycle = true;
+
+	hc->command_ring.trbs = kalloc_dma(4096, DMA_ALIGN_64 | DMA_ZONE_ANY, PDE_FLAGS_UC_2MB, &hc->command_ring.trbs_phys);
+	hc->command_ring.trb_count = 4096 / sizeof(trb_t); // should be 256, we use trb_count everywhere instead of hardcoding it in case we want to increase/decrease this array size eventually
+	if (!hc->command_ring.trbs) {
+		printf_serial("[xHCI][ERROR] Failed to allocate the CRCR... \r\n");
+		printf_color(PRINT_COLOR_LIGHT_RED, PRINT_DEFAULT_BG, "[xHCI][ERROR] Failed to allocate the CRCR... \r\n");
+		return;
+	}
+
+	// Last TLB is the link TLB
+	trb_t* link = &hc->command_ring.trbs[hc->command_ring.trb_count - 1];
+	memset(link, 0, sizeof(*link)); // should be zero'd already but it doesn't hurt to be sure
+	link->parameter = hc->command_ring.trbs_phys;
+	FIELD_WRITE(link->control, GENMASK(15, 10), 6); // TRB Type = Link (6)
+	FIELD_WRITE(link->control, BIT(1), 1); // Toggle Cycle
+	FIELD_WRITE(link->control, BIT(0), 1); // Cycle bit
+
+	FIELD_WRITE(crcr_value, GENMASK(63, 6), hc->command_ring.trbs_phys);
+	FIELD_WRITE(crcr_value, BIT_ULL(0), 1); // RCS = 1
+
+	xhci_memory_fence();
+	xhci_write_register(&hc->op->crcr, crcr_value, hc->ac64);
+
+	// For now we only support one interrupter.
+	// Each interrupter has it's own registers:
+	// IMAN
+	// IMOD
+	// ERSTSZ
+	// ERSTBA
+	// ERDP
+	// Event Ring
+	// ERST
+	hc->interrupter_count = XHCI_INTERRUPTER_COUNT;
+	hc->interrupters = kcalloc(hc->interrupter_count, sizeof(xhci_interrupter_t));
+	if (!hc->interrupters) {
+		printf_serial("[xHCI][ERROR] Failed to allocate interrupters...\r\n");
+		printf_color(PRINT_COLOR_LIGHT_RED, PRINT_DEFAULT_BG, "[xHCI][ERROR] Failed to allocate interrupters...\n");
+		return;
+	}
+
+	for (uint16_t i = 0; i < hc->interrupter_count; i++) {
+		if (!xhci_init_interrupter(hc, i)) {
+			return;
+		}
+	}
 
 }
 
