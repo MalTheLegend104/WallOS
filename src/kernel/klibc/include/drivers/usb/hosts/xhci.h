@@ -5,6 +5,8 @@
 #include <stdbool.h>
 #include <stddef.h>
 
+#include <drivers/usb/usb_core.h>
+
 #ifdef __cplusplus
 #ifndef _Static_assert
 #define _Static_assert static_assert
@@ -52,6 +54,18 @@ extern "C" {
 
 
 	typedef struct {
+		uint32_t portsc;        // 0x00 - Port Status and Control
+		uint32_t portpmsc;      // 0x04 - Port Power Management Status and Control
+		uint32_t portli;        // 0x08 - Port Link Info
+		uint32_t reserved;      // 0x0C - RsvdP
+	} __attribute__((packed)) xhci_port_regs_t;
+
+	_Static_assert(offsetof(xhci_port_regs_t, portsc) == 0x00, "portsc offset");
+	_Static_assert(offsetof(xhci_port_regs_t, portpmsc) == 0x04, "portpmsc offset");
+	_Static_assert(offsetof(xhci_port_regs_t, portli) == 0x08, "portli offset");
+	_Static_assert(sizeof(xhci_port_regs_t) == 0x10, "xhci_port_regs_t size");
+
+	typedef struct {
 		uint32_t usbcmd;         // 0x00
 		uint32_t usbsts;         // 0x04
 		uint32_t pagesize;       // 0x08
@@ -62,7 +76,8 @@ extern "C" {
 		uint64_t dcbaap;         // 0x30
 		uint32_t config;         // 0x38
 
-		// Port registers follow here
+		// Port registers technically follow here, but they are at an offset of 0x400
+		// We're just going to compute that and track that differently
 	} __attribute__((packed)) xhci_op_regs_t;
 	_Static_assert(offsetof(xhci_op_regs_t, usbcmd) == 0x00, "usbcmd offset");
 	_Static_assert(offsetof(xhci_op_regs_t, usbsts) == 0x04, "usbsts offset");
@@ -257,6 +272,7 @@ extern "C" {
 		bool cycle;
 	} xhci_interrupter_t;
 
+
 	typedef struct {
 		uintptr_t mmio_base;
 		size_t mmio_size;
@@ -265,6 +281,7 @@ extern "C" {
 		volatile xhci_op_regs_t* op;
 		volatile xhci_runtime_regs_t* runtime;
 		volatile xhci_doorbell_regs_t* doorbell;
+		volatile xhci_port_regs_t* ports;
 
 		xhci_extended_compat_t* first_xce;
 		xhci_extended_compat_t* last_xce;
@@ -279,10 +296,11 @@ extern "C" {
 		xhci_interrupter_t* interrupters;
 
 		uint8_t max_slots;
+		uint8_t max_ports;
+		usb_speed_t* port_speeds; // maps the standardized port speed to each port
 
 		bool ac64;
 		bool csz;
-
 	} xhci_controller_t;
 
 	void xhci_init();

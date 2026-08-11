@@ -1,5 +1,6 @@
 #include <stdbool.h>
 #include <stdio.h>
+#include <string.h>
 
 #include <endian_bits.h>
 #include <cpu_io.h>
@@ -11,6 +12,7 @@
 #include <drivers/pci.h>
 #include <drivers/serial.h>
 #include <drivers/usb/hosts/xhci.h>
+#include <drivers/usb/usb_core.h>
 
 /**
  * @brief Write a 64-bit xHCI register.
@@ -469,7 +471,7 @@ void xhci_interrupter_update_erdp(xhci_controller_t* hc, uint16_t index) {
 
 	uint64_t erdp_value = xhci_interrupter_dequeue_phys(ir) & GENMASK(63, 4);
 	FIELD_WRITE(erdp_value, GENMASK(2, 0), ir->dequeue_segment); // DESI
-	FIELD_WRITE(erdp_value, BIT_ULL(3), 1); // EHB - RW1C, always write 1 to clear
+	FIELD_WRITE(erdp_value, BIT(3), 1); // EHB - RW1C, always write 1 to clear
 
 	xhci_memory_fence();
 	xhci_write_register(&hc->runtime->ir[index].erdp, erdp_value, hc->ac64);
@@ -525,6 +527,183 @@ bool xhci_init_interrupter(xhci_controller_t* hc, uint16_t index) {
 	return true;
 }
 
+static usb_speed_t xhci_get_port_speed_from_psi(xhci_controller_t* hc, uint8_t port, uint8_t psi) {
+	uint8_t spec_port = port + 1; // ports as far as we are concerned are zero indexed. the spec has them 1 indexed.
+	xhci_extended_compat_t* list = hc->first_xce;
+
+	while (list != NULL) {
+		if (list->capability != XEC_SUPPORTED_PROTO) {
+			list = list->next_node;
+			continue;
+		}
+
+		xhci_xec_supported_proto_t* sp = (xhci_xec_supported_proto_t*) list->specific_data;
+
+		if (spec_port < sp->comp_port_offset || spec_port > sp->comp_port_offset + sp->comp_port_count) {
+			// printf_serial("[xHCI][DEBUG] port not in range\r\n");
+
+			list = list->next_node;
+			continue;
+		}
+
+		if (sp->psi_count == 0) {
+			// use the default values
+			// I have *zero* clue what to do with anything above 4.
+			// The spec I was working with only had up to SS+ 10gbps
+			switch (psi) {
+				case 1: return USB_FULL_SPEED;
+				case 2: return USB_LOW_SPEED;
+				case 3: return USB_HIGH_SPEED;
+				case 4: return USB_SPEED_5GBPS;  // "SuperSpeed Gen 1x1"
+				case 5: return USB_SPEED_10GBPS; // "SS+ Gen 2x1"
+				case 6: return USB_SPEED_5GBPS;  // "SS+ Gen 1x2"
+				case 7: return USB_SPEED_10GBPS; // "SS+ Gen 2x2"
+				default: return USB_SPEED_UNKNOWN;
+			}
+		}
+
+		for (uint8_t i = 0; i < sp->psi_count; i++) {
+			xhci_xec_supported_proto_psi_t* entry = &sp->psi_array[i];
+
+			if (entry->psiv != psi) continue;
+
+			uint64_t speed_bps = entry->proto_speed_id_mantissa;
+
+			switch (entry->psie) {
+				case 0: //bps
+					break; // already in bps
+				case 1: //kbps
+					speed_bps *= 1000;
+					break;
+				case 2: //mbps
+					speed_bps = speed_bps * 1000 * 1000;
+					break;
+				case 3: //gbps
+					speed_bps = speed_bps * 1000 * 1000 * 1000;
+					break;
+				default: return USB_SPEED_UNKNOWN; // shouldn't be possible
+			}
+
+			// LS            1,500,000 bps
+			// FS           12,000,000 bps
+			// HS          480,000,000 bps
+			// USB3      5,000,000,000 bps
+			// USB3     10,000,000,000 bps
+			// USB3     20,000,000,000 bps
+			// USB4     40,000,000,000 bps
+			// USB4     80,000,000,000 bps
+			// USB4    120,000,000,000 bps (Asymmetric) (not actually sure how this shows up in reality)
+
+			// printf_serial("[xHCI][DEBUG] bps = %llu\r\n", speed_bps);
+
+			if (speed_bps <= 1500000ULL) return USB_LOW_SPEED;
+			if (speed_bps <= 12000000ULL) return USB_FULL_SPEED;
+			if (speed_bps <= 480000000ULL) return USB_HIGH_SPEED;
+			if (speed_bps <= 5000000000ULL) return USB_SPEED_5GBPS;
+			if (speed_bps <= 10000000000ULL) return USB_SPEED_10GBPS;
+			if (speed_bps <= 20000000000ULL) return USB_SPEED_20GBPS;
+			if (speed_bps <= 40000000000ULL) return USB_SPEED_40GBPS;
+			if (speed_bps <= 80000000000ULL) return USB_SPEED_80GBPS;
+			if (speed_bps <= 120000000000ULL) return USB_SPEED_120GBPS;
+
+			return USB_SPEED_UNKNOWN;
+		}
+
+		return USB_SPEED_UNKNOWN;
+	}
+
+	return USB_SPEED_UNKNOWN;
+}
+
+size_t xhci_get_port_count(usb_hcd_t* hcd) {
+	xhci_controller_t* hc = (xhci_controller_t*) hcd->hcd_data;
+	return (size_t) hc->max_ports;
+}
+
+int xhci_get_port_status(usb_hcd_t* hcd, uint8_t port, usb_port_status_t* status) {
+	if (!hcd | !status) return -1;
+	// we have a standardized format for port statuses since the HC specs don't all agree on things (thanks USB-IF...)
+	bool connected = false, enabled = false;
+	usb_speed_t speed = USB_SPEED_UNKNOWN;
+
+	xhci_controller_t* hc = (xhci_controller_t*) hcd->hcd_data;
+	if (port > hc->max_ports - 1) return -2;
+
+	uint32_t portsc = mmio_read32((const volatile void*) &hc->ports[port].portsc);
+
+	uint8_t ccs = FIELD_GET(GENMASK(0, 0), portsc);
+	if (ccs != 0) connected = true;
+	status->connected = connected;
+	if (!connected) return 0; // no reason to keep going, no device is connected
+
+	uint8_t ped = FIELD_GET(GENMASK(1, 1), portsc);
+	if (ped != 0) enabled = true;
+
+	uint8_t portsc_psi = FIELD_GET(GENMASK(13, 10), portsc);
+	speed = xhci_get_port_speed_from_psi(hc, port, portsc_psi);
+
+	// uint8_t oca = FIELD_GET(GENMASK(3, 3), portsc);
+
+	// I could read PLS here but meh, it's not really required and kinda annoying to parse
+	// Port Power is also here, same as before, I don't really care about it.
+	// I'm actually going to ignore all the other fields from this register.
+
+	printf_serial("[xHCI] PORT %u STATUS INFO: CCS=%u PED=%u PSI=%u (%s)\r\n", port, ccs, ped, portsc_psi, usb_speed_to_string(speed));
+
+	status->enabled = enabled;
+	status->speed = speed;
+
+	return 0;
+}
+
+int xhci_reset_port(usb_hcd_t* hcd, uint8_t port) {
+
+}
+int xhci_enable_port(usb_hcd_t* hcd, uint8_t port) {
+
+}
+int xhci_disable_port(usb_hcd_t* hcd, uint8_t port) {
+
+}
+int xhci_device_init(usb_hcd_t* hcd, usb_device_t* dev) {
+
+}
+int xhci_device_destroy(usb_hcd_t* hcd, usb_device_t* dev) {
+
+}
+int xhci_endpoint_open(usb_hcd_t* hcd, usb_endpoint_t* ep) {
+
+}
+int xhci_endpoint_close(usb_hcd_t* hcd, usb_endpoint_t* ep) {
+
+}
+int xhci_endpoint_reset(usb_hcd_t* hcd, usb_endpoint_t* ep) {
+
+}
+int xhci_execute_transfer(usb_hcd_t* hcd, usb_transfer_t* transfer) {
+
+}
+
+static const usb_hcd_ops_t xhci_ops = {
+	// need start, stop, restart. need to refactor a little for this
+	// needs async transfers (will wait for scheduling)
+
+	.get_port_count = xhci_get_port_count,
+	.get_port_status = xhci_get_port_status,
+	.reset_port = xhci_reset_port,
+	.enable_port = xhci_enable_port,
+	.disable_port = xhci_disable_port,
+
+	.device_init = xhci_device_init,
+	.device_destroy = xhci_device_destroy,
+
+	.endpoint_open = xhci_endpoint_open,
+	.endpoint_close = xhci_endpoint_close,
+	.endpoint_reset = xhci_endpoint_reset,
+
+	.execute_transfer = xhci_execute_transfer,
+};
+
 #define XHCI_MMIO_FLAGS  (BIT_PRESENT | BIT_WRITE | BIT_PCD | BIT_SIZE)
 void xhci_attach(wallos_device_t* dev) {
 	if (!dev) return;
@@ -573,6 +752,8 @@ void xhci_attach(wallos_device_t* dev) {
 	/* CAPLENGTH, HCIVERSION */
 	// gets caplength and adds it to the mmio_base to get the operations address
 	hc->op = (volatile xhci_op_regs_t*) ((uintptr_t) hc->mmio_base + mmio_read8_as32(&hc->cap->caplength));
+	hc->ports = (volatile xhci_port_regs_t*) ((uintptr_t) hc->op + 0x400); // ports are at offset 0x400 from the operational register base.
+	// ports can be accessed using hc->ports[index], where index is between 0 - (hc->max_ports - 1)
 
 	uint16_t hc_version = mmio_read16_as32(&hc->cap->hciversion);
 	// upper byte has major version, lower byte has minor & patch
@@ -588,6 +769,7 @@ void xhci_attach(wallos_device_t* dev) {
 	uint32_t max_interrupts = FIELD_GET(GENMASK(18, 8), hcsparams1);
 	uint8_t max_dev_slots = FIELD_GET(MASK_32_BYTE0, hcsparams1);
 	hc->max_slots = max_dev_slots;
+	hc->max_ports = max_ports;
 	printf_serial("[xHCI] Controller has %u max ports, %u max interrupters, %u max device slots.\r\n", max_ports, max_interrupts, max_dev_slots);
 	printf_color(PRINT_COLOR_PURPLE, PRINT_DEFAULT_BG, "[xHCI] Controller has %u max ports, %u max device slots.\n", max_ports, max_dev_slots);
 
@@ -725,7 +907,7 @@ void xhci_attach(wallos_device_t* dev) {
 		printf_color(PRINT_COLOR_LIGHT_RED, PRINT_DEFAULT_BG, "[xHCI][ERROR] Failed to allocate the DCBAA... \r\n");
 		return;
 	}
-	xhci_memory_fence(0);
+	xhci_memory_fence();
 	xhci_write_register(&hc->op->dcbaap, hc->dcbaa_phys, hc->ac64);
 
 
@@ -791,7 +973,7 @@ void xhci_attach(wallos_device_t* dev) {
 	FIELD_WRITE(link->control, BIT(0), 1); // Cycle bit
 
 	FIELD_WRITE(crcr_value, GENMASK(63, 6), hc->command_ring.trbs_phys);
-	FIELD_WRITE(crcr_value, BIT_ULL(0), 1); // RCS = 1
+	FIELD_WRITE(crcr_value, BIT(0), 1); // RCS = 1
 
 	xhci_memory_fence();
 	xhci_write_register(&hc->op->crcr, crcr_value, hc->ac64);
@@ -819,6 +1001,13 @@ void xhci_attach(wallos_device_t* dev) {
 		}
 	}
 
+	usb_hcd_t* hcd = (usb_hcd_t*) kcalloc(1, sizeof(usb_hcd_t));
+	hcd->ops = &xhci_ops;
+	hcd->device = dev;
+	hcd->type = USB_HCD_XHCI;
+	hcd->hcd_data = (void*) hc; // we just store the entire xhci_controller_t here. This is the same pointer that is in dev->driver_data for the HCD.
+
+	usb_hcd_register(hcd);
 }
 
 void xhci_detach(wallos_device_t* dev) {
