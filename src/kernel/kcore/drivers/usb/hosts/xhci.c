@@ -548,8 +548,10 @@ static usb_speed_t xhci_get_port_speed_from_psi(xhci_controller_t* hc, uint8_t p
 
 		if (sp->psi_count == 0) {
 			// use the default values
-			// I have *zero* clue what to do with anything above 4.
+			// I have *zero* clue what to do with anything above 7.
 			// The spec I was working with only had up to SS+ 10gbps
+			// I have zero clue how USB4 devices will show up here, and no devices to test it with.
+			// I assume that USB4 devices will just use the actual PSI arrays.
 			switch (psi) {
 				case 1: return USB_FULL_SPEED;
 				case 2: return USB_LOW_SPEED;
@@ -594,7 +596,7 @@ static usb_speed_t xhci_get_port_speed_from_psi(xhci_controller_t* hc, uint8_t p
 			// USB4     80,000,000,000 bps
 			// USB4    120,000,000,000 bps (Asymmetric) (not actually sure how this shows up in reality)
 
-			// printf_serial("[xHCI][DEBUG] bps = %llu\r\n", speed_bps);
+			printf_serial("[xHCI][DEBUG] bps = %llu\r\n", speed_bps);
 
 			if (speed_bps <= 1500000ULL) return USB_LOW_SPEED;
 			if (speed_bps <= 12000000ULL) return USB_FULL_SPEED;
@@ -656,18 +658,179 @@ int xhci_get_port_status(usb_hcd_t* hcd, uint8_t port, usb_port_status_t* status
 	return 0;
 }
 
+#define PORTSC_RW_MASK \
+    (GENMASK(8, 5)  |  /* PLS */ \
+     BIT(9)         |  /* PP */  \
+     GENMASK(15, 14) | /* PIC */ \
+     BIT(16)        |  /* LWS */ \
+     GENMASK(27, 25))  /* WCE/WDE/WOE */
+
 int xhci_reset_port(usb_hcd_t* hcd, uint8_t port) {
+	if (!hcd) return -1;
+	// we have a standardized format for port statuses since the HC specs don't all agree on things (thanks USB-IF...)
+	xhci_controller_t* hc = (xhci_controller_t*) hcd->hcd_data;
+	if (port > hc->max_ports - 1) return -2;
 
+	// All we need to do is set the portsc PR to 1
+	// The host controller will clear the PED bit to 0
+	// USB3 allows for "warm resets", which we're just going to ignore.
+	// Reset port is called mostly only during enumeration, and hot resets apply the same path for USB2 and USB3
+
+	uint32_t portsc = mmio_read32((const volatile void*) &hc->ports[port].portsc);
+
+	FIELD_WRITE(portsc, GENMASK(4, 4), 1); // slot 4 is the Port Reset flag
+	mmio_write32((const volatile void*) &hc->ports[port].portsc, portsc & (PORTSC_RW_MASK | GENMASK(4, 4)));
+
+	xhci_delay_us(10); // very generous delay to let the controller handle this
+
+	int timeout = 10000; // 10ms
+	while (FIELD_GET(GENMASK(4, 4), mmio_read32((const volatile void*) &hc->ports[port].portsc)) != 0) {
+		xhci_delay_us(1);
+		timeout--;
+		if (timeout <= 0) break;
+	}
+
+	if (timeout <= 0) {
+		printf_serial("[xHCI][WARN] Port %u reset timed out\r\n", port);
+		return -1;
+	}
+
+	portsc = mmio_read32((const volatile void*) &hc->ports[port].portsc);
+	// Copied from spec 4.19.5:
+	// If the bus reset sequence completes successfully, the xHC shall update the PORTSC register:
+	// - Set the PLS field to U0 ('0').
+	// - Clear the PR bit ('0').
+	// - Set PED to the enabled state ('1').
+	// - Set the PRC bit ('1').
+	// - For a USB3 protocol port, if a Hot Reset transitioned to a Warm Reset, set the WRC bit ('1'). <- we dont care about this one, it's not worth the extra effort to check
+	// - Set Port Speed field to the speed of the newly attached device.
+	//
+	// If the bus reset sequence does NOT complete successfully, the xHC shall update the PORTSC register:
+	// - Set the PLS field to RxDetect ('5').
+	// - Clear the PR bit ('0').
+	// - Set the PRC bit ('1').
+	// - For a USB3 protocol port, if a Hot Reset transitioned to a Warm Reset, set the WRC bit ('1').
+	// - Set the Port Speed field to Undefined Speed ('0').
+	// - Clear the CCS bit ('0').
+
+	uint8_t ccs = FIELD_GET(GENMASK(0, 0), portsc);
+	uint8_t ped = FIELD_GET(GENMASK(1, 1), portsc);
+	uint8_t pr = FIELD_GET(GENMASK(4, 4), portsc); // in theory should be zero. if it's 1, we're in a lot of trouble and will probably leave the port alone. 
+	uint8_t pls = FIELD_GET(GENMASK(8, 5), portsc);
+	uint8_t prc = FIELD_GET(GENMASK(21, 21), portsc);
+
+	FIELD_WRITE(portsc, GENMASK(21, 21), 1);
+	// We're going to write back 1 to PRC to clear it, regardless of what happens
+	mmio_write32((const volatile void*) &hc->ports[port].portsc, portsc & (PORTSC_RW_MASK | GENMASK(21, 21)));
+
+	if (ccs == 0) {
+		printf_serial("[xHCI][WARN] Failed to reset port %u. (CCS=0)\r\n", port);
+		return -3;
+	}
+
+	if (pr != 0) {
+		printf_serial("[xHCI][WARN] Failed to reset port %u. (PR)\r\n", port);
+		return -4;
+	}
+	if (pls != 0) {
+		printf_serial("[xHCI][WARN] Failed to reset port %u. (PLS)\r\n", port);
+		return -5;
+	}
+	if (prc != 1) {
+		printf_serial("[xHCI][WARN] Failed to reset port %u. (PRC)\r\n", port);
+		return -6;
+	}
+// we kinda ignore the "not sucessfully completed" conditions, but if they don't satisfy the completion sequence then is there really a point in checking? 
+
+// we will "attempt" to enable this again later. USB core doesn't explicitly require us to re-enable the port on port reset
+	if (ped != 1) {
+		printf_serial("[xHCI][WARN] Port %u is not enabled after reset...\r\n", port);
+		printf_color(PRINT_COLOR_YELLOW, PRINT_DEFAULT_BG, "[xHCI][WARN] Port is not enabled after reset...\r\n");
+	}
+	printf_serial("[xHCI] Port %u successfully reset.\r\n", port);
+	return 0;
 }
+
 int xhci_enable_port(usb_hcd_t* hcd, uint8_t port) {
+	if (!hcd) return -1;
 
-}
-int xhci_disable_port(usb_hcd_t* hcd, uint8_t port) {
+	xhci_controller_t* hc = (xhci_controller_t*) hcd->hcd_data;
+	if (port > hc->max_ports - 1) return -2;
 
+	// on xhci, the HC should in theory automatically try to get the port to an enabled state on reboot.
+	// we will check here if it's not enabled. if it's not enabled (and there's something connected), we will attempt to figure out why.
+	// We will attempt another port reset as a best effort attempt at fixing it. 
+	volatile void* portsc_reg = (volatile void*) &hc->ports[port].portsc;
+
+	uint32_t portsc = mmio_read32(portsc_reg);
+
+	uint8_t ccs = FIELD_GET(GENMASK(0, 0), portsc);
+	uint8_t ped = FIELD_GET(GENMASK(1, 1), portsc);
+	uint8_t pr = FIELD_GET(GENMASK(4, 4), portsc);
+	uint8_t pls = FIELD_GET(GENMASK(8, 5), portsc);
+
+	if (ped) {
+		printf_serial("[xHCI] Port %u is enabled\r\n", port);
+		return 0;
+	}
+
+	printf_serial("[xHCI][WARN] Port %u is not enabled (CCS=%u PR=%u PLS=%u)\r\n", port, ccs, pr, pls);
+
+	// No device connected. There isn't anything useful to enable.
+	if (!ccs) {
+		printf_serial("[xHCI][WARN] Port %u has no connected device, it shouldn't've got here...\r\n", port);
+		return -3;
+	}
+
+	// A reset is still in progress. Don't interfere with it.
+	if (pr) {
+		printf_serial("[xHCI][WARN] Port %u is still being reset...\r\n", port);
+		return -4;
+	}
+
+	// Connected but not enabled. 
+	// Likely has something weird in the PLS, probably meaning something went wrong during link
+	if (pls != 0) {
+		printf_serial("[xHCI][WARN] Port %u is connected but not in U0 (PLS=%u)\r\n", port, pls);
+		// We can technically recover from this.
+		// These are the potential recoverable paths, I'm too lazy to implement this without reason, so I wrote this for future reference:
+		//     RxDetect  - link is looking for a receiver. This may indicate failed link initialization.
+		//     Polling   - USB3 link training is in progress. Give it some time before deciding that initialization failed.
+		//     Recovery  - link recovery/retraining is in progress. Wait.
+		//     Resume    - link is transitioning out of a suspended state. Wait.
+		//     U1/U2/U3  - valid low-power/suspend states, not necessarily errors. We can set U0 from here, but technically not correct on a hot reset.
+		//     Hot Reset - a USB3 reset is already in progress (somehow).
+		//     Inactive  - link isn't operational. A fresh port reset may be a reasonable recovery attempt.
+	}
+
+	// Really the only thing we can do is attempt another port reset.
+	printf_serial("[xHCI] Attempting to reset port %u again to enable it...\r\n", port);
+
+	int ret = xhci_reset_port(hcd, port);
+	if (ret != 0) return ret;
+
+	portsc = mmio_read32(portsc_reg);
+
+	ped = FIELD_GET(GENMASK(1, 1), portsc);
+	ccs = FIELD_GET(GENMASK(0, 0), portsc);
+
+	if (!ccs) {
+		printf_serial("[xHCI][WARN] Port %u lost connection during recovery\r\n", port);
+		return -5;
+	}
+
+	if (!ped) {
+		printf_serial("[xHCI][WARN] Port %u remains disabled after recovery\r\n", port);
+		return -6;
+	}
+
+	return 0;
 }
+
 int xhci_device_init(usb_hcd_t* hcd, usb_device_t* dev) {
 
 }
+
 int xhci_device_destroy(usb_hcd_t* hcd, usb_device_t* dev) {
 
 }
@@ -682,6 +845,10 @@ int xhci_endpoint_reset(usb_hcd_t* hcd, usb_endpoint_t* ep) {
 }
 int xhci_execute_transfer(usb_hcd_t* hcd, usb_transfer_t* transfer) {
 
+}
+
+int xhci_disable_port(usb_hcd_t* hcd, uint8_t port) {
+	return 0; // I don't really care about this ngl. Will come back when it's actually needed.
 }
 
 static const usb_hcd_ops_t xhci_ops = {
