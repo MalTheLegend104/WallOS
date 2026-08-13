@@ -114,7 +114,6 @@ extern "C" {
 	_Static_assert(offsetof(xhci_runtime_regs_t, mfindex) == 0x00, "mfindex offset");
 	_Static_assert(offsetof(xhci_runtime_regs_t, ir) == 0x20, "ir array offset");
 
-
 	typedef struct {
 		uint32_t db[256];
 	} __attribute__((packed)) xhci_doorbell_regs_t;
@@ -304,6 +303,8 @@ extern "C" {
 	} xhci_controller_t;
 
 	void xhci_init();
+
+#define XHCI_COMMAND_TRB_ENABLE_SLOT 9
 
 #ifdef __cplusplus	
 #undef _Static_assert

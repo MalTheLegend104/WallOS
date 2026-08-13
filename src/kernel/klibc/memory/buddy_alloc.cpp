@@ -327,8 +327,8 @@ void mark_and_allocate_region(uintptr_t start, uintptr_t end, uint16_t flags) {
 
 uintptr_t scan_memory_map(struct multiboot_tag_mmap* mmap_tag) {
 	// This should return the maximum address
-	uintptr_t max_addr;
-	uintptr_t max_usable_addr;
+	uintptr_t max_addr = 0;
+	uintptr_t max_usable_addr = 0;
 
 	struct multiboot_mmap_entry* mmap;
 	for (mmap = mmap_tag->entries; (size_t) mmap < (size_t) mmap_tag + mmap_tag->size; mmap = (struct multiboot_mmap_entry*) ((size_t) mmap + (size_t) mmap_tag->entry_size)) {

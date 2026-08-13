@@ -127,36 +127,6 @@ int usb_control_msg(usb_device_t* dev, uint8_t request_type, uint8_t request, ui
 
 #include <drivers/usb/usb_class_drivers.h>
 
-// this will be moved to it's own file
-// the enumerate process is very annoying and long, I don't want it in core
-int usb_enumerate_hcd(usb_hcd_t* hcd) {
-	if (!hcd || !hcd->ops) return -1;
-
-	size_t port_count = hcd->ops->get_port_count(hcd);
-
-	for (uint8_t port = 0; port < (uint8_t) port_count; port++) {
-		usb_port_status_t status;
-		memset(&status, 0, sizeof(status));
-
-		if (hcd->ops->get_port_status(hcd, port, &status) != 0) continue;
-		if (!status.connected) continue;
-
-		if (hcd->ops->reset_port(hcd, port) != 0) continue;
-		if (hcd->ops->enable_port(hcd, port) != 0) continue;
-
-		// According to the xHCI spec we need to re-read after reset to get the proper speed
-		// I'm not sure if this applies to the other HCs but it cant hurt...
-		if (hcd->ops->get_port_status(hcd, port, &status) != 0) continue;
-		if (!status.connected || !status.enabled) continue;
-
-		printf_color(PRINT_COLOR_PURPLE, PRINT_DEFAULT_BG, "[USB] %s port %u has a %s device\n", hcd->device->name, port, usb_speed_to_string(status.speed));
-
-		usb_enumerate_device(hcd, port, status.speed);
-	}
-
-	return 0;
-}
-
 void usb_init(void) {
 
 }

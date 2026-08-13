@@ -14,6 +14,11 @@
 #include <drivers/usb/hosts/xhci.h>
 #include <drivers/usb/usb_core.h>
 
+// oh no, it's started...
+// I really need to reorganize this file...
+void xhci_interrupter_advance_dequeue(xhci_interrupter_t* ir);
+void xhci_interrupter_update_erdp(xhci_controller_t* hc, uint16_t index);
+
 /**
  * @brief Write a 64-bit xHCI register.
  *
@@ -422,10 +427,13 @@ bool xhci_ring_enqueue(xhci_ring_t* ring, const trb_t* trb) {
 
 	FIELD_WRITE(dst->control, BIT(0), ring->cycle);
 
+	xhci_memory_fence();
+
 	ring->enqueue++;
 
 	/* Link TLB */
 	if (ring->enqueue == ring->trb_count - 1) {
+		// TODO: we need to change the actual link TRB bits to indicate cycle is changed
 		/* Skip over the Link TRB. The hardware consumes it, not us.
 		 * Since the Link TRB has TC=1, we also toggle our producer cycle state.
 		 */
@@ -434,6 +442,118 @@ bool xhci_ring_enqueue(xhci_ring_t* ring, const trb_t* trb) {
 	}
 
 	return true;
+}
+
+static inline void xhci_ring_doorbell(xhci_controller_t* hc, uint8_t doorbell, uint16_t target) {
+	mmio_write32(&hc->doorbell->db[doorbell], target); // It's up to the caller to get this info correct. We technically could use streams for bulk transfers, but that's more than I'm willing to deal with right now.
+}
+
+void xhci_enable_slot(xhci_controller_t* hc, uint8_t port, uint8_t* slot_id_out) {
+	// first order of business is to get the slot type from the xce
+
+	uint8_t spec_port = port + 1; // ports as far as we are concerned are zero indexed. the spec has them 1 indexed.
+	xhci_extended_compat_t* list = hc->first_xce;
+
+	uint8_t slot_type = 0;
+
+	while (list != NULL) {
+		if (list->capability != XEC_SUPPORTED_PROTO) {
+			list = list->next_node;
+			continue;
+		}
+
+		xhci_xec_supported_proto_t* sp = (xhci_xec_supported_proto_t*) list->specific_data;
+
+		if (spec_port < sp->comp_port_offset || spec_port > sp->comp_port_offset + sp->comp_port_count) {
+			list = list->next_node;
+			continue;
+		}
+
+		slot_type = sp->proto_slot_type;
+		break;
+	}
+
+	// We have the slot type we need. All we need to do is write the TRB.
+	// Enable slot only uses DWORD3 for the TRB, everything else is reserved so we will write all zeros.
+	uint32_t dword3 = 0;
+	FIELD_WRITE(dword3, GENMASK(20, 16), slot_type);
+	FIELD_WRITE(dword3, GENMASK(15, 10), XHCI_COMMAND_TRB_ENABLE_SLOT);
+	// the ring_enqueue will handle the cycle bit for us
+	// FIELD_WRITE(dword3, GENMASK(1, 1), hc->command_ring.cycle);
+	uint32_t enable_slot_trb[4] = { 0, 0, 0, dword3 };
+
+	xhci_ring_enqueue(&hc->command_ring, (const trb_t*) &enable_slot_trb);
+	xhci_ring_doorbell(hc, 0, 0); // command ring is always 0,0
+
+	xhci_interrupter_t* ir = &hc->interrupters[0]; // section 
+	volatile trb_t* event_trb;
+	uint32_t comp_code;
+	uint32_t trb_type;
+
+	while (true) {
+		// Don't question this awful line, it works...
+		event_trb = (volatile trb_t*) ((uintptr_t) ir->segments[ir->dequeue_segment].trbs + (ir->dequeue * sizeof(trb_t)));
+
+		bool event_cycle = FIELD_GET(GENMASK(0, 0), event_trb->control) != 0;
+		if (event_cycle == ir->cycle) {
+			xhci_memory_fence();
+
+			trb_type = FIELD_GET(GENMASK(15, 10), event_trb->control);
+
+			if (trb_type == 33) {
+				comp_code = FIELD_GET(GENMASK(31, 24), event_trb->status);
+
+				if (comp_code == 1) { // Success
+					if (slot_id_out) *slot_id_out = FIELD_GET(GENMASK(31, 24), event_trb->control);
+				} else {
+					printf_serial("[xHCI][ERROR] Enable Slot failed with comp code: %u\r\n", comp_code);
+					if (slot_id_out) *slot_id_out = 0;
+				}
+
+				xhci_interrupter_advance_dequeue(ir);
+				xhci_interrupter_update_erdp(hc, 0);
+				break;
+			} else {
+				// It's an unexpected event (likely Port Status Change). 
+				// We must consume it, update the ring, and keep waiting.
+				// We should probably actually not do this but ¯\_(ツ)_/¯
+				// When we have threads this should likely be updated to be a proper dispatcher
+				printf_serial("[xHCI][INFO] Consuming side-event type: %u while waiting...\r\n", trb_type);
+
+				xhci_interrupter_advance_dequeue(ir);
+				xhci_interrupter_update_erdp(hc, 0);
+			}
+		} else {
+			// I could use a regular delay here, but this will have to be rewritten slightly for when we actually have threads.
+			asm volatile("pause" ::: "memory");
+
+			uint32_t sts = mmio_read32(&hc->op->usbsts);
+			if (FIELD_GET(BIT(2), sts)) printf_serial("[xHCI][ERROR] USBSTS.HSE set. Likely DMA error\r\n");
+		}
+	}
+
+	xhci_memory_fence();
+
+
+	trb_type = FIELD_GET(GENMASK(15, 10), event_trb->control);
+
+	if (trb_type == 33) { // 33 is Command Completion Event
+		comp_code = FIELD_GET(GENMASK(31, 24), event_trb->status);
+
+		if (comp_code == 1) {
+			if (slot_id_out) *slot_id_out = FIELD_GET(GENMASK(31, 24), event_trb->control);
+		} else {
+			printf_serial("[xHCI][ERROR] Enable Slot failed with completion code: %u\r\n", comp_code);
+			if (slot_id_out) *slot_id_out = 0;
+		}
+	} else {
+		// There's a small chance we'd see a Port Status Change here, I don't feel like actually dealing with this.
+		printf_serial("[xHCI][WARN] Received unexpected event type: %u\r\n", trb_type);
+	}
+
+	// Acknowledge to the hardware that we consumed the event
+	xhci_interrupter_advance_dequeue(ir);
+	xhci_interrupter_update_erdp(hc, 0);
 }
 
 void xhci_write_max_slots(xhci_controller_t* hc, uint8_t slots) {
@@ -520,9 +640,8 @@ bool xhci_init_interrupter(xhci_controller_t* hc, uint16_t index) {
 
 	// Program the runtime registers for this interrupter.
 	mmio_write32(&hc->runtime->ir[index].erstsz, ir->erst_size);
+	xhci_interrupter_update_erdp(hc, index);    // ERDP -> segment 0, TRB 0, EHB cleared
 	xhci_write_register(&hc->runtime->ir[index].erstba, ir->erst_phys, hc->ac64);
-	xhci_interrupter_update_erdp(hc, index); // ERDP -> segment 0, TRB 0, EHB cleared
-
 
 	return true;
 }
@@ -828,7 +947,23 @@ int xhci_enable_port(usb_hcd_t* hcd, uint8_t port) {
 }
 
 int xhci_device_init(usb_hcd_t* hcd, usb_device_t* dev) {
+	if (!hcd | !dev) return -1;
 
+	xhci_controller_t* hc = (xhci_controller_t*) hcd->hcd_data;
+	if (dev->port > hc->max_ports - 1) return -2;
+
+	// First step of device init is to get a device slot id.
+	uint8_t slot_id = 0;
+	// we only need the port because of the 
+	xhci_enable_slot(hc, dev->port, &slot_id);
+
+	if (!slot_id) {
+		printf_serial("[xHCI] WE AINT GOT NO SLOT :(\r\n");
+		return -1;
+	}
+
+	printf_serial("[xHCI] WE GOT THE SLOT BABY: %u\r\n", slot_id);
+	return 0;
 }
 
 int xhci_device_destroy(usb_hcd_t* hcd, usb_device_t* dev) {
@@ -904,6 +1039,10 @@ void xhci_attach(wallos_device_t* dev) {
 		return;
 	}
 
+	uint16_t pci_cmd = pci_config_read16(bus, slot, func, 0x04);
+	pci_cmd |= BIT(1) | BIT(2); // Memory Space Enable, Bus Master Enable
+	pci_config_write16(bus, slot, func, 0x04, pci_cmd);
+
 	dev->driver_data = kalloc(sizeof(xhci_controller_t));
 	if (dev->driver_data == NULL) {
 		printf_serial("[xHCI][ERROR] Failed to allocate driver data.\r\n");
@@ -964,13 +1103,15 @@ void xhci_attach(wallos_device_t* dev) {
 
 	/* DBOFF */
 	uint32_t dboff = mmio_read32(&hc->cap->dboff);
-	dboff = FIELD_GET(GENMASK(31, 2), dboff);
+	// dboff = FIELD_GET(GENMASK(31, 2), dboff);
+	dboff &= GENMASK(31, 2);
 	printf_serial("[xHCI] DBOFF = 0x%x\r\n", dboff);
 	hc->doorbell = (volatile xhci_doorbell_regs_t*) ((uintptr_t) hc->mmio_base + dboff);
 
 	/* RTSOFF */
 	uint32_t rtsoff = mmio_read32(&hc->cap->rtsoff);
-	rtsoff = FIELD_GET(GENMASK(31, 5), rtsoff);
+	// rtsoff = FIELD_GET(GENMASK(31, 5), rtsoff);
+	rtsoff &= GENMASK(31, 5);
 	printf_serial("[xHCI] RTSOFF = 0x%x\r\n", rtsoff);
 	hc->runtime = (volatile xhci_runtime_regs_t*) ((uintptr_t) hc->mmio_base + rtsoff);
 
@@ -1139,7 +1280,7 @@ void xhci_attach(wallos_device_t* dev) {
 	FIELD_WRITE(link->control, BIT(1), 1); // Toggle Cycle
 	FIELD_WRITE(link->control, BIT(0), 1); // Cycle bit
 
-	FIELD_WRITE(crcr_value, GENMASK(63, 6), hc->command_ring.trbs_phys);
+	crcr_value = hc->command_ring.trbs_phys & GENMASK(63, 6);
 	FIELD_WRITE(crcr_value, BIT(0), 1); // RCS = 1
 
 	xhci_memory_fence();
@@ -1166,6 +1307,17 @@ void xhci_attach(wallos_device_t* dev) {
 		if (!xhci_init_interrupter(hc, i)) {
 			return;
 		}
+	}
+
+	// everything *should* be set up
+	// we can set the R/S bit to 1 in usbsts
+
+	uint32_t usbcmd = mmio_read32(&hc->op->usbcmd);
+	FIELD_WRITE(usbcmd, GENMASK(0, 0), 1);
+	mmio_write32(&hc->op->usbcmd, usbcmd);
+
+	while (FIELD_GET(GENMASK(0, 0), mmio_read32(&hc->op->usbsts))) {
+		asm volatile("pause");
 	}
 
 	usb_hcd_t* hcd = (usb_hcd_t*) kcalloc(1, sizeof(usb_hcd_t));

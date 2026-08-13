@@ -889,7 +889,7 @@ void* kalloc_dma(size_t bytes, uint32_t flags, uint64_t map_flags, uintptr_t* ph
 
 		for (size_t chunk = 1; chunk <= header->chunk_count; chunk++) {
 			size_t byte_idx = (chunk - 1) / 8;
-			size_t bit_idx = (chunk - 1) % 8;
+			size_t bit_idx = ((chunk - 1) % 8) + 1;
 
 			if (!GET_BIT(BITLIST_BASE(header)[byte_idx], bit_idx)) {
 				if (consecutive_chunks == 0) {
