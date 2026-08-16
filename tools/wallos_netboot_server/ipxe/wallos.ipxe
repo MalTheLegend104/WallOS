@@ -1,0 +1,7 @@
+#!ipxe
+
+dhcp
+
+echo "Loading WallOS GRUB..."
+
+chain http://@SERVER_IP@/boot/grub.pxe
