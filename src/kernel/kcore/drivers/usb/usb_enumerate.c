@@ -97,6 +97,8 @@ static device_interface_flags_t usb_class_to_interface_flag(uint8_t bInterfaceCl
 }
 
 // https://www.usb.org/defined-class-codes
+// This is a more generic version than that provided by the usb_dev.h header.
+// This one is used to generate device names, it needs to be way more concise
 static const char* usb_interface_name_prefix(uint8_t cls, uint8_t subclass, uint8_t protocol) {
 	switch (cls) {
 		case 0x03: // HID
@@ -166,6 +168,8 @@ static usb_endpoint_type_t usb_endpoint_type_from_attributes(uint8_t bmAttribute
 	return USB_ENDPOINT_TYPE_CONTROL; // unreachable
 }
 
+#include <drivers/usb/devices/usb_dev.h>
+
 static int usb_read_device_info(usb_device_t* dev, usb_device_descriptor_t* desc_out) {
 	int ret = usb_control_msg(dev, 0x80, USB_REQ_GET_DESCRIPTOR, (USB_DESC_TYPE_DEVICE << 8) | 0, 0, desc_out, sizeof(*desc_out), 1000);
 	if (ret != (int) sizeof(*desc_out)) {
@@ -192,6 +196,8 @@ static int usb_read_device_info(usb_device_t* dev, usb_device_descriptor_t* desc
 		desc_out->bDeviceSubClass,
 		desc_out->bDeviceProtocol
 	);
+
+	printf_color(PRINT_COLOR_LIGHT_BLUE, PRINT_DEFAULT_BG, "\tDevice: %s\n", get_usb_device_name(desc_out->idVendor, desc_out->idProduct));
 
 	uint16_t actual_mps0;
 	if (dev->speed >= USB_SPEED_5GBPS) {

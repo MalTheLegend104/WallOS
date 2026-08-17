@@ -1,0 +1,57 @@
+# This is just a list of the most common PCI devices I've come across (and just common ones in general)
+# If something is weirdly specific, it's because it was in a device I tested on
+# The filter can be device specific as well, in this form: vendor:device (8086:1d41)
+
+# SYSTEM, ROOT HUBS & HOST CONTROLLERS
+1d6b    # Linux Foundation (Root Hubs: 1.1, 2.0, 3.0, 3.1)
+05e3    # Genesys Logic, Inc. (Everywhere in USB 2.0/3.0 hubs & card readers)
+2109    # VIA Labs, Inc. (VLI USB 3.0/USB-C Hub Controllers)
+0409    # NEC Corp. / Renesas (Early USB 2.0 & 3.0 host controllers)
+0424    # Microchip Technology / SMSC (Onboard hubs, LAN9512/LAN7500 on Raspberry Pi)
+
+# INPUT DEVICES, HUMAN INTERFACE & GAMING
+046d    # Logitech, Inc. (Mice, Keyboards, Webcams, Unifying/Lightspeed Receivers)
+045e    # Microsoft Corp. (Xbox Controllers, Surface Dock/Peripherals, Mice)
+054c    # Sony Corp. (DualShock / DualSense Controllers, Audio, Storage)
+057e    # Nintendo Co., Ltd. (Switch Pro Controller, Joy-Cons, Adapters)
+1532    # Razer USA, Ltd. (Gaming Mice, Keyboards, Audio)
+1b1c    # Corsair (Keyboards, Mice, Headsets, Power Supplies, AIO Coolers)
+1038    # SteelSeries ApS (Mice, Keyboards, Headsets)
+0fd9    # Elgato Systems GmbH / Corsair (Stream Deck, Capture Cards)
+04f2    # Chicony Electronics Co., Ltd. (Integrated laptop webcams & keyboards)
+
+# NETWORKING, BLUETOOTH & WIRELESS
+0bda    # Realtek Semiconductor Corp. (Wi-Fi, Bluetooth, Ethernet dongles, Audio)
+0a5c    # Broadcom Corp. (Bluetooth modules & Wi-Fi dongles)
+0cf3    # Qualcomm Atheros Communications (Wi-Fi & Bluetooth adapters)
+0e8d    # MediaTek Inc. (Wi-Fi dongles & Bluetooth)
+148f    # Ralink Technology, Corp. (Wi-Fi adapters)
+8087    # Intel Corp. (Internal Bluetooth / Wireless modules)
+0b05    # ASUSTek Computer Inc. (Wi-Fi adapters, ROG peripherals)
+2357    # TP-Link (Wi-Fi & Ethernet adapters)
+
+# STORAGE CONTROLLERS, BRIDGES & FLASH DRIVES
+0781    # SanDisk Corp. (Flash drives, SD card readers)
+0951    # Kingston Technology (Flash drives, HyperX headsets)
+04e8    # Samsung Electronics Co., Ltd. (External SSDs, Android devices)
+1058    # Western Digital Technologies, Inc. (My Passport, External HDDs)
+0bc2    # Seagate RSS (External HDDs / Expansion drives)
+152d    # JMicron Technology Corp. (USB-to-SATA/NVMe bridge chips)
+1e10    # Mobile Action Technology / Realtek / Norelsys (NVMe Enclosures)
+
+# USB-TO-SERIAL, EMBEDDED & DEBUG BRIDGES
+0403    # FTDI (Future Technology Devices Intl - FT232R, FT2232 UART bridges)
+10c4    # Silicon Laboratories, Inc. (CP2102 / CP2104 USB-to-UART)
+1a86    # QinHeng Electronics (CH340 / CH341 USB-to-serial on Arduino clones)
+067b    # Prolific Technology, Inc. (PL2303 USB-to-serial adapters)
+
+# DISPLAY & VIDEO CAPTURE
+17e9    # DisplayLink Corp. (USB Display Adapters & Docking Stations)
+
+# MOBILE & DEVICE ECOSYSTEMS
+05ac    # Apple, Inc. (iPhones, iPads, Apple Keyboards/Trackpads, Audio Adapters)
+18d1    # Google Inc. (Pixel devices, ADB / Fastboot interfaces)
+
+# VIRTUALIZATION & EMULATION
+1b36    # Red Hat, Inc. (QEMU / KVM VirtIO USB devices)
+0627    # Adomax Technology Co., Ltd. / QEMU (QEMU USB Tablet / Mouse)
