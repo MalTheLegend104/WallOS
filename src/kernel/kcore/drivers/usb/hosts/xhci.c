@@ -4,20 +4,26 @@
 
 #include <endian_bits.h>
 #include <cpu_io.h>
+#include <arch.h>
+
+#include <system/timing.h>
 
 #include <memory/virtual_mem.h>
 #include <memory/kernel_alloc.h>
+
 #include <device/device_manager.h>
 
+#include <drivers/driver_manager.h>
 #include <drivers/pci.h>
 #include <drivers/serial.h>
 #include <drivers/usb/hosts/xhci.h>
 #include <drivers/usb/usb_core.h>
 
-// oh no, it's started...
-// I really need to reorganize this file...
-void xhci_interrupter_advance_dequeue(xhci_interrupter_t* ir);
-void xhci_interrupter_update_erdp(xhci_controller_t* hc, uint16_t index);
+// ------------------------------------------------------------------------------------------------
+// ------------------------------------------------------------------------------------------------
+// Low-level register / timing helpers
+// ------------------------------------------------------------------------------------------------
+// ------------------------------------------------------------------------------------------------
 
 /**
  * @brief Write a 64-bit xHCI register.
@@ -59,7 +65,7 @@ static inline uint64_t xhci_read_register(const volatile void* reg, bool ac64) {
  *
  */
 static inline void xhci_memory_fence() {
-	__atomic_thread_fence(__ATOMIC_SEQ_CST);
+	cpu_memory_barrier();
 }
 
 // Oh look it's this stupid function again...
@@ -70,351 +76,36 @@ static inline void xhci_delay_us(uint32_t us) {
 	}
 }
 
-int xhci_probe(wallos_device_t* dev) {
+// ------------------------------------------------------------------------------------------------
+// ------------------------------------------------------------------------------------------------
+// Generic ring management
+// ------------------------------------------------------------------------------------------------
+// ------------------------------------------------------------------------------------------------
 
-	// zero indicates that this device does belong to this driver
-	// im too lazy to properly check that we can interface with this so I wont right now
-	return 0;
+static bool xhci_ring_init(xhci_ring_t* ring, size_t trb_count) {
+	if (!ring || trb_count < 2) return false; // need at least 1 real slot + the Link TRB
+
+	ring->trb_count = trb_count;
+	ring->enqueue = 0;
+	ring->cycle = true;
+
+	ring->trbs = (trb_t*) kalloc_dma(trb_count * sizeof(trb_t), DMA_ZONE_ANY, PDE_FLAGS_UC_2MB, &ring->trbs_phys);
+	if (!ring->trbs) return false;
+	memset(ring->trbs, 0, trb_count * sizeof(trb_t));
+
+	// Reserve the last slot as a permanent Link TRB, pointing back to the start.
+	trb_t* link = &ring->trbs[trb_count - 1];
+	link->parameter = ring->trbs_phys;
+	FIELD_WRITE(link->control, GENMASK(15, 10), XHCI_TRB_TYPE_LINK);
+	FIELD_WRITE(link->control, BIT(1), 1); // Toggle Cycle
+	FIELD_WRITE(link->control, BIT(0), 1); // Cycle bit
+
+	xhci_memory_fence();
+
+	return true;
 }
 
-void xhci_init_regs(xhci_controller_t* hc, uintptr_t base) {
-	hc->mmio_base = base;
-
-	hc->cap = (volatile xhci_cap_regs_t*) base;
-}
-
-void xhci_parse_hccparams1(uint32_t raw, hccparams1_t* hccp1) {
-	hccp1->xhci_extended_cap_ptr = FIELD_GET(MASK_32_UPPER_HALF, raw);
-
-	hccp1->max_psa_size = FIELD_GET(GENMASK(15, 12), raw);
-
-	hccp1->cfc = FIELD_GET(GENMASK(11, 11), raw);
-	hccp1->sec = FIELD_GET(GENMASK(10, 10), raw);
-	hccp1->spc = FIELD_GET(GENMASK(9, 9), raw);
-	hccp1->pae = FIELD_GET(GENMASK(8, 8), raw);
-	hccp1->nss = FIELD_GET(GENMASK(7, 7), raw);
-	hccp1->ltc = FIELD_GET(GENMASK(6, 6), raw);
-	hccp1->lhrc = FIELD_GET(GENMASK(5, 5), raw);
-	hccp1->pind = FIELD_GET(GENMASK(4, 4), raw);
-	hccp1->ppc = FIELD_GET(GENMASK(3, 3), raw);
-	hccp1->csz = FIELD_GET(GENMASK(2, 2), raw);
-	hccp1->bnc = FIELD_GET(GENMASK(1, 1), raw);
-	hccp1->ac64 = FIELD_GET(GENMASK(0, 0), raw);
-}
-
-void xhci_print_hccparams1(const hccparams1_t* hccp1) {
-	printf_serial("[xHCI] HCCPARAMS1:\r\n");
-	printf_serial("[xHCI]   XECP: 0x%04x\r\n", hccp1->xhci_extended_cap_ptr);
-	printf_serial("[xHCI]   MaxPSA Size: %u\r\n", hccp1->max_psa_size);
-	printf_serial("[xHCI]   CFC: %u\r\n", hccp1->cfc);
-	printf_serial("[xHCI]   SEC: %u\r\n", hccp1->sec);
-	printf_serial("[xHCI]   SPC: %u\r\n", hccp1->spc);
-	printf_serial("[xHCI]   PAE: %u\r\n", hccp1->pae);
-	printf_serial("[xHCI]   NSS: %u\r\n", hccp1->nss);
-	printf_serial("[xHCI]   LTC: %u\r\n", hccp1->ltc);
-	printf_serial("[xHCI]   LHRC: %u\r\n", hccp1->lhrc);
-	printf_serial("[xHCI]   PIND: %u\r\n", hccp1->pind);
-	printf_serial("[xHCI]   PPC: %u\r\n", hccp1->ppc);
-	printf_serial("[xHCI]   CSZ: %u\r\n", hccp1->csz);
-	printf_serial("[xHCI]   BNC: %u\r\n", hccp1->bnc);
-	printf_serial("[xHCI]   AC64: %u\r\n", hccp1->ac64);
-}
-
-void xhci_parse_hccparams2(uint32_t raw, hccparams2_t* hccp2) {
-	hccp2->vtc = FIELD_GET(GENMASK(9, 9), raw);
-	hccp2->gsc = FIELD_GET(GENMASK(8, 8), raw);
-	hccp2->etc_tsc = FIELD_GET(GENMASK(7, 7), raw);
-	hccp2->etc = FIELD_GET(GENMASK(6, 6), raw);
-	hccp2->cic = FIELD_GET(GENMASK(5, 5), raw);
-	hccp2->lec = FIELD_GET(GENMASK(4, 4), raw);
-	hccp2->ctc = FIELD_GET(GENMASK(3, 3), raw);
-	hccp2->fsc = FIELD_GET(GENMASK(2, 2), raw);
-	hccp2->cmc = FIELD_GET(GENMASK(1, 1), raw);
-	hccp2->u3c = FIELD_GET(GENMASK(0, 0), raw);
-}
-
-void xhci_print_hccparams2(const hccparams2_t* hccp2) {
-	printf_serial("[xHCI] HCCPARAMS2:\r\n");
-	printf_serial("[xHCI]   VTC: %u\r\n", hccp2->vtc);
-	printf_serial("[xHCI]   GSC: %u\r\n", hccp2->gsc);
-	printf_serial("[xHCI]   ETC_TSC: %u\r\n", hccp2->etc_tsc);
-	printf_serial("[xHCI]   ETC: %u\r\n", hccp2->etc);
-	printf_serial("[xHCI]   CIC: %u\r\n", hccp2->cic);
-	printf_serial("[xHCI]   LEC: %u\r\n", hccp2->lec);
-	printf_serial("[xHCI]   CTC: %u\r\n", hccp2->ctc);
-	printf_serial("[xHCI]   FSC: %u\r\n", hccp2->fsc);
-	printf_serial("[xHCI]   CMC: %u\r\n", hccp2->cmc);
-	printf_serial("[xHCI]   U3C: %u\r\n", hccp2->u3c);
-}
-
-void xhci_parse_supported_protocol(uintptr_t cap_base, xhci_xec_supported_proto_t* proto) {
-	uint32_t dw0 = mmio_read32((volatile void*) (cap_base + 0 * sizeof(uint32_t)));
-	uint32_t dw1 = mmio_read32((volatile void*) (cap_base + 1 * sizeof(uint32_t)));
-	uint32_t dw2 = mmio_read32((volatile void*) (cap_base + 2 * sizeof(uint32_t)));
-	uint32_t dw3 = mmio_read32((volatile void*) (cap_base + 3 * sizeof(uint32_t)));
-
-	/* DWORD 0 */
-	proto->rev_minor = bcd_to_bin8(FIELD_GET(GENMASK(23, 16), dw0));
-	proto->rev_major = bcd_to_bin8(FIELD_GET(GENMASK(31, 24), dw0));
-
-	/* DWORD 1 */
-	proto->name_string[0] = (char) ((dw1 >> 0) & 0xFF);
-	proto->name_string[1] = (char) ((dw1 >> 8) & 0xFF);
-	proto->name_string[2] = (char) ((dw1 >> 16) & 0xFF);
-	proto->name_string[3] = (char) ((dw1 >> 24) & 0xFF);
-	proto->name_string[4] = '\0';
-
-	/* DWORD 2 */
-	proto->comp_port_offset = FIELD_GET(MASK_32_BYTE0, dw2);
-	proto->comp_port_count = FIELD_GET(MASK_32_BYTE1, dw2);
-	proto->proto_defined = FIELD_GET(GENMASK(27, 16), dw2);
-	proto->psic = FIELD_GET(GENMASK(31, 28), dw2);
-
-	/* DWORD 3 */
-	proto->proto_slot_type = FIELD_GET(GENMASK(4, 0), dw3);
-
-	/* Store array count explicitly */
-	proto->psi_count = proto->psic;
-
-	/* Parse optional PSI DWORDs (DWORD 4 to 4 + psic - 1) */
-	if (proto->psi_count > 0) {
-		proto->psi_array = kcalloc(proto->psi_count, sizeof(xhci_xec_supported_proto_psi_t));
-		if (!proto->psi_array) {
-			proto->psi_count = 0;
-			return;
-		}
-
-		for (uint8_t i = 0; i < proto->psi_count; i++) {
-			volatile void* psi_addr = (volatile void*) (cap_base + (4 + i) * sizeof(uint32_t));
-			uint32_t psi_dw = mmio_read32(psi_addr);
-
-			proto->psi_array[i].psiv = FIELD_GET(GENMASK(3, 0), psi_dw);
-			proto->psi_array[i].psie = FIELD_GET(GENMASK(5, 4), psi_dw);
-			proto->psi_array[i].pfd = FIELD_GET(GENMASK(6, 6), psi_dw);
-			proto->psi_array[i].lp = FIELD_GET(GENMASK(15, 14), psi_dw);
-			proto->psi_array[i].proto_speed_id_mantissa = FIELD_GET(MASK_32_UPPER_HALF, psi_dw);
-		}
-	}
-}
-
-void xhci_print_supported_protocol(const xhci_xec_supported_proto_t* proto) {
-	printf_serial("[xHCI] Supported Protocol:\r\n");
-	printf_serial("[xHCI]   Revision: %u.%u\r\n", proto->rev_major, proto->rev_minor);
-	printf_serial("[xHCI]   Name: %s\r\n", proto->name_string);
-	printf_serial("[xHCI]   Port Offset: %u\r\n", proto->comp_port_offset);
-	printf_serial("[xHCI]   Port Count: %u\r\n", proto->comp_port_count);
-	printf_serial("[xHCI]   Protocol Defined: 0x%03x\r\n", proto->proto_defined);
-	printf_serial("[xHCI]   Slot Type: %u\r\n", proto->proto_slot_type);
-	printf_serial("[xHCI]   PSI Count: %u\r\n", proto->psi_count);
-
-	for (uint8_t i = 0; i < proto->psi_count; i++) {
-		const xhci_xec_supported_proto_psi_t* psi = &proto->psi_array[i];
-		printf_serial("[xHCI]   PSI[%u]: PSIV=%u, PSIE=%u, PFD=%u, LP=%u, Mantissa=%u\r\n",
-			i,
-			psi->psiv,
-			psi->psie,
-			psi->pfd,
-			psi->lp,
-			psi->proto_speed_id_mantissa);
-	}
-}
-
-void xhci_print_port_protocols(xhci_controller_t* hc) {
-	if (!hc || !hc->first_xce) return;
-
-	xhci_extended_compat_t* current = hc->first_xce;
-	while (current != NULL) {
-		if (current->capability == XEC_SUPPORTED_PROTO && current->specific_data != NULL) {
-			xhci_xec_supported_proto_t* proto = (xhci_xec_supported_proto_t*) current->specific_data;
-
-			if (proto->comp_port_count > 0) {
-				uint8_t start_port = proto->comp_port_offset;
-				uint8_t end_port = start_port + proto->comp_port_count - 1;
-
-				if (start_port == end_port) {
-					printf_serial("[xHCI] Port %u is USB %u.%u\r\n", start_port, proto->rev_major, proto->rev_minor);
-					printf_color(PRINT_COLOR_PURPLE, PRINT_DEFAULT_BG, "[xHCI] Port %u is USB %u.%u\n", start_port, proto->rev_major, proto->rev_minor);
-				} else {
-					printf_serial("[xHCI] Ports %u-%u are USB %u.%u\r\n", start_port, end_port, proto->rev_major, proto->rev_minor);
-					printf_color(PRINT_COLOR_PURPLE, PRINT_DEFAULT_BG, "[xHCI] Ports %u-%u are USB %u.%u\n", start_port, end_port, proto->rev_major, proto->rev_minor);
-				}
-			} else {
-				printf_serial("[xHCI] No ports assigned to USB %u.%u\r\n", proto->rev_major, proto->rev_minor);
-				printf_color(PRINT_COLOR_PURPLE, PRINT_DEFAULT_BG, "[xHCI] No ports assigned to USB %u.%u\r\n", proto->rev_major, proto->rev_minor);
-			}
-		}
-		current = current->next_node;
-	}
-}
-
-void xhci_parse_legacy_support(uintptr_t cap_base, xhci_xec_legacy_support_t* legsup) {
-	uint32_t dw0 = mmio_read32((volatile void*) (cap_base + 0 * sizeof(uint32_t)));
-	uint32_t dw1 = mmio_read32((volatile void*) (cap_base + 1 * sizeof(uint32_t)));
-
-	/* DWORD 0: USBLEGSUP Parsing */
-	legsup->cap_id = FIELD_GET(GENMASK(7, 0), dw0);
-	legsup->next_cap_ptr = FIELD_GET(GENMASK(15, 8), dw0);
-	legsup->hc_bios_owned = FIELD_GET(GENMASK(16, 16), dw0);
-	legsup->hc_os_owned = FIELD_GET(GENMASK(24, 24), dw0);
-
-	/* DWORD 1: USBLEGCTLSTS Parsing */
-	legsup->usb_smi_enable = FIELD_GET(GENMASK(0, 0), dw1);
-	legsup->smi_on_host_sys_err_enable = FIELD_GET(GENMASK(1, 1), dw1);
-	legsup->smi_on_os_ownership_enable = FIELD_GET(GENMASK(2, 2), dw1);
-	legsup->smi_on_pci_command_enable = FIELD_GET(GENMASK(3, 3), dw1);
-	legsup->smi_on_bar_enable = FIELD_GET(GENMASK(4, 4), dw1);
-	legsup->smi_on_event_int_enable = FIELD_GET(GENMASK(13, 13), dw1);
-
-	legsup->smi_on_host_sys_err = FIELD_GET(GENMASK(16, 16), dw1);
-	legsup->smi_on_os_ownership_change = FIELD_GET(GENMASK(17, 17), dw1);
-	legsup->smi_on_pci_command = FIELD_GET(GENMASK(18, 18), dw1);
-	legsup->smi_on_bar = FIELD_GET(GENMASK(19, 19), dw1);
-	legsup->smi_on_event_int = FIELD_GET(GENMASK(29, 29), dw1);
-}
-
-void xhci_print_legacy_support(const xhci_xec_legacy_support_t* legsup) {
-	printf_serial("[xHCI] Legacy Support:\r\n");
-	printf_serial("[xHCI]   Cap ID: %u\r\n", legsup->cap_id);
-	printf_serial("[xHCI]   Next Cap: %u\r\n", legsup->next_cap_ptr);
-	printf_serial("[xHCI]   HC BIOS Owned: %u\r\n", legsup->hc_bios_owned);
-	printf_serial("[xHCI]   HC OS Owned: %u\r\n", legsup->hc_os_owned);
-
-	printf_serial("[xHCI]   USB SMI Enable: %u\r\n", legsup->usb_smi_enable);
-	printf_serial("[xHCI]   SMI HSE Enable: %u\r\n", legsup->smi_on_host_sys_err_enable);
-	printf_serial("[xHCI]   SMI OS Enable: %u\r\n", legsup->smi_on_os_ownership_enable);
-	printf_serial("[xHCI]   SMI PCI Enable: %u\r\n", legsup->smi_on_pci_command_enable);
-	printf_serial("[xHCI]   SMI BAR Enable: %u\r\n", legsup->smi_on_bar_enable);
-	printf_serial("[xHCI]   SMI Event Enable: %u\r\n", legsup->smi_on_event_int_enable);
-
-	printf_serial("[xHCI]   SMI HSE Status: %u\r\n", legsup->smi_on_host_sys_err);
-	printf_serial("[xHCI]   SMI OS Status: %u\r\n", legsup->smi_on_os_ownership_change);
-	printf_serial("[xHCI]   SMI PCI Status: %u\r\n", legsup->smi_on_pci_command);
-	printf_serial("[xHCI]   SMI BAR Status: %u\r\n", legsup->smi_on_bar);
-	printf_serial("[xHCI]   SMI Event Status: %u\r\n", legsup->smi_on_event_int);
-}
-
-xhci_xec_capability_id_t get_id_from_value(uint8_t value) {
-	switch (value) {
-		case 1:    return XEC_USB_LEGACY;
-		case 2:    return XEC_SUPPORTED_PROTO;
-		case 3:    return XEC_EXT_POWER_MANAGEMENT;
-		case 4:    return XEC_IO_VIRT;
-		case 5:    return XEC_MESSAGE_INTERRUPT;
-		case 6:    return XEC_LOCAL_MEMORY;
-		case 10:   return XEC_USB_DEBUG;
-		case 17:   return XEC_EXT_MESSAGE_INTERRUPT;
-		case 192 ... 255: return XEC_VENDOR_DEFINED; // unfortunately need this to use the GCC ... range extension to make this readable
-		default: return XEC_RESERVED;
-	}
-}
-
-void xhci_bios_handoff(uintptr_t cap_base, xhci_xec_legacy_support_t* legsup) {
-	if (!cap_base) return;
-
-	const uint32_t XHCI_LEGSUP_BIOS_OWNED = BIT(16);
-	const uint32_t XHCI_LEGSUP_OS_OWNED = BIT(24);
-	const uint32_t XHCI_LEGCTLSTS_SMI_ENABLES = (GENMASK(4, 0) | BIT(13));
-	const uint32_t XHCI_LEGCTLSTS_SMI_STATUSES = (GENMASK(19, 16) | BIT(29));
-
-	uint32_t dw0 = mmio_read32((volatile void*) cap_base);
-
-	// If BIOS owns it, we must negotiate handoff
-	if (dw0 & XHCI_LEGSUP_BIOS_OWNED) {
-		printf_serial("[xHCI] BIOS owns controller. Initiating handoff...\r\n");
-		printf_color(PRINT_COLOR_PURPLE, PRINT_DEFAULT_BG, "[xHCI] BIOS owns controller. Initiating handoff...\n");
-
-		// Set OS Owned bit
-		BIT_SET(dw0, 24);
-		mmio_write32((volatile void*) cap_base, dw0);
-
-		// Wait for BIOS to clear its ownership bit.
-		// The xHCI spec recommends waiting up to 1 second.
-		bool handoff_successful = false;
-		for (int i = 0; i < 100; i++) { // Loop 100 times, 10ms each = 1 second
-			dw0 = mmio_read32((volatile void*) cap_base);
-
-			if (!(dw0 & XHCI_LEGSUP_BIOS_OWNED) && (dw0 & XHCI_LEGSUP_OS_OWNED)) {
-				handoff_successful = true;
-				break;
-			}
-
-			xhci_delay_us(10000);
-		}
-
-		if (!handoff_successful) {
-			printf_serial("[xHCI][WARN] BIOS handoff timed out! Forcing ownership.\r\n");
-			printf_color(PRINT_COLOR_YELLOW, PRINT_DEFAULT_BG, "[xHCI][WARN] BIOS handoff timed out! Forcing ownership.\r\n");
-			// There's a chance the BIOS will never respond.
-			// We proceed anyway, relying on OS_OWNED being set.
-		} else {
-			printf_serial("[xHCI] BIOS handoff successful.\r\n");
-			printf_color(PRINT_COLOR_LIGHT_GREEN, PRINT_DEFAULT_BG, "[xHCI] BIOS handoff successful.\r\n");
-		}
-	} else {
-		printf_serial("[xHCI] BIOS does not own controller. Claiming OS ownership.\r\n");
-		printf_color(PRINT_COLOR_PURPLE, PRINT_DEFAULT_BG, "[xHCI] BIOS does not own controller. Claiming OS ownership.\r\n");
-		BIT_SET(dw0, 24);
-		mmio_write32((volatile void*) cap_base, dw0);
-	}
-
-	uint32_t dw1 = mmio_read32((volatile void*) (cap_base + 4));
-
-	// Clear all SMI Enable bits to 0
-	MASK_CLEAR(dw1, XHCI_LEGCTLSTS_SMI_ENABLES);
-
-	// Clear all SMI Status bits to 0 by writing 1 (W1C bits)
-	MASK_SET(dw1, XHCI_LEGCTLSTS_SMI_STATUSES);
-
-	mmio_write32((volatile void*) (cap_base + 4), dw1);
-
-	// Forcefully update the struct
-	if (legsup) {
-		xhci_parse_legacy_support(cap_base, legsup);
-	}
-}
-
-void xhci_reset_controller(xhci_controller_t* hc) {
-	printf_serial("[xHCI] Resetting controller... ");
-	printf_color(PRINT_COLOR_PURPLE, PRINT_DEFAULT_BG, "[xHCI] Resetting controller...");
-
-	const uint32_t XHCI_USBCMD_HCRST = BIT(1);  // Host Controller Reset
-	const uint32_t XHCI_USBSTS_HCH = BIT(0);  // HC Halted
-	const uint32_t XHCI_USBSTS_CNR = BIT(11); // Controller Not Ready
-
-	// printf_serial("\r\nhc->cap = 0x%llx, hc->cap->caplength = 0x%llx, hc->op = 0x%llx, hc->op->usbcmd = 0x%llx\r\n", hc->cap, FIELD_GET(MASK_32_BYTE0, mmio_read32(&hc->cap->caplength)), hc->op, &hc->op->usbcmd);
-
-	// Clear Run/Stop bit
-	uint32_t usbcmd = mmio_read32(&hc->op->usbcmd);
-	BIT_CLEAR(usbcmd, 0); // BIT0 is Run/Stop
-	mmio_write32(&hc->op->usbcmd, usbcmd);
-
-	// Wait for HC to halt
-	while ((mmio_read32(&hc->op->usbsts) & XHCI_USBSTS_HCH) == 0) {
-		xhci_delay_us(1000);
-	}
-
-	printf_serial("controller halted. Issuing reset...\r\n");
-
-	// Issue Reset
-	usbcmd = mmio_read32(&hc->op->usbcmd);
-	BIT_SET(usbcmd, 1);
-	mmio_write32(&hc->op->usbcmd, usbcmd);
-
-	// Wait for reset to complete (HCRST clears to 0)
-	while ((mmio_read32(&hc->op->usbcmd) & XHCI_USBCMD_HCRST) != 0) {
-		xhci_delay_us(1000);
-	}
-
-	// Wait for CNR to clear
-	while ((mmio_read32(&hc->op->usbsts) & XHCI_USBSTS_CNR) != 0) {
-		xhci_delay_us(1000);
-	}
-
-	printf_serial("Controller successfully reset\r\n");
-	printf_color(PRINT_COLOR_PURPLE, PRINT_DEFAULT_BG, " done\n");
-}
-
-bool xhci_ring_enqueue(xhci_ring_t* ring, const trb_t* trb) {
+static bool xhci_ring_enqueue(xhci_ring_t* ring, const trb_t* trb) {
 	if (!ring || !trb) return false;
 
 	trb_t* dst = &ring->trbs[ring->enqueue];
@@ -449,7 +140,101 @@ static inline void xhci_ring_doorbell(xhci_controller_t* hc, uint8_t doorbell, u
 	mmio_write32(&hc->doorbell->db[doorbell], target); // It's up to the caller to get this info correct. We technically could use streams for bulk transfers, but that's more than I'm willing to deal with right now.
 }
 
-bool xhci_send_command_and_wait(xhci_controller_t* hc, const trb_t* cmd_trb, trb_t* completion_out) {
+// ------------------------------------------------------------------------------------------------
+// ------------------------------------------------------------------------------------------------
+// Interrupter / event ring management
+// ------------------------------------------------------------------------------------------------
+// ------------------------------------------------------------------------------------------------
+
+// Computes the physical address of the interrupter's current dequeue TRB.
+static inline uintptr_t xhci_interrupter_dequeue_phys(xhci_interrupter_t* ir) {
+	xhci_ring_t* seg = &ir->segments[ir->dequeue_segment];
+	return seg->trbs_phys + (ir->dequeue * sizeof(trb_t));
+}
+
+// Advances the interrupter's dequeue pointer by one TRB, wrapping to next segment as needed
+// CCS only toggles when we wrap back around to segment 0
+static void xhci_interrupter_advance_dequeue(xhci_interrupter_t* ir) {
+	ir->dequeue++;
+	if (ir->dequeue >= ir->segments[ir->dequeue_segment].trb_count) {
+		ir->dequeue = 0;
+		ir->dequeue_segment++;
+		if (ir->dequeue_segment >= ir->erst_size) {
+			ir->dequeue_segment = 0;
+			ir->cycle = !ir->cycle;
+		}
+	}
+}
+
+// Writes the current dequeue pointer + DESI to ERDP and clears EHB so the controller is free to signal another interrupt for this interrupter.
+// Called once at init (dequeue at segment 0, TRB 0) and again after each batch of events software has finished draining.
+static void xhci_interrupter_update_erdp(xhci_controller_t* hc, uint16_t index) {
+	xhci_interrupter_t* ir = &hc->interrupters[index];
+
+	uint64_t erdp_value = xhci_interrupter_dequeue_phys(ir) & GENMASK(63, 4);
+	FIELD_WRITE(erdp_value, GENMASK(2, 0), ir->dequeue_segment); // DESI
+	FIELD_WRITE(erdp_value, BIT(3), 1); // EHB - RW1C, always write 1 to clear
+
+	xhci_memory_fence();
+	xhci_write_register(&hc->runtime->ir[index].erdp, erdp_value, hc->ac64);
+}
+
+static bool xhci_init_interrupter(xhci_controller_t* hc, uint16_t index) {
+	xhci_interrupter_t* ir = &hc->interrupters[index];
+
+	ir->erst_size = XHCI_ERST_SEGMENTS_PER_INTERRUPTER;
+
+	ir->segments = kcalloc(ir->erst_size, sizeof(xhci_ring_t));
+	if (!ir->segments) {
+		printf_serial("[xHCI][ERROR] Failed to allocate segment array for interrupter %u...\r\n", index);
+		printf_color(PRINT_COLOR_LIGHT_RED, PRINT_DEFAULT_BG, "[xHCI][ERROR] Failed to allocate segment array for interrupter %u...\n", index);
+		return false;
+	}
+
+	ir->erst = kalloc_dma(sizeof(xhci_event_segment_table_t) * ir->erst_size, DMA_ALIGN_64 | DMA_ZONE_ANY, PDE_FLAGS_UC_2MB, &ir->erst_phys);
+	if (!ir->erst) {
+		printf_serial("[xHCI][ERROR] Failed to allocate the ERST for interrupter %u...\r\n", index);
+		printf_color(PRINT_COLOR_LIGHT_RED, PRINT_DEFAULT_BG, "[xHCI][ERROR] Failed to allocate the ERST for interrupter %u...\n", index);
+		return false;
+	}
+
+	for (uint16_t seg = 0; seg < ir->erst_size; seg++) {
+		xhci_ring_t* ring = &ir->segments[seg];
+
+		ring->trb_count = XHCI_EVENT_RING_TRBS_PER_SEGMENT;
+		ring->trbs = kalloc_dma(ring->trb_count * sizeof(trb_t), DMA_ALIGN_64 | DMA_ZONE_ANY, PDE_FLAGS_UC_2MB, &ring->trbs_phys);
+		if (!ring->trbs) {
+			printf_serial("[xHCI][ERROR] Failed to allocate event ring segment %u for interrupter %u...\r\n", seg, index);
+			printf_color(PRINT_COLOR_LIGHT_RED, PRINT_DEFAULT_BG, "[xHCI][ERROR] Failed to allocate event ring segment %u for interrupter %u...\n", seg, index);
+			return false;
+		}
+		ring->enqueue = 0; // unused by software for event rings
+
+		ir->erst[seg].base = ring->trbs_phys;
+		ir->erst[seg].size = ring->trb_count;
+	}
+
+	ir->dequeue_segment = 0;
+	ir->dequeue = 0;
+	ir->cycle = true; // Consumer Cycle State, toggles each time dequeue wraps back to segment 0
+
+	xhci_memory_fence();
+
+	// Program the runtime registers for this interrupter.
+	mmio_write32(&hc->runtime->ir[index].erstsz, ir->erst_size);
+	xhci_interrupter_update_erdp(hc, index);    // ERDP -> segment 0, TRB 0, EHB cleared
+	xhci_write_register(&hc->runtime->ir[index].erstba, ir->erst_phys, hc->ac64);
+
+	return true;
+}
+
+// ------------------------------------------------------------------------------------------------
+// ------------------------------------------------------------------------------------------------
+// Command ring
+// ------------------------------------------------------------------------------------------------
+// ------------------------------------------------------------------------------------------------
+
+static bool xhci_send_command_and_wait(xhci_controller_t* hc, const trb_t* cmd_trb, trb_t* completion_out) {
 	if (!hc || !cmd_trb) return false;
 
 	// Capture the physical address of the slot we're about to write into, BEFORE xhci_ring_enqueue advances hc->command_ring.enqueue.
@@ -468,7 +253,7 @@ bool xhci_send_command_and_wait(xhci_controller_t* hc, const trb_t* cmd_trb, trb
 		bool event_cycle = FIELD_GET(BIT(0), event_trb->control) != 0;
 
 		if (event_cycle != ir->cycle) {
-			__asm__ volatile("pause" ::: "memory");
+			cpu_relax();
 			continue;
 		}
 		xhci_memory_fence();
@@ -497,6 +282,12 @@ bool xhci_send_command_and_wait(xhci_controller_t* hc, const trb_t* cmd_trb, trb
 		return true;
 	}
 }
+
+// ------------------------------------------------------------------------------------------------
+// ------------------------------------------------------------------------------------------------
+// Slot management
+// ------------------------------------------------------------------------------------------------
+// ------------------------------------------------------------------------------------------------
 
 void xhci_enable_slot(xhci_controller_t* hc, uint8_t port, uint8_t* slot_id_out) {
 	if (slot_id_out) *slot_id_out = 0;
@@ -575,87 +366,354 @@ void xhci_write_max_slots(xhci_controller_t* hc, uint8_t slots) {
 	mmio_write32(&hc->op->config, config_reg);
 }
 
-// Computes the physical address of the interrupter's current dequeue TRB.
-static inline uintptr_t xhci_interrupter_dequeue_phys(xhci_interrupter_t* ir) {
-	xhci_ring_t* seg = &ir->segments[ir->dequeue_segment];
-	return seg->trbs_phys + (ir->dequeue * sizeof(trb_t));
+// ------------------------------------------------------------------------------------------------
+// ------------------------------------------------------------------------------------------------
+// Capability parsing and printing
+// ------------------------------------------------------------------------------------------------
+// ------------------------------------------------------------------------------------------------
+
+static void xhci_parse_hccparams1(uint32_t raw, hccparams1_t* hccp1) {
+	hccp1->xhci_extended_cap_ptr = FIELD_GET(MASK_32_UPPER_HALF, raw);
+
+	hccp1->max_psa_size = FIELD_GET(GENMASK(15, 12), raw);
+
+	hccp1->cfc = FIELD_GET(GENMASK(11, 11), raw);
+	hccp1->sec = FIELD_GET(GENMASK(10, 10), raw);
+	hccp1->spc = FIELD_GET(GENMASK(9, 9), raw);
+	hccp1->pae = FIELD_GET(GENMASK(8, 8), raw);
+	hccp1->nss = FIELD_GET(GENMASK(7, 7), raw);
+	hccp1->ltc = FIELD_GET(GENMASK(6, 6), raw);
+	hccp1->lhrc = FIELD_GET(GENMASK(5, 5), raw);
+	hccp1->pind = FIELD_GET(GENMASK(4, 4), raw);
+	hccp1->ppc = FIELD_GET(GENMASK(3, 3), raw);
+	hccp1->csz = FIELD_GET(GENMASK(2, 2), raw);
+	hccp1->bnc = FIELD_GET(GENMASK(1, 1), raw);
+	hccp1->ac64 = FIELD_GET(GENMASK(0, 0), raw);
 }
 
-// Advances the interrupter's dequeue pointer by one TRB, wrapping to next segment as needed
-// CCS only toggles when we wrap back around to segment 0
-void xhci_interrupter_advance_dequeue(xhci_interrupter_t* ir) {
-	ir->dequeue++;
-	if (ir->dequeue >= ir->segments[ir->dequeue_segment].trb_count) {
-		ir->dequeue = 0;
-		ir->dequeue_segment++;
-		if (ir->dequeue_segment >= ir->erst_size) {
-			ir->dequeue_segment = 0;
-			ir->cycle = !ir->cycle;
+static void xhci_print_hccparams1(const hccparams1_t* hccp1) {
+	printf_serial("[xHCI] HCCPARAMS1:\r\n");
+	printf_serial("[xHCI]   XECP: 0x%04x\r\n", hccp1->xhci_extended_cap_ptr);
+	printf_serial("[xHCI]   MaxPSA Size: %u\r\n", hccp1->max_psa_size);
+	printf_serial("[xHCI]   CFC: %u\r\n", hccp1->cfc);
+	printf_serial("[xHCI]   SEC: %u\r\n", hccp1->sec);
+	printf_serial("[xHCI]   SPC: %u\r\n", hccp1->spc);
+	printf_serial("[xHCI]   PAE: %u\r\n", hccp1->pae);
+	printf_serial("[xHCI]   NSS: %u\r\n", hccp1->nss);
+	printf_serial("[xHCI]   LTC: %u\r\n", hccp1->ltc);
+	printf_serial("[xHCI]   LHRC: %u\r\n", hccp1->lhrc);
+	printf_serial("[xHCI]   PIND: %u\r\n", hccp1->pind);
+	printf_serial("[xHCI]   PPC: %u\r\n", hccp1->ppc);
+	printf_serial("[xHCI]   CSZ: %u\r\n", hccp1->csz);
+	printf_serial("[xHCI]   BNC: %u\r\n", hccp1->bnc);
+	printf_serial("[xHCI]   AC64: %u\r\n", hccp1->ac64);
+}
+
+static void xhci_parse_hccparams2(uint32_t raw, hccparams2_t* hccp2) {
+	hccp2->vtc = FIELD_GET(GENMASK(9, 9), raw);
+	hccp2->gsc = FIELD_GET(GENMASK(8, 8), raw);
+	hccp2->etc_tsc = FIELD_GET(GENMASK(7, 7), raw);
+	hccp2->etc = FIELD_GET(GENMASK(6, 6), raw);
+	hccp2->cic = FIELD_GET(GENMASK(5, 5), raw);
+	hccp2->lec = FIELD_GET(GENMASK(4, 4), raw);
+	hccp2->ctc = FIELD_GET(GENMASK(3, 3), raw);
+	hccp2->fsc = FIELD_GET(GENMASK(2, 2), raw);
+	hccp2->cmc = FIELD_GET(GENMASK(1, 1), raw);
+	hccp2->u3c = FIELD_GET(GENMASK(0, 0), raw);
+}
+
+static void xhci_print_hccparams2(const hccparams2_t* hccp2) {
+	printf_serial("[xHCI] HCCPARAMS2:\r\n");
+	printf_serial("[xHCI]   VTC: %u\r\n", hccp2->vtc);
+	printf_serial("[xHCI]   GSC: %u\r\n", hccp2->gsc);
+	printf_serial("[xHCI]   ETC_TSC: %u\r\n", hccp2->etc_tsc);
+	printf_serial("[xHCI]   ETC: %u\r\n", hccp2->etc);
+	printf_serial("[xHCI]   CIC: %u\r\n", hccp2->cic);
+	printf_serial("[xHCI]   LEC: %u\r\n", hccp2->lec);
+	printf_serial("[xHCI]   CTC: %u\r\n", hccp2->ctc);
+	printf_serial("[xHCI]   FSC: %u\r\n", hccp2->fsc);
+	printf_serial("[xHCI]   CMC: %u\r\n", hccp2->cmc);
+	printf_serial("[xHCI]   U3C: %u\r\n", hccp2->u3c);
+}
+
+static void xhci_parse_supported_protocol(uintptr_t cap_base, xhci_xec_supported_proto_t* proto) {
+	uint32_t dw0 = mmio_read32((volatile void*) (cap_base + 0 * sizeof(uint32_t)));
+	uint32_t dw1 = mmio_read32((volatile void*) (cap_base + 1 * sizeof(uint32_t)));
+	uint32_t dw2 = mmio_read32((volatile void*) (cap_base + 2 * sizeof(uint32_t)));
+	uint32_t dw3 = mmio_read32((volatile void*) (cap_base + 3 * sizeof(uint32_t)));
+
+	/* DWORD 0 */
+	proto->rev_minor = bcd_to_bin8(FIELD_GET(GENMASK(23, 16), dw0));
+	proto->rev_major = bcd_to_bin8(FIELD_GET(GENMASK(31, 24), dw0));
+
+	/* DWORD 1 */
+	proto->name_string[0] = (char) ((dw1 >> 0) & 0xFF);
+	proto->name_string[1] = (char) ((dw1 >> 8) & 0xFF);
+	proto->name_string[2] = (char) ((dw1 >> 16) & 0xFF);
+	proto->name_string[3] = (char) ((dw1 >> 24) & 0xFF);
+	proto->name_string[4] = '\0';
+
+	/* DWORD 2 */
+	proto->comp_port_offset = FIELD_GET(MASK_32_BYTE0, dw2);
+	proto->comp_port_count = FIELD_GET(MASK_32_BYTE1, dw2);
+	proto->proto_defined = FIELD_GET(GENMASK(27, 16), dw2);
+	proto->psic = FIELD_GET(GENMASK(31, 28), dw2);
+
+	/* DWORD 3 */
+	proto->proto_slot_type = FIELD_GET(GENMASK(4, 0), dw3);
+
+	/* Store array count explicitly */
+	proto->psi_count = proto->psic;
+
+	/* Parse optional PSI DWORDs (DWORD 4 to 4 + psic - 1) */
+	if (proto->psi_count > 0) {
+		proto->psi_array = kcalloc(proto->psi_count, sizeof(xhci_xec_supported_proto_psi_t));
+		if (!proto->psi_array) {
+			proto->psi_count = 0;
+			return;
+		}
+
+		for (uint8_t i = 0; i < proto->psi_count; i++) {
+			volatile void* psi_addr = (volatile void*) (cap_base + (4 + i) * sizeof(uint32_t));
+			uint32_t psi_dw = mmio_read32(psi_addr);
+
+			proto->psi_array[i].psiv = FIELD_GET(GENMASK(3, 0), psi_dw);
+			proto->psi_array[i].psie = FIELD_GET(GENMASK(5, 4), psi_dw);
+			proto->psi_array[i].pfd = FIELD_GET(GENMASK(6, 6), psi_dw);
+			proto->psi_array[i].lp = FIELD_GET(GENMASK(15, 14), psi_dw);
+			proto->psi_array[i].proto_speed_id_mantissa = FIELD_GET(MASK_32_UPPER_HALF, psi_dw);
 		}
 	}
 }
 
-// Writes the current dequeue pointer + DESI to ERDP and clears EHB so the controller is free to signal another interrupt for this interrupter.
-// Called once at init (dequeue at segment 0, TRB 0) and again after each batch of events software has finished draining.
-void xhci_interrupter_update_erdp(xhci_controller_t* hc, uint16_t index) {
-	xhci_interrupter_t* ir = &hc->interrupters[index];
+static void xhci_print_supported_protocol(const xhci_xec_supported_proto_t* proto) {
+	printf_serial("[xHCI] Supported Protocol:\r\n");
+	printf_serial("[xHCI]   Revision: %u.%u\r\n", proto->rev_major, proto->rev_minor);
+	printf_serial("[xHCI]   Name: %s\r\n", proto->name_string);
+	printf_serial("[xHCI]   Port Offset: %u\r\n", proto->comp_port_offset);
+	printf_serial("[xHCI]   Port Count: %u\r\n", proto->comp_port_count);
+	printf_serial("[xHCI]   Protocol Defined: 0x%03x\r\n", proto->proto_defined);
+	printf_serial("[xHCI]   Slot Type: %u\r\n", proto->proto_slot_type);
+	printf_serial("[xHCI]   PSI Count: %u\r\n", proto->psi_count);
 
-	uint64_t erdp_value = xhci_interrupter_dequeue_phys(ir) & GENMASK(63, 4);
-	FIELD_WRITE(erdp_value, GENMASK(2, 0), ir->dequeue_segment); // DESI
-	FIELD_WRITE(erdp_value, BIT(3), 1); // EHB - RW1C, always write 1 to clear
-
-	xhci_memory_fence();
-	xhci_write_register(&hc->runtime->ir[index].erdp, erdp_value, hc->ac64);
+	for (uint8_t i = 0; i < proto->psi_count; i++) {
+		const xhci_xec_supported_proto_psi_t* psi = &proto->psi_array[i];
+		printf_serial("[xHCI]   PSI[%u]: PSIV=%u, PSIE=%u, PFD=%u, LP=%u, Mantissa=%u\r\n",
+			i,
+			psi->psiv,
+			psi->psie,
+			psi->pfd,
+			psi->lp,
+			psi->proto_speed_id_mantissa);
+	}
 }
 
-bool xhci_init_interrupter(xhci_controller_t* hc, uint16_t index) {
-	xhci_interrupter_t* ir = &hc->interrupters[index];
+static void xhci_print_port_protocols(xhci_controller_t* hc) {
+	if (!hc || !hc->first_xce) return;
 
-	ir->erst_size = XHCI_ERST_SEGMENTS_PER_INTERRUPTER;
+	xhci_extended_compat_t* current = hc->first_xce;
+	while (current != NULL) {
+		if (current->capability == XEC_SUPPORTED_PROTO && current->specific_data != NULL) {
+			xhci_xec_supported_proto_t* proto = (xhci_xec_supported_proto_t*) current->specific_data;
 
-	ir->segments = kcalloc(ir->erst_size, sizeof(xhci_ring_t));
-	if (!ir->segments) {
-		printf_serial("[xHCI][ERROR] Failed to allocate segment array for interrupter %u...\r\n", index);
-		printf_color(PRINT_COLOR_LIGHT_RED, PRINT_DEFAULT_BG, "[xHCI][ERROR] Failed to allocate segment array for interrupter %u...\n", index);
-		return false;
-	}
+			if (proto->comp_port_count > 0) {
+				uint8_t start_port = proto->comp_port_offset;
+				uint8_t end_port = start_port + proto->comp_port_count - 1;
 
-	ir->erst = kalloc_dma(sizeof(xhci_event_segment_table_t) * ir->erst_size, DMA_ALIGN_64 | DMA_ZONE_ANY, PDE_FLAGS_UC_2MB, &ir->erst_phys);
-	if (!ir->erst) {
-		printf_serial("[xHCI][ERROR] Failed to allocate the ERST for interrupter %u...\r\n", index);
-		printf_color(PRINT_COLOR_LIGHT_RED, PRINT_DEFAULT_BG, "[xHCI][ERROR] Failed to allocate the ERST for interrupter %u...\n", index);
-		return false;
-	}
-
-	for (uint16_t seg = 0; seg < ir->erst_size; seg++) {
-		xhci_ring_t* ring = &ir->segments[seg];
-
-		ring->trb_count = XHCI_EVENT_RING_TRBS_PER_SEGMENT;
-		ring->trbs = kalloc_dma(ring->trb_count * sizeof(trb_t), DMA_ALIGN_64 | DMA_ZONE_ANY, PDE_FLAGS_UC_2MB, &ring->trbs_phys);
-		if (!ring->trbs) {
-			printf_serial("[xHCI][ERROR] Failed to allocate event ring segment %u for interrupter %u...\r\n", seg, index);
-			printf_color(PRINT_COLOR_LIGHT_RED, PRINT_DEFAULT_BG, "[xHCI][ERROR] Failed to allocate event ring segment %u for interrupter %u...\n", seg, index);
-			return false;
+				if (start_port == end_port) {
+					printf_serial("[xHCI] Port %u is USB %u.%u\r\n", start_port, proto->rev_major, proto->rev_minor);
+					printf_color(PRINT_COLOR_PURPLE, PRINT_DEFAULT_BG, "[xHCI] Port %u is USB %u.%u\n", start_port, proto->rev_major, proto->rev_minor);
+				} else {
+					printf_serial("[xHCI] Ports %u-%u are USB %u.%u\r\n", start_port, end_port, proto->rev_major, proto->rev_minor);
+					printf_color(PRINT_COLOR_PURPLE, PRINT_DEFAULT_BG, "[xHCI] Ports %u-%u are USB %u.%u\n", start_port, end_port, proto->rev_major, proto->rev_minor);
+				}
+			} else {
+				printf_serial("[xHCI] No ports assigned to USB %u.%u\r\n", proto->rev_major, proto->rev_minor);
+				printf_color(PRINT_COLOR_PURPLE, PRINT_DEFAULT_BG, "[xHCI] No ports assigned to USB %u.%u\r\n", proto->rev_major, proto->rev_minor);
+			}
 		}
-		ring->enqueue = 0; // unused by software for event rings; the xHC owns "enqueue"
+		current = current->next_node;
+	}
+}
 
-		ir->erst[seg].base = ring->trbs_phys;
-		ir->erst[seg].size = ring->trb_count;
+static void xhci_parse_legacy_support(uintptr_t cap_base, xhci_xec_legacy_support_t* legsup) {
+	uint32_t dw0 = mmio_read32((volatile void*) (cap_base + 0 * sizeof(uint32_t)));
+	uint32_t dw1 = mmio_read32((volatile void*) (cap_base + 1 * sizeof(uint32_t)));
+
+	/* DWORD 0: USBLEGSUP Parsing */
+	legsup->cap_id = FIELD_GET(GENMASK(7, 0), dw0);
+	legsup->next_cap_ptr = FIELD_GET(GENMASK(15, 8), dw0);
+	legsup->hc_bios_owned = FIELD_GET(GENMASK(16, 16), dw0);
+	legsup->hc_os_owned = FIELD_GET(GENMASK(24, 24), dw0);
+
+	/* DWORD 1: USBLEGCTLSTS Parsing */
+	legsup->usb_smi_enable = FIELD_GET(GENMASK(0, 0), dw1);
+	legsup->smi_on_host_sys_err_enable = FIELD_GET(GENMASK(1, 1), dw1);
+	legsup->smi_on_os_ownership_enable = FIELD_GET(GENMASK(2, 2), dw1);
+	legsup->smi_on_pci_command_enable = FIELD_GET(GENMASK(3, 3), dw1);
+	legsup->smi_on_bar_enable = FIELD_GET(GENMASK(4, 4), dw1);
+	legsup->smi_on_event_int_enable = FIELD_GET(GENMASK(13, 13), dw1);
+
+	legsup->smi_on_host_sys_err = FIELD_GET(GENMASK(16, 16), dw1);
+	legsup->smi_on_os_ownership_change = FIELD_GET(GENMASK(17, 17), dw1);
+	legsup->smi_on_pci_command = FIELD_GET(GENMASK(18, 18), dw1);
+	legsup->smi_on_bar = FIELD_GET(GENMASK(19, 19), dw1);
+	legsup->smi_on_event_int = FIELD_GET(GENMASK(29, 29), dw1);
+}
+
+static void xhci_print_legacy_support(const xhci_xec_legacy_support_t* legsup) {
+	printf_serial("[xHCI] Legacy Support:\r\n");
+	printf_serial("[xHCI]   Cap ID: %u\r\n", legsup->cap_id);
+	printf_serial("[xHCI]   Next Cap: %u\r\n", legsup->next_cap_ptr);
+	printf_serial("[xHCI]   HC BIOS Owned: %u\r\n", legsup->hc_bios_owned);
+	printf_serial("[xHCI]   HC OS Owned: %u\r\n", legsup->hc_os_owned);
+
+	printf_serial("[xHCI]   USB SMI Enable: %u\r\n", legsup->usb_smi_enable);
+	printf_serial("[xHCI]   SMI HSE Enable: %u\r\n", legsup->smi_on_host_sys_err_enable);
+	printf_serial("[xHCI]   SMI OS Enable: %u\r\n", legsup->smi_on_os_ownership_enable);
+	printf_serial("[xHCI]   SMI PCI Enable: %u\r\n", legsup->smi_on_pci_command_enable);
+	printf_serial("[xHCI]   SMI BAR Enable: %u\r\n", legsup->smi_on_bar_enable);
+	printf_serial("[xHCI]   SMI Event Enable: %u\r\n", legsup->smi_on_event_int_enable);
+
+	printf_serial("[xHCI]   SMI HSE Status: %u\r\n", legsup->smi_on_host_sys_err);
+	printf_serial("[xHCI]   SMI OS Status: %u\r\n", legsup->smi_on_os_ownership_change);
+	printf_serial("[xHCI]   SMI PCI Status: %u\r\n", legsup->smi_on_pci_command);
+	printf_serial("[xHCI]   SMI BAR Status: %u\r\n", legsup->smi_on_bar);
+	printf_serial("[xHCI]   SMI Event Status: %u\r\n", legsup->smi_on_event_int);
+}
+
+static xhci_xec_capability_id_t get_id_from_value(uint8_t value) {
+	switch (value) {
+		case 1:    return XEC_USB_LEGACY;
+		case 2:    return XEC_SUPPORTED_PROTO;
+		case 3:    return XEC_EXT_POWER_MANAGEMENT;
+		case 4:    return XEC_IO_VIRT;
+		case 5:    return XEC_MESSAGE_INTERRUPT;
+		case 6:    return XEC_LOCAL_MEMORY;
+		case 10:   return XEC_USB_DEBUG;
+		case 17:   return XEC_EXT_MESSAGE_INTERRUPT;
+		case 192 ... 255: return XEC_VENDOR_DEFINED; // unfortunately need this to use the GCC ... range extension to make this readable
+		default: return XEC_RESERVED;
+	}
+}
+
+static void xhci_bios_handoff(uintptr_t cap_base, xhci_xec_legacy_support_t* legsup) {
+	if (!cap_base) return;
+
+	const uint32_t XHCI_LEGSUP_BIOS_OWNED = BIT(16);
+	const uint32_t XHCI_LEGSUP_OS_OWNED = BIT(24);
+	const uint32_t XHCI_LEGCTLSTS_SMI_ENABLES = (GENMASK(4, 0) | BIT(13));
+	const uint32_t XHCI_LEGCTLSTS_SMI_STATUSES = (GENMASK(19, 16) | BIT(29));
+
+	uint32_t dw0 = mmio_read32((volatile void*) cap_base);
+
+	// If BIOS owns it, we must negotiate handoff
+	if (dw0 & XHCI_LEGSUP_BIOS_OWNED) {
+		printf_serial("[xHCI] BIOS owns controller. Initiating handoff...\r\n");
+		printf_color(PRINT_COLOR_PURPLE, PRINT_DEFAULT_BG, "[xHCI] BIOS owns controller. Initiating handoff...\n");
+
+		// Set OS Owned bit
+		BIT_SET(dw0, 24);
+		mmio_write32((volatile void*) cap_base, dw0);
+
+		// Wait for BIOS to clear its ownership bit.
+		// The xHCI spec recommends waiting up to 1 second.
+		bool handoff_successful = false;
+		for (int i = 0; i < 100; i++) { // Loop 100 times, 10ms each = 1 second
+			dw0 = mmio_read32((volatile void*) cap_base);
+
+			if (!(dw0 & XHCI_LEGSUP_BIOS_OWNED) && (dw0 & XHCI_LEGSUP_OS_OWNED)) {
+				handoff_successful = true;
+				break;
+			}
+
+			xhci_delay_us(10000);
+		}
+
+		if (!handoff_successful) {
+			printf_serial("[xHCI][WARN] BIOS handoff timed out! Forcing ownership.\r\n");
+			printf_color(PRINT_COLOR_YELLOW, PRINT_DEFAULT_BG, "[xHCI][WARN] BIOS handoff timed out! Forcing ownership.\r\n");
+			// There's a chance the BIOS will never respond.
+			// We proceed anyway, relying on OS_OWNED being set.
+		} else {
+			printf_serial("[xHCI] BIOS handoff successful.\r\n");
+			printf_color(PRINT_COLOR_LIGHT_GREEN, PRINT_DEFAULT_BG, "[xHCI] BIOS handoff successful.\r\n");
+		}
+	} else {
+		printf_serial("[xHCI] BIOS does not own controller. Claiming OS ownership.\r\n");
+		printf_color(PRINT_COLOR_PURPLE, PRINT_DEFAULT_BG, "[xHCI] BIOS does not own controller. Claiming OS ownership.\r\n");
+		BIT_SET(dw0, 24);
+		mmio_write32((volatile void*) cap_base, dw0);
 	}
 
-	ir->dequeue_segment = 0;
-	ir->dequeue = 0;
-	ir->cycle = true; // Consumer Cycle State, toggles each time dequeue wraps back to segment 0
+	uint32_t dw1 = mmio_read32((volatile void*) (cap_base + 4));
 
-	xhci_memory_fence();
+	// Clear all SMI Enable bits to 0
+	MASK_CLEAR(dw1, XHCI_LEGCTLSTS_SMI_ENABLES);
 
-	// Program the runtime registers for this interrupter.
-	mmio_write32(&hc->runtime->ir[index].erstsz, ir->erst_size);
-	xhci_interrupter_update_erdp(hc, index);    // ERDP -> segment 0, TRB 0, EHB cleared
-	xhci_write_register(&hc->runtime->ir[index].erstba, ir->erst_phys, hc->ac64);
+	// Clear all SMI Status bits to 0 by writing 1 (W1C bits)
+	MASK_SET(dw1, XHCI_LEGCTLSTS_SMI_STATUSES);
 
-	return true;
+	mmio_write32((volatile void*) (cap_base + 4), dw1);
+
+	// Forcefully update the struct
+	if (legsup) {
+		xhci_parse_legacy_support(cap_base, legsup);
+	}
 }
+
+// ------------------------------------------------------------------------------------------------
+// ------------------------------------------------------------------------------------------------
+// Controller reset
+// ------------------------------------------------------------------------------------------------
+// ------------------------------------------------------------------------------------------------
+
+void xhci_reset_controller(xhci_controller_t* hc) {
+	printf_serial("[xHCI] Resetting controller... ");
+	printf_color(PRINT_COLOR_PURPLE, PRINT_DEFAULT_BG, "[xHCI] Resetting controller...");
+
+	const uint32_t XHCI_USBCMD_HCRST = BIT(1);  // Host Controller Reset
+	const uint32_t XHCI_USBSTS_HCH = BIT(0);  // HC Halted
+	const uint32_t XHCI_USBSTS_CNR = BIT(11); // Controller Not Ready
+
+	// printf_serial("\r\nhc->cap = 0x%llx, hc->cap->caplength = 0x%llx, hc->op = 0x%llx, hc->op->usbcmd = 0x%llx\r\n", hc->cap, FIELD_GET(MASK_32_BYTE0, mmio_read32(&hc->cap->caplength)), hc->op, &hc->op->usbcmd);
+
+	// Clear Run/Stop bit
+	uint32_t usbcmd = mmio_read32(&hc->op->usbcmd);
+	BIT_CLEAR(usbcmd, 0); // BIT0 is Run/Stop
+	mmio_write32(&hc->op->usbcmd, usbcmd);
+
+	// Wait for HC to halt
+	while ((mmio_read32(&hc->op->usbsts) & XHCI_USBSTS_HCH) == 0) {
+		xhci_delay_us(1000);
+	}
+
+	printf_serial("controller halted. Issuing reset...\r\n");
+
+	// Issue Reset
+	usbcmd = mmio_read32(&hc->op->usbcmd);
+	BIT_SET(usbcmd, 1);
+	mmio_write32(&hc->op->usbcmd, usbcmd);
+
+	// Wait for reset to complete (HCRST clears to 0)
+	while ((mmio_read32(&hc->op->usbcmd) & XHCI_USBCMD_HCRST) != 0) {
+		xhci_delay_us(1000);
+	}
+
+	// Wait for CNR to clear
+	while ((mmio_read32(&hc->op->usbsts) & XHCI_USBSTS_CNR) != 0) {
+		xhci_delay_us(1000);
+	}
+
+	printf_serial("Controller successfully reset\r\n");
+	printf_color(PRINT_COLOR_PURPLE, PRINT_DEFAULT_BG, " done\n");
+}
+
+// ------------------------------------------------------------------------------------------------
+// ------------------------------------------------------------------------------------------------
+// Port speed / transfer status helpers
+// ------------------------------------------------------------------------------------------------
+// ------------------------------------------------------------------------------------------------
 
 static usb_speed_t xhci_get_port_speed_from_psi(xhci_controller_t* hc, uint8_t port, uint8_t psi) {
 	uint8_t spec_port = port + 1; // ports as far as we are concerned are zero indexed. the spec has them 1 indexed.
@@ -747,6 +805,88 @@ static usb_speed_t xhci_get_port_speed_from_psi(xhci_controller_t* hc, uint8_t p
 	return USB_SPEED_UNKNOWN;
 }
 
+static usb_transfer_status_t xhci_completion_code_to_status(uint8_t comp_code) {
+	switch (comp_code) {
+		case 1:  return USB_TRANSFER_COMPLETED;      // Success
+		case 13: return USB_TRANSFER_COMPLETED;      // Short Packet (not an error)
+		case 6:  return USB_TRANSFER_ERROR_STALL;    // Stall Error
+		case 3:  return USB_TRANSFER_ERROR_BABBLE;   // Babble Detected Error
+		case 4:  return USB_TRANSFER_ERROR_CRC;      // USB Transaction Error (bus-level NAK/CRC/timeout, HC retried and gave up)
+		default: return USB_TRANSFER_ERROR_HARDWARE;
+	}
+}
+
+static bool xhci_wait_transfer_event(xhci_controller_t* hc, uintptr_t setup_trb_phys, uintptr_t data_trb_phys, uintptr_t status_trb_phys, trb_t* completion_out, size_t timeout_ms) {
+	xhci_interrupter_t* ir = &hc->interrupters[0];
+	// Polled in ~10us steps
+	// Time out 0 is "wait forever", shouldn't really be used
+	size_t remaining_us = timeout_ms * 1000;
+	const size_t poll_step_us = 10;
+
+	while (true) {
+		trb_t* event_trb = (trb_t*) ((uintptr_t) ir->segments[ir->dequeue_segment].trbs + (ir->dequeue * sizeof(trb_t)));
+		bool event_cycle = FIELD_GET(BIT(0), event_trb->control) != 0;
+
+		if (event_cycle != ir->cycle) {
+			cpu_relax();
+
+			if (timeout_ms != 0) {
+				xhci_delay_us(poll_step_us);
+				if (remaining_us <= poll_step_us) {
+					printf_serial("[xHCI][WARN] Timed out waiting for transfer event.\r\n");
+					return false;
+				}
+				remaining_us -= poll_step_us;
+			}
+			continue;
+		}
+		xhci_memory_fence();
+
+		uint8_t trb_type = FIELD_GET(GENMASK(15, 10), event_trb->control);
+
+		if (trb_type != XHCI_TRB_TYPE_TRANSFER_EVENT) {
+			printf_serial("[xHCI][INFO] Consuming side-event type: %u while waiting for transfer completion.\r\n", trb_type);
+			xhci_interrupter_advance_dequeue(ir);
+			xhci_interrupter_update_erdp(hc, 0);
+			continue;
+		}
+
+		uintptr_t p = event_trb->parameter;
+		bool is_setup = (p == setup_trb_phys);
+		bool is_data = (data_trb_phys != 0 && p == data_trb_phys);
+		bool is_status = (p == status_trb_phys);
+
+		if (!is_setup && !is_data && !is_status) {
+			printf_serial("[xHCI][WARN] Transfer event for unrelated TRB (got %llx)\r\n", (unsigned long long) p);
+			xhci_interrupter_advance_dequeue(ir);
+			xhci_interrupter_update_erdp(hc, 0);
+			continue;
+		}
+
+		uint8_t comp_code = FIELD_GET(GENMASK(31, 24), event_trb->status);
+
+		if (completion_out) *completion_out = *event_trb;
+		xhci_interrupter_advance_dequeue(ir);
+		xhci_interrupter_update_erdp(hc, 0);
+
+		// Status stage completes the transfer
+		// Any other completion code is terminal.
+		// The xHC will not continue the ring after an error (e.g. STALL).
+		if (is_status || comp_code != 1) {
+			return true;
+		}
+
+		// Non error setup/data event
+		// keep waiting for the Status TRB completion.
+	}
+}
+
+// ------------------------------------------------------------------------------------------------
+// ------------------------------------------------------------------------------------------------
+// Port operations (for usb_hcd interface)
+// ------------------------------------------------------------------------------------------------
+// ------------------------------------------------------------------------------------------------
+
 size_t xhci_get_port_count(usb_hcd_t* hcd) {
 	xhci_controller_t* hc = (xhci_controller_t*) hcd->hcd_data;
 	return (size_t) hc->max_ports;
@@ -794,8 +934,6 @@ int xhci_get_port_status(usb_hcd_t* hcd, uint8_t port, usb_port_status_t* status
      GENMASK(15, 14) | /* PIC */ \
      BIT(16)        |  /* LWS */ \
      GENMASK(27, 25))  /* WCE/WDE/WOE */
-
-#include <system/timing.h>
 
 int xhci_reset_port(usb_hcd_t* hcd, uint8_t port) {
 	if (!hcd) return -1;
@@ -959,28 +1097,15 @@ int xhci_enable_port(usb_hcd_t* hcd, uint8_t port) {
 	return 0;
 }
 
-bool xhci_ring_init(xhci_ring_t* ring, size_t trb_count) {
-	if (!ring || trb_count < 2) return false; // need at least 1 real slot + the Link TRB
-
-	ring->trb_count = trb_count;
-	ring->enqueue = 0;
-	ring->cycle = true;
-
-	ring->trbs = (trb_t*) kalloc_dma(trb_count * sizeof(trb_t), DMA_ZONE_ANY, PDE_FLAGS_UC_2MB, &ring->trbs_phys);
-	if (!ring->trbs) return false;
-	memset(ring->trbs, 0, trb_count * sizeof(trb_t));
-
-	// Reserve the last slot as a permanent Link TRB, pointing back to the start.
-	trb_t* link = &ring->trbs[trb_count - 1];
-	link->parameter = ring->trbs_phys;
-	FIELD_WRITE(link->control, GENMASK(15, 10), XHCI_TRB_TYPE_LINK);
-	FIELD_WRITE(link->control, BIT(1), 1); // Toggle Cycle
-	FIELD_WRITE(link->control, BIT(0), 1); // Cycle bit
-
-	xhci_memory_fence();
-
-	return true;
+int xhci_disable_port(usb_hcd_t* hcd, uint8_t port) {
+	return 0; // I don't really care about this ngl. Will come back when it's actually needed.
 }
+
+// ------------------------------------------------------------------------------------------------
+// ------------------------------------------------------------------------------------------------
+// Device lifecycle
+// ------------------------------------------------------------------------------------------------
+// ------------------------------------------------------------------------------------------------
 
 int xhci_device_init(usb_hcd_t* hcd, usb_device_t* dev) {
 	if (!hcd || !dev) return -1;
@@ -1157,94 +1282,26 @@ fail_cleanup:
 int xhci_device_destroy(usb_hcd_t* hcd, usb_device_t* dev) {
 
 }
+
+// ------------------------------------------------------------------------------------------------
+// ------------------------------------------------------------------------------------------------
+// Endpoint operations
+// ------------------------------------------------------------------------------------------------
+// ------------------------------------------------------------------------------------------------
+
 int xhci_endpoint_open(usb_hcd_t* hcd, usb_endpoint_t* ep) {
 
 }
+
 int xhci_endpoint_close(usb_hcd_t* hcd, usb_endpoint_t* ep) {
 
 }
+
 int xhci_endpoint_reset(usb_hcd_t* hcd, usb_endpoint_t* ep) {
 
 }
 
-static usb_transfer_status_t xhci_completion_code_to_status(uint8_t comp_code) {
-	switch (comp_code) {
-		case 1:  return USB_TRANSFER_COMPLETED;      // Success
-		case 13: return USB_TRANSFER_COMPLETED;      // Short Packet (not an error)
-		case 6:  return USB_TRANSFER_ERROR_STALL;    // Stall Error
-		case 3:  return USB_TRANSFER_ERROR_BABBLE;   // Babble Detected Error
-		case 4:  return USB_TRANSFER_ERROR_CRC;      // USB Transaction Error (bus-level NAK/CRC/timeout, HC retried and gave up)
-		default: return USB_TRANSFER_ERROR_HARDWARE;
-	}
-}
-
-bool xhci_wait_transfer_event(xhci_controller_t* hc, uintptr_t setup_trb_phys, uintptr_t data_trb_phys, uintptr_t status_trb_phys, trb_t* completion_out, size_t timeout_ms) {
-	xhci_interrupter_t* ir = &hc->interrupters[0];
-	// Polled in ~10us steps
-	// Time out 0 is "wait forever", shouldn't really be used
-	size_t remaining_us = timeout_ms * 1000;
-	const size_t poll_step_us = 10;
-
-	while (true) {
-		trb_t* event_trb = (trb_t*) ((uintptr_t) ir->segments[ir->dequeue_segment].trbs + (ir->dequeue * sizeof(trb_t)));
-		bool event_cycle = FIELD_GET(BIT(0), event_trb->control) != 0;
-
-		if (event_cycle != ir->cycle) {
-			__asm__ volatile("pause" ::: "memory");
-
-			if (timeout_ms != 0) {
-				xhci_delay_us(poll_step_us);
-				if (remaining_us <= poll_step_us) {
-					printf_serial("[xHCI][WARN] Timed out waiting for transfer event.\r\n");
-					return false;
-				}
-				remaining_us -= poll_step_us;
-			}
-			continue;
-		}
-		xhci_memory_fence();
-
-		uint8_t trb_type = FIELD_GET(GENMASK(15, 10), event_trb->control);
-
-		if (trb_type != XHCI_TRB_TYPE_TRANSFER_EVENT) {
-			printf_serial("[xHCI][INFO] Consuming side-event type: %u while waiting for transfer completion.\r\n", trb_type);
-			xhci_interrupter_advance_dequeue(ir);
-			xhci_interrupter_update_erdp(hc, 0);
-			continue;
-		}
-
-		uintptr_t p = event_trb->parameter;
-		bool is_setup = (p == setup_trb_phys);
-		bool is_data = (data_trb_phys != 0 && p == data_trb_phys);
-		bool is_status = (p == status_trb_phys);
-
-		if (!is_setup && !is_data && !is_status) {
-			printf_serial("[xHCI][WARN] Transfer event for unrelated TRB (got %llx) -- discarding.\r\n",
-				(unsigned long long) p);
-			xhci_interrupter_advance_dequeue(ir);
-			xhci_interrupter_update_erdp(hc, 0);
-			continue;
-		}
-
-		uint8_t comp_code = FIELD_GET(GENMASK(31, 24), event_trb->status);
-
-		if (completion_out) *completion_out = *event_trb;
-		xhci_interrupter_advance_dequeue(ir);
-		xhci_interrupter_update_erdp(hc, 0);
-
-		// Status stage completes the transfer
-		// Any other completion code is terminal.
-		// The xHC will not continue the ring after an error (e.g. STALL).
-		if (is_status || comp_code != 1) {
-			return true;
-		}
-
-		// Non error setup/data event
-		// keep waiting for the Status TRB completion.
-	}
-}
-
-bool xhci_recover_halted_endpoint(xhci_controller_t* hc, xhci_device_t* xdev, xhci_endpoint_t* xep) {
+static bool xhci_recover_halted_endpoint(xhci_controller_t* hc, xhci_device_t* xdev, xhci_endpoint_t* xep) {
 	if (!hc || !xdev || !xep) return false;
 
 	/* Reset Endpoint */
@@ -1290,6 +1347,12 @@ bool xhci_recover_halted_endpoint(xhci_controller_t* hc, xhci_device_t* xdev, xh
 	printf_serial("[xHCI] Endpoint recovered (slot=%u dci=%u).\r\n", xdev->slot_id, xep->dci);
 	return true;
 }
+
+// ------------------------------------------------------------------------------------------------
+// ------------------------------------------------------------------------------------------------
+// Transfer execution
+// ------------------------------------------------------------------------------------------------
+// ------------------------------------------------------------------------------------------------
 
 static void xhci_dump_transfer_timeout_diagnostics(xhci_controller_t* hc, xhci_device_t* xdev, xhci_endpoint_t* xep, usb_device_t* dev) {
 	printf("[xHCI][DIAG] transfer timeout diagnostics (slot=%u dci=%u port=%u)\r\n", xdev->slot_id, xep->dci, dev ? dev->port : 0xFF);
@@ -1462,9 +1525,11 @@ int xhci_execute_transfer(usb_hcd_t* hcd, usb_transfer_t* transfer) {
 	return XHCI_TX_ERR_COMPLETION_BASE - (int) comp_code;
 }
 
-int xhci_disable_port(usb_hcd_t* hcd, uint8_t port) {
-	return 0; // I don't really care about this ngl. Will come back when it's actually needed.
-}
+// ------------------------------------------------------------------------------------------------
+// ------------------------------------------------------------------------------------------------
+// HCD ops table
+// ------------------------------------------------------------------------------------------------
+// ------------------------------------------------------------------------------------------------
 
 static const usb_hcd_ops_t xhci_ops = {
 	// need start, stop, restart. need to refactor a little for this
@@ -1485,6 +1550,25 @@ static const usb_hcd_ops_t xhci_ops = {
 
 	.execute_transfer = xhci_execute_transfer,
 };
+
+// ------------------------------------------------------------------------------------------------
+// ------------------------------------------------------------------------------------------------
+// Probe / attach / detach
+// ------------------------------------------------------------------------------------------------
+// ------------------------------------------------------------------------------------------------
+
+int xhci_probe(wallos_device_t* dev) {
+
+	// zero indicates that this device does belong to this driver
+	// im too lazy to properly check that we can interface with this so I wont right now
+	return 0;
+}
+
+void xhci_init_regs(xhci_controller_t* hc, uintptr_t base) {
+	hc->mmio_base = base;
+
+	hc->cap = (volatile xhci_cap_regs_t*) base;
+}
 
 #define XHCI_MMIO_FLAGS  (BIT_PRESENT | BIT_WRITE | BIT_PCD | BIT_SIZE)
 void xhci_attach(wallos_device_t* dev) {
@@ -1831,7 +1915,7 @@ void xhci_attach(wallos_device_t* dev) {
 	mmio_write32(&hc->op->usbcmd, usbcmd);
 
 	while (FIELD_GET(GENMASK(0, 0), mmio_read32(&hc->op->usbsts))) {
-		__asm__ volatile("pause");
+		cpu_pause();
 	}
 
 	usb_hcd_t* hcd = (usb_hcd_t*) kcalloc(1, sizeof(usb_hcd_t));
@@ -1847,7 +1931,11 @@ void xhci_detach(wallos_device_t* dev) {
 
 }
 
-#include <drivers/driver_manager.h>
+// ------------------------------------------------------------------------------------------------
+// ------------------------------------------------------------------------------------------------
+// Driver registration
+// ------------------------------------------------------------------------------------------------
+// ------------------------------------------------------------------------------------------------
 
 static wallos_driver_t xhci_driver = {
 	.name = "xHCI",

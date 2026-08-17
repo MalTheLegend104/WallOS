@@ -10,6 +10,10 @@
 // ------------------------------------------------------------------------------------------------
 #include "wallos_version.h"
 
+// TODO: need a better wrapper for architecture flags.
+// I don't really want to throw around ifdef __X86_64__ or other flags like that, but do want a common interface
+#define WALLOS_ARCH_X86_64
+
 // ------------------------------------------------------------------------------------------------
 // ------------------------------------------------------------------------------------------------
 // ACPI
