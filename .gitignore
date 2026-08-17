@@ -18,3 +18,4 @@ tools/wallos_netboot/boot/grub/net_settings.cfg
 upload.sh
 
 tools/pci_dev/pci.ids
+tools/usb_dev/usb.ids
