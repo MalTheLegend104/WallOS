@@ -2,6 +2,7 @@
 
 #include <memory/kernel_alloc.h>
 
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -49,12 +50,21 @@ static bool validate_hcd(usb_hcd_t* hcd) {
 
 // the returns from this are never actually shown, should probably do that...
 int usb_hcd_register(usb_hcd_t* hcd) {
-	if (!hcd || !hcd->ops) return -1; // TODO: we really need a standardized error return format for the USB stack (and whole OS itself tbh)
+	if (!hcd || !hcd->ops) {
+		printf_color(PRINT_COLOR_LIGHT_RED, PRINT_DEFAULT_BG, "[USB][ERROR] usb_hcd_register: invalid HCD or missing ops table\r\n");
+		return -1; // TODO: we really need a standardized error return format for the USB stack (and whole OS itself tbh)
+	}
 
-	if (!validate_hcd(hcd)) return -1;
+	if (!validate_hcd(hcd)) {
+		printf_color(PRINT_COLOR_LIGHT_RED, PRINT_DEFAULT_BG, "[USB][ERROR] usb_hcd_register: HCD failed validation (missing required ops)\r\n");
+		return -1;
+	}
 
 	hcd_list_entry_t* entry = (hcd_list_entry_t*) kalloc(sizeof(hcd_list_entry_t));
-	if (!entry) return -1;
+	if (!entry) {
+		printf_color(PRINT_COLOR_LIGHT_RED, PRINT_DEFAULT_BG, "[USB][ERROR] usb_hcd_register: failed to allocate hcd_list_entry_t\r\n");
+		return -1;
+	}
 
 
 	entry->hcd = hcd;
@@ -120,7 +130,10 @@ int usb_control_msg(usb_device_t* dev, uint8_t request_type, uint8_t request, ui
 	transfer.timeout_ms = timeout_ms;
 
 	int rc = usb_transfer_sync(&transfer);
-	if (rc != 0) return -1;
+	if (rc != 0) {
+		printf_color(PRINT_COLOR_LIGHT_RED, PRINT_DEFAULT_BG, "[USB][ERROR] Transfer sync failed with %d\r\n", rc);
+		return -1;
+	}
 
 	return (int) transfer.actual_length;
 }

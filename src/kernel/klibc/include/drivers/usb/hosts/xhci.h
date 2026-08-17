@@ -26,6 +26,10 @@ extern "C" {
 // Spec (6.5) requires each segment be between 16 and 4096 TRBs.
 #define XHCI_EVENT_RING_TRBS_PER_SEGMENT 256 // 256 * 16 bytes = one 4KiB page
 
+#define XHCI_COMMAND_TRB_ADDRESS_DEVICE 11
+
+#define XHCI_TRANSFER_RING_TRB_COUNT 64 // one 1KiB alloc; plenty for EP0 control transfers
+
 	_Static_assert(XHCI_EVENT_RING_TRBS_PER_SEGMENT >= 16 && XHCI_EVENT_RING_TRBS_PER_SEGMENT <= 4096, "xHCI event ring segments must be between 16 and 4096 TRBs");
 
 	typedef struct {
@@ -241,6 +245,34 @@ extern "C" {
 	_Static_assert(sizeof(trb_t) == 16, "TRBs must be 16 bytes");
 
 	typedef struct {
+		uint32_t drop_context0;
+		uint32_t add_context0;
+		uint32_t reserved[5]; // DWORDS 2-6 are RsvdZ
+		uint32_t dword7;
+	} __attribute__((packed)) xhci_input_context_t;
+	_Static_assert(sizeof(xhci_input_context_t) == 32, "Input Control Context must be 32 bytes");
+
+	typedef struct {
+		uint32_t dword0;
+		uint32_t dword1;
+		uint32_t dword2;
+		uint32_t dword3;
+		uint32_t rsvdz[4];
+	} __attribute__((packed)) xhci_slot_context_t;
+	_Static_assert(sizeof(xhci_input_context_t) == 32, "Slot Context must be 32 bytes");
+
+	typedef struct {
+		uint32_t dword0;
+		uint32_t dword1;
+		uint64_t tr_dequeue_ptr;
+		uint32_t avg_trb_length;
+		uint32_t rsvdz[3];
+	} __attribute__((packed)) xhci_ep_context_t;
+	_Static_assert(sizeof(xhci_ep_context_t) == 32, "EP Context must be 32 bytes");
+
+
+
+	typedef struct {
 		trb_t* trbs;
 		uintptr_t trbs_phys;
 		size_t trb_count;
@@ -271,6 +303,26 @@ extern "C" {
 		bool cycle;
 	} xhci_interrupter_t;
 
+	typedef struct {
+		xhci_ring_t ring;
+		uint8_t dci;
+		uint16_t max_packet_size;
+	} xhci_endpoint_t;
+
+
+	typedef struct {
+		uint8_t slot_id;
+		uint32_t ctx_size;
+
+		uint8_t* input_ctx_base;   // 33 * ctx_size, reused for future commands
+		uintptr_t input_ctx_phys;
+
+		uint8_t* dev_ctx_base;     // 32 * ctx_size, referenced by DCBAA[slot_id]
+		uintptr_t dev_ctx_phys;
+
+		xhci_ring_t ep0_ring;
+		uint16_t ep0_max_packet_size;
+	} xhci_device_t;
 
 	typedef struct {
 		uintptr_t mmio_base;
@@ -305,6 +357,16 @@ extern "C" {
 	void xhci_init();
 
 #define XHCI_COMMAND_TRB_ENABLE_SLOT 9
+#define XHCI_COMMAND_TRB_DISABLE_SLOT 10
+
+#define XHCI_TRB_TYPE_SETUP_STAGE     2
+#define XHCI_TRB_TYPE_DATA_STAGE      3
+#define XHCI_TRB_TYPE_STATUS_STAGE    4
+#define XHCI_TRB_TYPE_LINK 6
+#define XHCI_TRB_TYPE_RESET_ENDPOINT           14
+#define XHCI_TRB_TYPE_SET_TR_DEQUEUE_POINTER   16
+#define XHCI_TRB_TYPE_TRANSFER_EVENT  32
+#define XHCI_TRB_TYPE_CMD_COMPLETION 33
 
 #ifdef __cplusplus	
 #undef _Static_assert

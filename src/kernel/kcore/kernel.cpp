@@ -349,7 +349,9 @@ void kernel_main(unsigned int magic, multiboot_info* mbt_info) {
 	// ------------------------------------------------------------------------------------------------
 	// I have no better spot to put this so it goes here.
 	detect_ide_drives();
-	ahci_register_driver();
+	// TODO: I commented this out because initializing a specific drive on one of my test PCs takes FOREVER
+	// Need to re-enable this when done with AHCI
+	// ahci_register_driver();
 
 	WDM_Init();
 	WDM_DriveHandle initrd = initrd_wdm_init(INITRD_FLAG_NONE);
@@ -387,8 +389,8 @@ void kernel_main(unsigned int magic, multiboot_info* mbt_info) {
 	registerCommand((Command) { driver_cli, 0, "driver", 0, 0 });
 	// terminalMain();
 
-	char* cmd[] = { "dev", "info", "usb0" };
-	device_cmd(3, cmd);
+	char* cmd[] = { "dev", "list" };
+	device_cmd(2, cmd);
 
 	while (true) WALLOS_HLT();
 }

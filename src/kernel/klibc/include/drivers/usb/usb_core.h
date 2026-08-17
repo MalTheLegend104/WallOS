@@ -34,6 +34,11 @@ extern "C" {
 		USB_SPEED_120GBPS,  // USB4 Version 2.0 Asymmetric mode (120 Gbps tx / 40 Gbps rx)
 	} usb_speed_t;
 
+	/**
+	 * @brief Returns a string relating to the speed passed through.
+	 * Meant mostly for debugging/internal logging.
+	 * Use usb_speed_to_string_display() for a more user friendly version
+	 */
 	static inline const char* usb_speed_to_string(usb_speed_t speed) {
 		switch (speed) {
 			case USB_LOW_SPEED:     return "LOW SPEED";
@@ -49,9 +54,28 @@ extern "C" {
 		}
 	}
 
-	/* Normalized port status return.
-	 * Returned by get_port_status() in usb_hcd_ops_t.
+	/**
+	 * @brief A more "friendly" version of usb_speed_to_string that is meant to be user facing
 	 */
+	static inline const char* usb_speed_to_string_display(usb_speed_t speed) {
+		switch (speed) {
+			case USB_LOW_SPEED:     return "Low Speed (1.5 Mbps)";
+			case USB_FULL_SPEED:    return "Full Speed (12 Mbps)";
+			case USB_HIGH_SPEED:    return "High Speed (480 Mbps)";
+			case USB_SPEED_5GBPS:   return "SuperSpeed (5 Gbps)";
+			case USB_SPEED_10GBPS:  return "SuperSpeed+ (10 Gbps)";
+			case USB_SPEED_20GBPS:  return "SuperSpeed+ (20 Gbps)";
+			case USB_SPEED_40GBPS:  return "USB4 (40 Gbps)";
+			case USB_SPEED_80GBPS:  return "USB4 (80 Gbps)";
+			case USB_SPEED_120GBPS: return "USB4 (120 Gbps)";
+			default:                return "Unknown Speed";
+		}
+	}
+
+
+		/* Normalized port status return.
+		 * Returned by get_port_status() in usb_hcd_ops_t.
+		 */
 	typedef struct {
 		bool connected; /* True if a device is currently attached to this port */
 		bool enabled;   /* True if the port is enabled (out of reset, forwarding packets) */
@@ -155,6 +179,17 @@ extern "C" {
 		void* hcd_data;
 	};
 
+	typedef struct {
+		usb_device_t* usb_dev; // parent USB device (the "port")
+		uint8_t interface_number;
+		uint8_t interface_class;
+		uint8_t interface_subclass;
+		uint8_t interface_protocol;
+		usb_endpoint_t* endpoints; // subset of usb_dev->endpoints belonging to this interface
+		size_t endpoint_count;
+		wallos_device_t* device; // the registered node for this interface
+	} usb_interface_t;
+
 	struct usb_hcd_ops {
 		int (*start)(usb_hcd_t* hcd);
 		int (*stop)(usb_hcd_t* hcd);
@@ -184,6 +219,8 @@ extern "C" {
 		// synchronous transfer, will block until transfer is complete (or failed)
 		int (*execute_transfer)(usb_hcd_t* hcd, usb_transfer_t* transfer);
 	};
+
+	usb_interface_t* usb_interface_from_device(wallos_device_t* wdev);
 
 	void usb_init(void);
 

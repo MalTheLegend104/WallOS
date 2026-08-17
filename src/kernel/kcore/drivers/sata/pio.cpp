@@ -37,7 +37,7 @@ bool identify(int drive_number) {
 	uint16_t data_register;
 	bool primary = true;
 
-	printf("identify: Starting identification for drive %d\n", drive_number);
+	// printf("identify: Starting identification for drive %d\n", drive_number);
 
 	// We have to clear a few things before we can call identify
 	switch (drive_number) {
@@ -121,11 +121,11 @@ bool identify(int drive_number) {
 	while (status & 0x80) {
 		status = inb(command_register);
 		if (--timeout <= 0) {
-			printf("identify: TIMEOUT waiting for BSY to clear! Final status = 0x%02x\n", status);
+			// printf("identify: TIMEOUT waiting for BSY to clear! Final status = 0x%02x\n", status);
 			return false;
 		}
 	}
-	printf("identify: BSY cleared, status = 0x%02x\n", status);
+	// printf("identify: BSY cleared, status = 0x%02x\n", status);
 
 	// Check LBA Mid and High for ATAPI devices
 	uint8_t lba_mid, lba_high;
@@ -158,7 +158,7 @@ bool identify(int drive_number) {
 	}
 
 	// Continue polling until ERR is set or DRQ is set
-	printf("identify: Waiting for DRQ or ERR...\n");
+	// printf("identify: Waiting for DRQ or ERR...\n");
 	timeout = ATA_TIMEOUT;
 	while (((status = inb(command_register)) & (0x40 | 0x01)) == 0) {
 		if (--timeout == 0) {
@@ -170,7 +170,7 @@ bool identify(int drive_number) {
 		}
 	}
 
-	printf("identify: Got DRQ or ERR, status = 0x%02x\n", status);
+	// printf("identify: Got DRQ or ERR, status = 0x%02x\n", status);
 
 	if (status & 0x01) {
 		printf("identify: ERR bit set, command failed\n");
@@ -178,12 +178,12 @@ bool identify(int drive_number) {
 	}
 
 	// 256 WORDs from the data_register
-	printf("identify: Reading 256 words from data register\n");
+	// printf("identify: Reading 256 words from data register\n");
 	for (int i = 0; i < 256; i++) {
 		((uint16_t*) current)[i] = inw(data_register);
 	}
 
-	printf("identify: Successfully read IDENTIFY data\n");
+	// printf("identify: Successfully read IDENTIFY data\n");
 	return true;
 }
 
@@ -191,7 +191,7 @@ bool identify(int drive_number) {
 void pio_wdm_register_all(void);
 
 void detect_ide_drives() {
-	printf("Checking for drives...\n");
+	printf("Checking for IDE drives...\n");
 
 	drive_zero.hardware_id = 0;  // PRIMARY_FIRST
 	drive_one.hardware_id = 1;   // PRIMARY_SECOND
