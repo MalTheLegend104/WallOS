@@ -197,7 +197,7 @@ static int usb_read_device_info(usb_device_t* dev, usb_device_descriptor_t* desc
 		desc_out->bDeviceProtocol
 	);
 
-	printf_color(PRINT_COLOR_LIGHT_BLUE, PRINT_DEFAULT_BG, "\tDevice: %s\n", get_usb_device_name(desc_out->idVendor, desc_out->idProduct));
+	printf_color(PRINT_COLOR_LIGHT_BLUE, PRINT_DEFAULT_BG, "\tDevice: %s %s\n", get_usb_vendor_name(desc_out->idVendor), get_usb_device_name(desc_out->idVendor, desc_out->idProduct));
 
 	uint16_t actual_mps0;
 	if (dev->speed >= USB_SPEED_5GBPS) {
@@ -474,6 +474,10 @@ static int usb_enumerate_device(usb_hcd_t* hcd, uint8_t port, usb_speed_t speed)
 	return 0;
 }
 
+static void usb_debug_delay(void) {
+	for (volatile uint64_t i = 0; i < 1000000; i++);
+}
+
 int usb_enumerate_hcd(usb_hcd_t* hcd) {
 	if (!hcd || !hcd->ops) {
 		printf("[USB] Failed to enumerate HCD: invalid HCD or operations\n");
@@ -488,6 +492,7 @@ int usb_enumerate_hcd(usb_hcd_t* hcd) {
 		memset(&status, 0, sizeof(status));
 
 		// printf("[USB] Checking port %u\n", port);
+		// usb_debug_delay();
 
 		if (hcd->ops->get_port_status(hcd, port, &status) != 0) {
 			printf_color(PRINT_COLOR_LIGHT_RED, PRINT_DEFAULT_BG, "[USB][ERROR] Port %u: failed to get port status\n", port);
@@ -500,9 +505,10 @@ int usb_enumerate_hcd(usb_hcd_t* hcd) {
 		}
 
 		// printf("[USB] Port %u: device connected\n", port);
+
 		int a = hcd->ops->reset_port(hcd, port);
 		if (a != 0) {
-			printf_color(PRINT_COLOR_LIGHT_RED, PRINT_DEFAULT_BG, "[USB][ERROR] failed to reset port (%d) \n", port, a);
+			printf_color(PRINT_COLOR_LIGHT_RED, PRINT_DEFAULT_BG, "[USB][ERROR] failed to reset port (%d) \n", port);
 			continue;
 		}
 

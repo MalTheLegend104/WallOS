@@ -893,15 +893,26 @@ size_t xhci_get_port_count(usb_hcd_t* hcd) {
 }
 
 int xhci_get_port_status(usb_hcd_t* hcd, uint8_t port, usb_port_status_t* status) {
-	if (!hcd | !status) return -1;
+	if (!hcd || !status) return -1;
 	// we have a standardized format for port statuses since the HC specs don't all agree on things (thanks USB-IF...)
 	bool connected = false, enabled = false;
 	usb_speed_t speed = USB_SPEED_UNKNOWN;
 
 	xhci_controller_t* hc = (xhci_controller_t*) hcd->hcd_data;
-	if (port > hc->max_ports - 1) return -2;
-
+	if (port >= hc->max_ports) return -2;
+	// int i = 0;
 	uint32_t portsc = mmio_read32((const volatile void*) &hc->ports[port].portsc);
+	// for (; i < 100; i++) {
+	// 	portsc = mmio_read32((const volatile void*) &hc->ports[port].portsc);
+
+	// 	if (FIELD_GET(GENMASK(0, 0), portsc)) break;
+
+	// 	xhci_delay_us(1000);
+	// }
+	// if (FIELD_GET(GENMASK(0, 0), portsc)) {
+	// 	if (i > 0)
+	// 		printf_color(PRINT_COLOR_LIGHT_GREEN, PRINT_DEFAULT_BG, "[XHCI] took %d to clear\r\n", i);
+	// }
 
 	uint8_t ccs = FIELD_GET(GENMASK(0, 0), portsc);
 	if (ccs != 0) connected = true;
@@ -953,7 +964,7 @@ int xhci_reset_port(usb_hcd_t* hcd, uint8_t port) {
 
 	xhci_delay_us(10); // very generous delay to let the controller handle this
 
-	int timeout = 10; // 10ms
+	int timeout = 100; // 10ms
 	while (FIELD_GET(GENMASK(4, 4), mmio_read32((const volatile void*) &hc->ports[port].portsc)) != 0) {
 		xhci_delay_us(timeout * 1000);
 		timeout--;
@@ -962,6 +973,7 @@ int xhci_reset_port(usb_hcd_t* hcd, uint8_t port) {
 
 	if (timeout <= 0) {
 		printf_serial("[xHCI][WARN] Port %u reset timed out\r\n", port);
+		printf_color(PRINT_COLOR_YELLOW, PRINT_DEFAULT_BG, "[xHCI][WARN] Port %u reset timed out\r\n", port);
 		return -1;
 	}
 
@@ -995,19 +1007,23 @@ int xhci_reset_port(usb_hcd_t* hcd, uint8_t port) {
 
 	if (ccs == 0) {
 		printf_serial("[xHCI][WARN] Failed to reset port %u. (CCS=0)\r\n", port);
+		printf_color(PRINT_COLOR_YELLOW, PRINT_DEFAULT_BG, "[xHCI][WARN] Failed to reset port %u. (CCS=0)\r\n", port);
 		return -3;
 	}
 
 	if (pr != 0) {
 		printf_serial("[xHCI][WARN] Failed to reset port %u. (PR)\r\n", port);
+		printf_color(PRINT_COLOR_YELLOW, PRINT_DEFAULT_BG, "[xHCI][WARN] Failed to reset port %u. (PR)\r\n", port);
 		return -4;
 	}
 	if (pls != 0) {
 		printf_serial("[xHCI][WARN] Failed to reset port %u. (PLS)\r\n", port);
+		printf_color(PRINT_COLOR_YELLOW, PRINT_DEFAULT_BG, "[xHCI][WARN] Failed to reset port %u. (PLS)\r\n", port);
 		return -5;
 	}
 	if (prc != 1) {
 		printf_serial("[xHCI][WARN] Failed to reset port %u. (PRC)\r\n", port);
+		printf_color(PRINT_COLOR_YELLOW, PRINT_DEFAULT_BG, "[xHCI][WARN] Failed to reset port %u. (PRC)\r\n", port);
 		return -6;
 	}
 // we kinda ignore the "not sucessfully completed" conditions, but if they don't satisfy the completion sequence then is there really a point in checking? 
@@ -1917,6 +1933,11 @@ void xhci_attach(wallos_device_t* dev) {
 	while (FIELD_GET(GENMASK(0, 0), mmio_read32(&hc->op->usbsts))) {
 		cpu_pause();
 	}
+
+	// Just pause for like 10ms to let the controller actually full come up.
+	// I've found we need this delay on real hardware, otherwise the controller will report incorrect portsc values
+	// I assume it just needs a bit to settle internal states, 10ms is basically nothing perceptible anyway. 
+	xhci_delay_us(10 * 1000);
 
 	usb_hcd_t* hcd = (usb_hcd_t*) kcalloc(1, sizeof(usb_hcd_t));
 	hcd->ops = &xhci_ops;

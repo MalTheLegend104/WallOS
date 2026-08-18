@@ -38,6 +38,7 @@
 0bc2    # Seagate RSS (External HDDs / Expansion drives)
 152d    # JMicron Technology Corp. (USB-to-SATA/NVMe bridge chips)
 1e10    # Mobile Action Technology / Realtek / Norelsys (NVMe Enclosures)
+03f0    # HP, Inc
 
 # USB-TO-SERIAL, EMBEDDED & DEBUG BRIDGES
 0403    # FTDI (Future Technology Devices Intl - FT232R, FT2232 UART bridges)
