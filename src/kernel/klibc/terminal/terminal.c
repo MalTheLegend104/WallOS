@@ -340,7 +340,7 @@ void terminalMain() {
 	// size_t position_in_current = 0;
 
 	newCommand = false;
-	bool tab_pressed;
+	bool tab_pressed = false;
 
 	// Actually do command stuff now.
 	printf("> ");

@@ -22,9 +22,9 @@ void idle_task_main() {
 
 cpu_t system_cpus[WALLOS_SYSTEM_MAX_CPU];
 
-cpu_t* cpu_current(void) {}
-cpu_t* cpu_get(uint32_t cpu_id) {}
-uint32_t cpu_count(void) {}
+cpu_t* cpu_current(void) { return NULL; }
+cpu_t* cpu_get(uint32_t cpu_id) { (void) cpu_id; return NULL; }
+uint32_t cpu_count(void) { return 0; }
 
 volatile int print_lock = 0;
 void safe_printf(const char* format, ...) {
@@ -93,6 +93,7 @@ void ap_init_timer(uint8_t vector, uint64_t ticks_per_ms) {
 #include <system/idt.h>
 WALLOS_INTERRUPT_HANDLER
 void lapic_timer_int(struct interrupt_frame* frame) {
+	(void) frame;
 	uint32_t apic_id = lapic_read(0x20) >> 24;
 	if (apic_id > WALLOS_SYSTEM_MAX_CPU) goto end;
 
@@ -173,6 +174,7 @@ void pic_disable(void) {
 }
 
 WALLOS_INTERRUPT_HANDLER void lapic_spurious(struct interrupt_frame* f) {
+	(void) f;
 	lapic_write(LAPIC_EOI, 0);
 }
 
@@ -187,7 +189,7 @@ void arch_init_cpus() {
 
 	enable_lapic_msr(madt->lapic_base);
 
-	set_lapic_phys((uint64_t*) madt->lapic_base);
+	set_lapic_phys((uint64_t*) ((uintptr_t) madt->lapic_base));
 
 	WALLOS_CLI(); // We disable these here otherwise we end up getting problems when we disable the PIC.
 	// This entire process is a "bit" fragile, so we don't really want interrupts during it anyway.
@@ -224,7 +226,7 @@ void arch_init_cpus() {
 	lapic_ticks_per_ms[bsp_apic_id] = lapic_timer_freq / 1000;
 	cpu_online[bsp_apic_id] = true;
 
-	uint64_t lapic_ticks_per_ms = lapic_timer_freq / 1000;
+	// uint64_t lapic_ticks_per_ms = lapic_timer_freq / 1000;
 
 	// Add our LAPIC timer interrupt.
 	// We reuse the IDT in the APs, so we need to do this before they all get started.
@@ -337,7 +339,7 @@ void arch_init_cpus() {
 			timeout--;
 		}
 
-	end_loop:
+	// end_loop:
 
 		if (ap_started_count > previous_count) {
 			printf_color(PRINT_COLOR_GREEN, PRINT_DEFAULT_BG, "Processor %d: [OK]\n", ap_apic_id);

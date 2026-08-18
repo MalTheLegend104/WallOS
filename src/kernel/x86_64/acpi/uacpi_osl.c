@@ -425,13 +425,13 @@ uacpi_status kernel_io_read(uacpi_handle port, uacpi_size offset, void* out_valu
 	// printf_color(PRINT_COLOR_LIGHT_GREY, PRINT_DEFAULT_BG, "[UACPI] kernel_io_read(0x%llx, 0x%llx, %d bits) called\r\n", (uint64_t) port, offset, width);
 	switch (width) {
 		case 8:
-			*((uacpi_u8*) out_value) = inb((uint16_t) (port + offset));
+			*((uacpi_u8*) out_value) = inb((uint16_t) ((uintptr_t) port + (uint16_t) offset));
 			break;
 		case 16:
-			*((uacpi_u16*) out_value) = inw((uint16_t) (port + offset));
+			*((uacpi_u16*) out_value) = inw((uint16_t) ((uintptr_t) port + (uint16_t) offset));
 			break;
 		case 32:
-			*((uacpi_u32*) out_value) = inl((uint16_t) (port + offset));
+			*((uacpi_u32*) out_value) = inl((uint16_t) ((uintptr_t) port + (uint16_t) offset));
 			break;
 		default:
 			printf_serial("[UACPI] kernel_io_read() - invalid width\r\n");
@@ -445,13 +445,13 @@ uacpi_status kernel_io_write(uacpi_handle port, uacpi_size offset, size_t in_val
 	// printf_color(PRINT_COLOR_LIGHT_GREY, PRINT_DEFAULT_BG, "[UACPI] kernel_io_write(0x%llx, 0x%llx, 0x%llx, %d bits) called\n", (uint64_t) port, offset, in_value, width);
 	switch (width) {
 		case 8:
-			outb((uint16_t) (port + offset), (uint8_t) in_value);
+			outb((uint16_t) ((uintptr_t) port + (uint16_t) offset), (uint8_t) in_value);
 			break;
 		case 16:
-			outw((uint16_t) (port + offset), (uint16_t) in_value);
+			outw((uint16_t) ((uintptr_t) port + (uint16_t) offset), (uint16_t) in_value);
 			break;
 		case 32:
-			outl((uint16_t) (port + offset), (uint32_t) in_value);
+			outl((uint16_t) ((uintptr_t) port + (uint16_t) offset), (uint32_t) in_value);
 			break;
 		default:
 			printf_serial("[UACPI] kernel_io_write() - invalid width\r\n");

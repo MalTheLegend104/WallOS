@@ -100,6 +100,38 @@ wallos_device_t* resolve_device(const char* input) {
 	return find_device_by_name(input);
 }
 
+static bool device_is_unbound(wallos_device_t* dev) {
+	if (!dev) return false;
+	if (DEV_INT_IS_ALREADY_BOUND(dev->interfaces)) return false;
+	if (DEV_INT_IS_INTERFACE_ONLY(dev->interfaces)) return false;
+	return dev->bound_driver == NULL;
+}
+
+
+static bool device_is_bound(wallos_device_t* dev) {
+	if (!dev) return false;
+	if (DEV_INT_IS_INTERFACE_ONLY(dev->interfaces)) return false;
+	if (DEV_INT_IS_ALREADY_BOUND(dev->interfaces)) return true;
+	return dev->bound_driver != NULL;
+}
+
+
+typedef enum {
+	DEV_LIST_FILTER_ALL,
+	DEV_LIST_FILTER_UNBOUND,
+	DEV_LIST_FILTER_BOUND
+} dev_list_filter_t;
+
+static bool device_matches_filter(wallos_device_t* dev, dev_list_filter_t filter) {
+	switch (filter) {
+		case DEV_LIST_FILTER_UNBOUND: return device_is_unbound(dev);
+		case DEV_LIST_FILTER_BOUND:   return device_is_bound(dev);
+		case DEV_LIST_FILTER_ALL:
+		default:                      return true;
+	}
+}
+
+
 static void print_device_flags(uint64_t flags) {
 	if (flags == DEV_INT_NONE) {
 		printf_color(PRINT_COLOR_LIGHT_GREY, PRINT_DEFAULT_BG, "  Flags: none\n");
@@ -235,15 +267,23 @@ void recalculate_device_path(wallos_device_t* dev) {
 	update_device_path_recursive(dev);
 }
 
-void print_device_list_recursive(wallos_device_t* dev) {
+static void print_device_list_entry(wallos_device_t* dev) {
+	const char* display_path = dev->path ? dev->path : "<no path>";
+	printf_color(PRINT_COLOR_LIGHT_GREEN, PRINT_DEFAULT_BG, "%s ", display_path);
+	printf_color(PRINT_COLOR_LIGHT_GREY, PRINT_DEFAULT_BG, "(0x%llx)\n", (uint64_t) dev->interfaces);
+	printf_serial("[DEVMGR] %s vid:did=%04x:%04x dev=%p\r\n", display_path, dev->vendor_id, dev->device_id, dev);
+}
+
+void print_device_list_recursive(wallos_device_t* dev, dev_list_filter_t filter) {
 	DEV_FOR_EACH_CHILD(dev, child) {
-		const char* display_path = child->path ? child->path : "<no path>";
-		printf_color(PRINT_COLOR_LIGHT_GREEN, PRINT_DEFAULT_BG, "%s ", display_path);
-		printf_color(PRINT_COLOR_LIGHT_GREY, PRINT_DEFAULT_BG, "(0x%llx)\n", (uint64_t) child->interfaces);
-		printf_serial("[DEVMGR] %s dev=%p\r\n", display_path, child);
-		print_device_list_recursive(child);
+		if (device_matches_filter(child, filter)) {
+			print_device_list_entry(child);
+		}
+		print_device_list_recursive(child, filter);
 	}
 }
+
+
 
 int get_device_color(device_interface_t interfaces) {
 	if (interfaces == DEV_INT_INVALID)       return PRINT_COLOR_RED;
@@ -371,31 +411,54 @@ int device_cmd(int argc, char** argv) {
 	// dev list
 	// ------------------------------------------------------------------------
 	if (strcmp(cmd, "list") == 0) {
-		printf_color(PRINT_COLOR_LIGHT_CYAN, PRINT_DEFAULT_BG, "Registered devices:\n");
+		wallos_device_t* root = NULL;
+		dev_list_filter_t filter = DEV_LIST_FILTER_ALL;
 
-		if (argc >= 3) {
-			wallos_device_t* root = resolve_device(argv[2]);
-			if (!root) {
-				printf_color(PRINT_COLOR_LIGHT_RED, PRINT_DEFAULT_BG, "[error] device '%s' not found\n", argv[2]);
-				return -1;
+		for (int i = 2; i < argc; i++) {
+			if (strcmp(argv[i], "-u") == 0 || strcmp(argv[i], "--unbound") == 0) {
+				if (filter == DEV_LIST_FILTER_BOUND) {
+					printf_color(PRINT_COLOR_LIGHT_RED, PRINT_DEFAULT_BG, "[error] --unbound and --bound are mutually exclusive\n");
+					return -1;
+				}
+				filter = DEV_LIST_FILTER_UNBOUND;
+			} else if (strcmp(argv[i], "-b") == 0 || strcmp(argv[i], "--bound") == 0) {
+				if (filter == DEV_LIST_FILTER_UNBOUND) {
+					printf_color(PRINT_COLOR_LIGHT_RED, PRINT_DEFAULT_BG, "[error] --unbound and --bound are mutually exclusive\n");
+					return -1;
+				}
+				filter = DEV_LIST_FILTER_BOUND;
+			} else {
+				root = resolve_device(argv[i]);
+				if (!root) {
+					printf_color(PRINT_COLOR_LIGHT_RED, PRINT_DEFAULT_BG, "[error] device '%s' not found\n", argv[i]);
+					return -1;
+				}
 			}
-			// Print the root itself, then all descendants
-			const char* display_path = root->path ? root->path : "<no path>";
-			printf_color(PRINT_COLOR_LIGHT_GREEN, PRINT_DEFAULT_BG, "%s ", display_path);
-			printf_color(PRINT_COLOR_LIGHT_GREY, PRINT_DEFAULT_BG, "(0x%llx)\n", (uint64_t) root->interfaces);
-			print_device_list_recursive(root);
+		}
+
+		const char* header = "Registered devices:\n";
+		if (filter == DEV_LIST_FILTER_UNBOUND) header = "Unbound devices:\n";
+		else if (filter == DEV_LIST_FILTER_BOUND) header = "Bound devices:\n";
+		printf_color(PRINT_COLOR_LIGHT_CYAN, PRINT_DEFAULT_BG, header);
+
+		if (root) {
+			// Print the root itself (if it matches the filter), then all descendants
+			if (device_matches_filter(root, filter)) {
+				print_device_list_entry(root);
+			}
+			print_device_list_recursive(root, filter);
 		} else {
 			for (device_node_t* node = device_registry; node; node = node->next) {
 				wallos_device_t* dev = node->dev;
-				const char* display_path = dev->path ? dev->path : "<no path>";
-				printf_color(PRINT_COLOR_LIGHT_GREEN, PRINT_DEFAULT_BG, "%s ", display_path);
-				printf_color(PRINT_COLOR_LIGHT_GREY, PRINT_DEFAULT_BG, "(0x%llx)\n", (uint64_t) dev->interfaces);
-				printf_serial("[DEVMGR] %s vid:did=%04x:%04x dev=%p\r\n",
-					display_path, dev->vendor_id, dev->device_id, dev);
+				if (device_matches_filter(dev, filter)) {
+					print_device_list_entry(dev);
+				}
 			}
 		}
 		return 0;
 	}
+
+
 
 	// ------------------------------------------------------------------------
 	// dev tree

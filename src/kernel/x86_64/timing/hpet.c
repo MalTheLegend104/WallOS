@@ -83,7 +83,7 @@ bool hpet_init(void) {
 	// this timer should live as long as the system does, we don't worry about cleanup
 
 	printf_serial("[HPET] Enabled, registered as counter_clock at %llu Hz\r\n", (uint64_t) frequency_hz);
-	printf_color(PRINT_COLOR_PINK, PRINT_DEFAULT_BG, "[HPET] Enabled HPET at %llu Hz", (uint64_t) frequency_hz);
+	printf_color(PRINT_COLOR_PINK, PRINT_DEFAULT_BG, "[HPET] Enabled HPET at %llu Hz\n", (uint64_t) frequency_hz);
 
 	return true;
 }

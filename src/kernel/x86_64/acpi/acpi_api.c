@@ -80,6 +80,7 @@ shutdown_failed:
 	// TODO: REVISIT THIS AFTER SMP HAS BEEN FINISHED
 	// ALL CPUS MUST HANG PERMANENTLY
 	WALLOS_HANG();
+	__builtin_unreachable();
 }
 
 __attribute__((noreturn)) void acpi_reboot(void) {
@@ -137,6 +138,7 @@ __attribute__((noreturn)) void acpi_reboot(void) {
 	// Should never reach here
 	printf("Failed to restart, somehow...\nIt's safe to force shutdown the computer.\n");
 	WALLOS_HANG();
+	__builtin_unreachable();
 }
 
 acpi_status_t acpi_sleep(uint8_t state);

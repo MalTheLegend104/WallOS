@@ -51,7 +51,7 @@ extern "C" {
 	}
 
 	static uint64_t get_tsc_freq_cpuid() {
-		uint32_t eax, ebx, ecx, edx;
+		uint32_t eax = 0, ebx = 0, ecx = 0, edx = 0;
 		__get_cpuid(0x15, &eax, &ebx, &ecx, &edx);
 
 		if (eax == 0 || ebx == 0) return 0; // Not supported on this CPU
@@ -93,6 +93,9 @@ extern "C" {
 
 		return (tsc_end - tsc_start) * 100; // 10ms * 100 = 1s
 	}
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wunused-function"
+// im sick of this warning. we do use it, just not in that specific file. I may need to start using #pragma once to see if it fixes this
 
 	static uint64_t get_tsc_freq() {
 		tsc_info_t tsc = check_tsc_support();
@@ -114,7 +117,7 @@ extern "C" {
 
 		return freq;
 	}
-
+#pragma GCC diagnostic pop
 #ifdef __cplusplus
 }
 #endif

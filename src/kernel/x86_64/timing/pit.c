@@ -13,7 +13,7 @@ extern bool pic_disabled;
 
 static volatile uint64_t pit_ticks = 0;
 static interval_clock_t  pit_interval;
-static counter_clock_t   pit_counter;
+// static counter_clock_t   pit_counter;
 static uint32_t          pit_us_per_tick = 0;
 
 void pit_handle_tick(void) {
@@ -24,10 +24,10 @@ void pit_handle_tick(void) {
 	timer_tick_us(pit_us_per_tick);
 }
 
-static uint64_t pit_counter_read(counter_clock_t* self) {
-	(void) self;
-	return pit_ticks;
-}
+// static uint64_t pit_counter_read(counter_clock_t* self) {
+// 	(void) self;
+// 	return pit_ticks;
+// }
 
 static void pit_set_mode(interval_clock_t* self, interval_clock_mode_t mode) {
 	(void) self;

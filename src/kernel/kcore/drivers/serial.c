@@ -86,7 +86,7 @@ bool detect_uart(uint16_t port) {
 }
 
 void init_all_serial() {
-	for (int i = 0; i < PORT_COUNT; i++) {
+	for (long unsigned i = 0; i < PORT_COUNT; i++) {
 		if (detect_uart(active_ports[i].base)) {
 			if (init_serial(active_ports[i].base) == 0) active_ports[i].present = true;
 		}
@@ -99,7 +99,7 @@ void serial_register_devices() {
 	wallos_device_t* root_dev = create_device(DEV_INT_UART | DEV_INT_INTERFACE_ONLY, "serial");
 	register_device(root_dev);
 
-	for (int i = 0; i < PORT_COUNT; i++) {
+	for (long unsigned i = 0; i < PORT_COUNT; i++) {
 		if (!active_ports[i].present) continue;
 
 		wallos_device_t* dev = create_device(DEV_INT_PORT_IO | DEV_INT_UART | DEV_INT_ALREADY_BOUND, active_ports[i].port_name);
@@ -140,7 +140,7 @@ void write_string_serial_port(uint16_t base_port, const char* str) {
 
 // Mirror output to all active ports.
 void write_serial_mirrored(char a) {
-	for (int i = 0; i < PORT_COUNT; i++) {
+	for (long unsigned i = 0; i < PORT_COUNT; i++) {
 		if (!active_ports[i].present) continue;
 		write_serial_port(active_ports[i].base, a);
 	}
@@ -194,6 +194,7 @@ static void serial_push(char c) {
 // ---------------------------------------------------------------------------
 WALLOS_INTERRUPT_HANDLER
 void serial_irq_handler(struct interrupt_frame* frame) {
+	(void) frame; // we dont use it, but GCC requires it on __attribute__((interrupt))
 	uint16_t port = COM1;
 
 	// Drain the FIFO completely before returning.
@@ -283,7 +284,7 @@ bool serial_has_char() {
 // ------------------------------------------------------------------------------------------------
 static int cmd_serial_status() {
 	bool any = false;
-	for (int i = 0; i < PORT_COUNT; i++) {
+	for (long unsigned i = 0; i < PORT_COUNT; i++) {
 		if (!active_ports[i].present) continue;
 		printf("  COM%d @ 0x%X [active]\n", i + 1, active_ports[i].base);
 		any = true;
@@ -311,14 +312,14 @@ static int cmd_serial_init(const char* addr_str) {
 		return 1;
 	}
 
-	for (int i = 0; i < PORT_COUNT; i++) {
+	for (long unsigned i = 0; i < PORT_COUNT; i++) {
 		if (active_ports[i].base == addr) {
 			active_ports[i].present = true;
 			printf("serial: port re-initialised\n");
 			return 0;
 		}
 	}
-	for (int i = 0; i < PORT_COUNT; i++) {
+	for (long unsigned i = 0; i < PORT_COUNT; i++) {
 		if (!active_ports[i].present) {
 			active_ports[i].base = addr;
 			active_ports[i].present = true;
@@ -333,7 +334,7 @@ static int cmd_serial_init(const char* addr_str) {
 
 static int cmd_serial_send(const char* target, const char* msg) {
 	if (strcmp(target, "all") == 0) {
-		for (int i = 0; i < PORT_COUNT; i++) {
+		for (long unsigned i = 0; i < PORT_COUNT; i++) {
 			if (active_ports[i].present == true) {
 				write_string_serial_port(active_ports[i].base, msg);
 			}
@@ -348,7 +349,7 @@ static int cmd_serial_send(const char* target, const char* msg) {
 		return 1;
 	}
 
-	for (int i = 0; i < PORT_COUNT; i++) {
+	for (long unsigned i = 0; i < PORT_COUNT; i++) {
 		if (active_ports[i].present && active_ports[i].base == addr) {
 			write_string_serial_port(addr, msg);  // Hardware send
 			return 0;
@@ -456,7 +457,7 @@ int print_string_serial(char* str, size_t precision, bool precision_specified, s
 		}
 	}
 
-	if (left_justify && field_width && amount < field_width) {
+	if (left_justify && field_width && amount < (int) field_width) {
 		for (size_t i = amount; i < field_width; i++) {
 			write_serial(' ');
 		}

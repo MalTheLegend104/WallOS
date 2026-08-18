@@ -409,7 +409,7 @@ extern "C" {
 	 * @param out_last_lba On success, set to the last LBA (inclusive) of the largest qualifying run.
 	 * @retval GPT_BAD_PARAM gpt, gpt->entries, out_first_lba, or out_last_lba is NULL.
 	 * @retval GPT_NO_FREE_SPACE no run meeting min_size_sectors was found.
-	 * @retval GPT_NO_ERROR a run was found. *out_first_lba/*out_last_lba are set.
+	 * @retval GPT_NO_ERROR a run was found. *out_first_lba / *out_last_lba are set.
 	 */
 	gpt_error_t gpt_find_free_space(const gpt_partition_table_t* gpt, uint64_t min_size_sectors, uint64_t alignment, uint64_t* out_first_lba, uint64_t* out_last_lba);
 

@@ -396,10 +396,16 @@ void kernel_main(unsigned int magic, multiboot_info* mbt_info) {
 	registerCommand((Command) { device_cmd, 0, "device", dev_aliases, 1 }); // "dev" is the only alias.
 	registerCommand((Command) { cpu_info, 0, "cpu", 0, 0 });
 	registerCommand((Command) { driver_cli, 0, "driver", 0, 0 });
-	terminalMain();
+	// terminalMain();
 
-	// char* cmd[] = { "dev", "list" };
-	// device_cmd(2, cmd);
+	char* cmd[] = { "dev", "list", "-u" };
+	device_cmd(3, cmd);
 
-	// while (true) WALLOS_HLT();
+	char* cmd2[] = { "dev", "list", "-b" };
+	device_cmd(3, cmd2);
+
+	// char* cmd2[] = { "time", "-i" };
+	// time_command(2, cmd2);
+
+	while (true) WALLOS_HLT();
 }

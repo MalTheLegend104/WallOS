@@ -174,6 +174,7 @@ __attribute__((interrupt)) void general_protection_fault_handler(struct interrup
 
 	printf("\n=== GENERAL PROTECTION FAULT ===\n");
 	printf("Error code: %llu\n", error_code);
+	printf("  Selector: %u\n", selector);
 	printf("  Selector index: %u\n", index);
 	printf("  Table: %s\n",
 		ti == 0 ? "GDT" :

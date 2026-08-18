@@ -43,6 +43,10 @@ static int usb_device_list_add(usb_device_t* dev) {
 	return 0;
 }
 
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wunused-function"
+// not used now, but this is here for when we actually deal with plug-n-play
+
 static void usb_device_list_remove(usb_device_t* dev) {
 	usb_device_node_t** cur = &usb_dev_list;
 	while (*cur) {
@@ -55,6 +59,7 @@ static void usb_device_list_remove(usb_device_t* dev) {
 		cur = &(*cur)->next;
 	}
 }
+#pragma GCC diagnostic pop
 
 usb_device_t* usb_device_find_by_address(usb_hcd_t* hcd, uint8_t address) {
 	for (usb_device_node_t* n = usb_dev_list; n; n = n->next) {
@@ -405,7 +410,7 @@ static int usb_enumerate_device(usb_hcd_t* hcd, uint8_t port, usb_speed_t speed)
 	}
 
 	port_dev->name = usb_build_port_name(dev);
-	port_dev->interfaces = DEV_INT_USB;
+	port_dev->interfaces = DEV_INT_USB | DEV_INT_ALREADY_BOUND; // we have already "bound" the device during discovery
 	port_dev->vendor_id = desc.idVendor;
 	port_dev->device_id = desc.idProduct;
 	port_dev->subsystem_id = desc.bcdDevice;
@@ -472,10 +477,6 @@ static int usb_enumerate_device(usb_hcd_t* hcd, uint8_t port, usb_speed_t speed)
 	// printf("[USB] Enumeration complete: port %u address %u, %zu interfaces, %zu endpoints\n", port, dev->address, iface_count, dev->endpoint_count);
 
 	return 0;
-}
-
-static void usb_debug_delay(void) {
-	for (volatile uint64_t i = 0; i < 1000000; i++);
 }
 
 int usb_enumerate_hcd(usb_hcd_t* hcd) {

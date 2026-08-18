@@ -514,7 +514,7 @@ void pmm_init() {
 	printf_serial("[PMM] Page count for buddy alloc: 0x%llx\r\n", max_addr);
 	printf("[PMM] Page count for buddy alloc: 0x%llx\n", max_addr);
 
-	if (max_addr == NULL) panic_s("Failed to parse multiboot memory map.");
+	if (max_addr == 0) panic_s("Failed to parse multiboot memory map.");
 
 	// Calculate mem_map size
 	mem_map_size = total_system_pages * sizeof(Page);
@@ -623,7 +623,7 @@ void pmm_init() {
 	mark_and_allocate_region((uintptr_t) (&kernel_start), buddy_phys_kernel_end, PMM_PAGE_KERNEL);
 	mark_and_allocate_region(mem_map_phys, mem_map_phys + mem_map_size, PMM_PAGE_KERNEL);
 
-	for (int i = 0; i < reservedChunks; i++) {
+	for (size_t i = 0; i < reservedChunks; i++) {
 		mark_and_allocate_region(reservedMemory[i].addr, reservedMemory[i].addr + reservedMemory[i].size, PMM_PAGE_KERNEL);
 		printf_serial("[PMM] Marking reserved region as kernel memory.\r\n\tADDR: 0x%llx\r\n\tSIZE: 0x%llx\r\n", reservedMemory[i].addr, reservedMemory[i].addr + reservedMemory[i].size);
 	}
@@ -747,7 +747,7 @@ uint32_t phys_alloc_32bit(uint8_t order) {
 }
 
 uintptr_t Memory::PhysicalAlloc2MB_32bit() {
-	phys_alloc_32bit(9);
+	return (uintptr_t) phys_alloc_32bit(9);
 }
 
 uintptr_t Memory::PhysicalMarkAllocated(uintptr_t addr, size_t len) {

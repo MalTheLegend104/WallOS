@@ -6,6 +6,8 @@
 #include <cpu_io.h>
 #include <endian_bits.h>
 
+#include <system/timer.h>
+
 #include <drivers/serial.h>
 #include <drivers/pci.h>
 #include <drivers/sata/ahci.h>
@@ -25,9 +27,7 @@ WDM_DriveHandle ahci_wdm_register_port(ahci_port_t* port, uint32_t slot_count);
 // Defined in yet another spot....
 // We really need to set up a udelay() function...
 static inline void ahci_udelay(uint32_t us) {
-	for (int i = 0; i < us; i++) {
-		outb(0x80, 0); // Takes roughly 1us
-	}
+	busy_wait_us(us);
 }
 
 // ------------------------------------------------------------------------------------------------
@@ -523,10 +523,9 @@ void ahci_attach(wallos_device_t* dev) {
 		port->port_base = abar + AHCI_PORT_BASE(i);
 
 
-		uint32_t ssts = port_read(port, AHCI_PXSSTS);
-		uint32_t sig = port_read(port, AHCI_PXSIG);
-		uint32_t tfd = port_read(port, AHCI_PXTFD);
-
+		// uint32_t ssts = port_read(port, AHCI_PXSSTS);
+		// uint32_t sig = port_read(port, AHCI_PXSIG);
+		// uint32_t tfd = port_read(port, AHCI_PXTFD);
 		// These are useful to inspect the port status directly
 		// printf_serial("[AHCI] port %u base=0x%lx\r\n", i, (unsigned long) port->port_base);
 		// printf_serial("[AHCI] port %u SSTS=0x%08x, SIG=0x%08x, TFD=0x%08x\n", i, ssts, sig, tfd);

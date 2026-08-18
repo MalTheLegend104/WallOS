@@ -174,5 +174,8 @@ void apollo_fill_triangle(framebuffer_t* fb, coordinate_pair* pairs, apollo_colo
 }
 
 void apollo_outline_triangle(framebuffer_t* fb, coordinate_pair* pairs, int border_width, apollo_color_t color) {
-
+	(void) fb;
+	(void) pairs;
+	(void) border_width;
+	(void) color;
 }

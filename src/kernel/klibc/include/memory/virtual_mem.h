@@ -77,7 +77,7 @@ namespace Memory {
 	void initVirtualMemory();
 
 	uintptr_t VirtToPhysBase(uintptr_t addr);
-	uintptr_t MapPreAllocMem(uintptr_t addr);
+	void MapPreAllocMem(uintptr_t addr);
 	void mapFramebuffer(uintptr_t base_addr, size_t size, bool text_mode);
 	uintptr_t MapSequentialKernelPages(size_t pages);
 	uintptr_t MapSequentialKernelPages(size_t pages, uintptr_t base_addr);

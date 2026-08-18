@@ -86,7 +86,7 @@ int print_string(char* str, size_t precision, bool precision_specified, size_t f
 		}
 	}
 
-	if (left_justify && field_width && amount < field_width) {
+	if (left_justify && field_width && amount < (int) field_width) {
 		for (size_t i = amount; i < field_width; i++) {
 			putc_fn(' ', ctx);
 		}
@@ -364,6 +364,12 @@ typedef enum {
 // I wanted something small that would output something that was in the ballpark of a double's value.
 // #pragma GCC diagnostic ignored "-Wunused-parameter"
 int print_float(long double value, float_type base, size_t precision, size_t field_width, size_t padding, bool captial, bool alternate, bool left_justified, putchar_fn putc_fn, void* ctx) {
+	// these are probably meant to actually do something special with floats, but idc about floats so...
+	(void) base;
+	(void) precision;
+	(void) padding;
+	(void) captial;
+	(void) alternate;
 	char conversion[1076], intPart_reversed[311];
 	int charCount = 0;
 	double fp_int, fp_frac;
@@ -408,7 +414,8 @@ end:
 }
 
 float_type calculate_float_shortest(long double value) {
-
+	// TODO: this function should probably do something
+	(void) value;
 	return 0;
 }
 

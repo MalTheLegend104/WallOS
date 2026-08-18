@@ -55,7 +55,7 @@ static inline void xhci_write_register(volatile void* reg, uint64_t value, bool 
  * @param ac64 True if the controller supports 64-bit addressing.
  * @return Register value.
  */
-static inline uint64_t xhci_read_register(const volatile void* reg, bool ac64) {
+static inline uint64_t xhci_read_register(volatile void* reg, bool ac64) {
 	if (ac64) return mmio_read64(reg);
 	return (uint64_t) mmio_read32(reg);
 }
@@ -898,9 +898,9 @@ int xhci_get_port_status(usb_hcd_t* hcd, uint8_t port, usb_port_status_t* status
 	xhci_controller_t* hc = (xhci_controller_t*) hcd->hcd_data;
 	if (port >= hc->max_ports) return -2;
 	// int i = 0;
-	uint32_t portsc = mmio_read32((const volatile void*) &hc->ports[port].portsc);
+	uint32_t portsc = mmio_read32((volatile void*) &hc->ports[port].portsc);
 	// for (; i < 100; i++) {
-	// 	portsc = mmio_read32((const volatile void*) &hc->ports[port].portsc);
+	// 	portsc = mmio_read32((volatile void*) &hc->ports[port].portsc);
 
 	// 	if (FIELD_GET(GENMASK(0, 0), portsc)) break;
 
@@ -954,15 +954,15 @@ int xhci_reset_port(usb_hcd_t* hcd, uint8_t port) {
 	// USB3 allows for "warm resets", which we're just going to ignore.
 	// Reset port is called mostly only during enumeration, and hot resets apply the same path for USB2 and USB3
 
-	uint32_t portsc = mmio_read32((const volatile void*) &hc->ports[port].portsc);
+	uint32_t portsc = mmio_read32((volatile void*) &hc->ports[port].portsc);
 
 	FIELD_WRITE(portsc, GENMASK(4, 4), 1); // slot 4 is the Port Reset flag
-	mmio_write32((const volatile void*) &hc->ports[port].portsc, portsc & (PORTSC_RW_MASK | GENMASK(4, 4)));
+	mmio_write32((volatile void*) &hc->ports[port].portsc, portsc & (PORTSC_RW_MASK | GENMASK(4, 4)));
 
 	xhci_delay_us(10); // very generous delay to let the controller handle this
 
 	int timeout = 100; // 10ms
-	while (FIELD_GET(GENMASK(4, 4), mmio_read32((const volatile void*) &hc->ports[port].portsc)) != 0) {
+	while (FIELD_GET(GENMASK(4, 4), mmio_read32((volatile void*) &hc->ports[port].portsc)) != 0) {
 		xhci_delay_us(timeout * 1000);
 		timeout--;
 		if (timeout <= 0) break;
@@ -974,7 +974,7 @@ int xhci_reset_port(usb_hcd_t* hcd, uint8_t port) {
 		return -1;
 	}
 
-	portsc = mmio_read32((const volatile void*) &hc->ports[port].portsc);
+	portsc = mmio_read32((volatile void*) &hc->ports[port].portsc);
 	// Copied from spec 4.19.5:
 	// If the bus reset sequence completes successfully, the xHC shall update the PORTSC register:
 	// - Set the PLS field to U0 ('0').
@@ -1000,7 +1000,7 @@ int xhci_reset_port(usb_hcd_t* hcd, uint8_t port) {
 
 	FIELD_WRITE(portsc, GENMASK(21, 21), 1);
 	// We're going to write back 1 to PRC to clear it, regardless of what happens
-	mmio_write32((const volatile void*) &hc->ports[port].portsc, portsc & (PORTSC_RW_MASK | GENMASK(21, 21)));
+	mmio_write32((volatile void*) &hc->ports[port].portsc, portsc & (PORTSC_RW_MASK | GENMASK(21, 21)));
 
 	if (ccs == 0) {
 		printf_serial("[xHCI][WARN] Failed to reset port %u. (CCS=0)\r\n", port);
@@ -1111,6 +1111,8 @@ int xhci_enable_port(usb_hcd_t* hcd, uint8_t port) {
 }
 
 int xhci_disable_port(usb_hcd_t* hcd, uint8_t port) {
+	(void) hcd;
+	(void) port;
 	return 0; // I don't really care about this ngl. Will come back when it's actually needed.
 }
 
@@ -1164,7 +1166,7 @@ int xhci_device_init(usb_hcd_t* hcd, usb_device_t* dev) {
 
 	/* Slot Context */
 
-	uint32_t portsc = mmio_read32((const volatile void*) &hc->ports[dev->port].portsc);
+	uint32_t portsc = mmio_read32((volatile void*) &hc->ports[dev->port].portsc);
 	uint8_t psiv = FIELD_GET(GENMASK(13, 10), portsc);
 
 
@@ -1293,7 +1295,10 @@ fail_cleanup:
 }
 
 int xhci_device_destroy(usb_hcd_t* hcd, usb_device_t* dev) {
-
+	(void) hcd;
+	(void) dev;
+	// TODO: this
+	return 0;
 }
 
 // ------------------------------------------------------------------------------------------------
@@ -1303,15 +1308,24 @@ int xhci_device_destroy(usb_hcd_t* hcd, usb_device_t* dev) {
 // ------------------------------------------------------------------------------------------------
 
 int xhci_endpoint_open(usb_hcd_t* hcd, usb_endpoint_t* ep) {
-
+	(void) hcd;
+	(void) ep;
+	// TODO: This
+	return 0;
 }
 
 int xhci_endpoint_close(usb_hcd_t* hcd, usb_endpoint_t* ep) {
-
+	(void) hcd;
+	(void) ep;
+	// TODO: This
+	return 0;
 }
 
 int xhci_endpoint_reset(usb_hcd_t* hcd, usb_endpoint_t* ep) {
-
+	(void) hcd;
+	(void) ep;
+	// TODO: This
+	return 0;
 }
 
 static bool xhci_recover_halted_endpoint(xhci_controller_t* hc, xhci_device_t* xdev, xhci_endpoint_t* xep) {
@@ -1383,7 +1397,7 @@ static void xhci_dump_transfer_timeout_diagnostics(xhci_controller_t* hc, xhci_d
 
 	/* Is the device even still there? */
 	if (dev) {
-		uint32_t portsc = mmio_read32((const volatile void*) &hc->ports[dev->port].portsc);
+		uint32_t portsc = mmio_read32((volatile void*) &hc->ports[dev->port].portsc);
 		uint8_t ccs = FIELD_GET(GENMASK(0, 0), portsc);
 		uint8_t ped = FIELD_GET(GENMASK(1, 1), portsc);
 		uint8_t pls = FIELD_GET(GENMASK(8, 5), portsc);
@@ -1571,6 +1585,7 @@ static const usb_hcd_ops_t xhci_ops = {
 // ------------------------------------------------------------------------------------------------
 
 int xhci_probe(wallos_device_t* dev) {
+	if (!dev) return -1;
 
 	// zero indicates that this device does belong to this driver
 	// im too lazy to properly check that we can interface with this so I wont right now
@@ -1946,6 +1961,7 @@ void xhci_attach(wallos_device_t* dev) {
 }
 
 void xhci_detach(wallos_device_t* dev) {
+	(void) dev;
 
 }
 

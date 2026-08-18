@@ -200,6 +200,9 @@ static device_interface_flags_t pci_usb_progif_to_controller(uint8_t prog_if) {
 	}
 }
 
+// Forward declare because we have some recursion
+void scan_bus(MCFGEntry* entry, uint8_t bus, wallos_device_t* parent);
+
 /**
  * @brief Enumerates and reports PCI functions for a given device on a bus.
  *
@@ -276,7 +279,7 @@ wallos_device_t* check_device(MCFGEntry* entry, uint8_t bus, uint8_t device, wal
 		if (!vendor_name) vendor_name = "Unknown Vendor";
 		if (!device_name) device_name = "Unknown Device";
 
-		if (!name) name = class_name;
+		if (!name) name = (char*) class_name;
 
 		printf_color(PRINT_COLOR_CYAN, PRINT_DEFAULT_BG, "[%02x:%02x.%u](%04x:%04x) %s, %s\n", bus, device, func, vendor_id, device_id, vendor_name, name);
 		// printf_serial("[PCI] Created device: 0x%llx\r\n", dev);
@@ -293,13 +296,25 @@ wallos_device_t* check_device(MCFGEntry* entry, uint8_t bus, uint8_t device, wal
 		uint32_t reg3 = (entry) ? pci_read_mcfg(entry, bus, device, func, 0x0C) : pci_read_legacy(bus, device, func, 0x0C);
 		uint8_t header_type = (reg3 >> 16) & 0xFF;
 
+		// Check if this specific device function is a PCI-to-PCI bridge
+		if ((header_type & 0x7F) == 0x01) {
+			dev->interfaces |= DEV_INT_ALREADY_BOUND;
+			uint32_t reg6 = (entry) ? pci_read_mcfg(entry, bus, device, func, 0x18) : pci_read_legacy(bus, device, func, 0x18);
+			uint8_t secondary_bus = (reg6 >> 8) & 0xFF;
+
+			// Avoid infinite loops and don't scan back to parent
+			if (secondary_bus > bus) {
+				// This exact bridge function is now the correct parent for the subordinate bus
+				scan_bus(entry, secondary_bus, dev);
+			}
+		}
+
 		// If not multi-function (bit 7 clear) and we are on func 0, don't check func 1-7
 		if (func == 0 && !(header_type & 0x80)) break;
 	}
 
 	return first_dev;
 }
-
 /**
  * @brief Scans a PCI bus and enumerates all devices and subordinate buses.
  *
@@ -313,31 +328,9 @@ void scan_bus(MCFGEntry* entry, uint8_t bus, wallos_device_t* parent) {
 		uint32_t reg0 = (entry) ? pci_read_mcfg(entry, bus, dev, 0, 0) : pci_read_legacy(bus, dev, 0, 0);
 		if ((reg0 & 0xFFFF) == 0xFFFF) continue;
 
-		// Parse all functions of this device (including bridges)
-		wallos_device_t* dev_node = check_device(entry, bus, dev, parent);
-
-		// Check if any function of this device is a bridge that needs stepping into
-		for (uint8_t func = 0; func < 8; func++) {
-			uint32_t reg0 = (entry) ? pci_read_mcfg(entry, bus, dev, func, 0) : pci_read_legacy(bus, dev, func, 0);
-			if ((reg0 & 0xFFFF) == 0xFFFF) continue;
-
-			uint32_t reg3 = (entry) ? pci_read_mcfg(entry, bus, dev, func, 0x0C) : pci_read_legacy(bus, dev, func, 0x0C);
-			uint8_t header_type = (reg3 >> 16) & 0x7F;
-
-			if (header_type == 0x01) {
-				uint32_t reg6 = (entry) ? pci_read_mcfg(entry, bus, dev, func, 0x18) : pci_read_legacy(bus, dev, func, 0x18);
-				uint8_t secondary_bus = (reg6 >> 8) & 0xFF;
-
-				// Avoid infinite loops and don't scan back to parent
-				if (secondary_bus > bus) {
-					// Bridge device is now correctly the parent for its subordinate bus
-					scan_bus(entry, secondary_bus, dev_node);
-				}
-			}
-
-			// If func 0 is not multi-function, don't check other functions for bridges
-			if (func == 0 && !((reg3 >> 16) & 0x80)) break;
-		}
+		// Parse all functions of this device. 
+		// check_device will handle recursion if it finds a bridge
+		check_device(entry, bus, dev, parent);
 	}
 }
 
@@ -361,7 +354,7 @@ void pci_discover(void) {
 
 	if (mcfg) {
 		printf_color(PRINT_COLOR_LIGHT_CYAN, PRINT_DEFAULT_BG, "Enumerating via MCFG (ECAM)...\n");
-		for (int i = 0; i < mcfg->entry_count; i++) {
+		for (uint32_t i = 0; i < mcfg->entry_count; i++) {
 			scan_bus(&mcfg->entries[i], mcfg->entries[i].start_bus, pci_root);
 		}
 	} else {  // If NULL, we fallback to "Configuration Method #1" (great naming scheme PCI...)
@@ -377,7 +370,7 @@ static MCFGEntry* pci_find_mcfg_entry(uint8_t bus) {
 	MCFGTable* mcfg = get_mcfg();
 	if (!mcfg) return NULL;
 
-	for (int i = 0; i < mcfg->entry_count; i++) {
+	for (uint32_t i = 0; i < mcfg->entry_count; i++) {
 		MCFGEntry* e = &mcfg->entries[i];
 		if (bus >= e->start_bus && bus <= e->end_bus)
 			return e;
@@ -388,10 +381,8 @@ static MCFGEntry* pci_find_mcfg_entry(uint8_t bus) {
 /**
  * @brief Writes a 32-bit value to PCI configuration space using legacy I/O ports.
  */
-static void pci_write_legacy(uint8_t bus, uint8_t slot, uint8_t func,
-	uint8_t offset, uint32_t value) {
-	uint32_t address = (uint32_t) ((bus << 16) | (slot << 11) | (func << 8)
-		| (offset & 0xFC) | 0x80000000);
+static void pci_write_legacy(uint8_t bus, uint8_t slot, uint8_t func, uint8_t offset, uint32_t value) {
+	uint32_t address = (uint32_t) ((bus << 16) | (slot << 11) | (func << 8) | (offset & 0xFC) | 0x80000000);
 	outl(0xCF8, address);
 	outl(0xCFC, value);
 }
@@ -399,11 +390,8 @@ static void pci_write_legacy(uint8_t bus, uint8_t slot, uint8_t func,
 /**
  * @brief Writes a 32-bit value to PCI configuration space using ECAM (MCFG).
  */
-static void pci_write_mcfg(MCFGEntry* entry, uint8_t bus, uint8_t slot,
-	uint8_t func, uint8_t offset, uint32_t value) {
-	uintptr_t phys_addr = (uintptr_t) entry->base_addr
-		+ (((bus - entry->start_bus) << 20)
-		| (slot << 15) | (func << 12) | offset);
+static void pci_write_mcfg(MCFGEntry* entry, uint8_t bus, uint8_t slot, uint8_t func, uint8_t offset, uint32_t value) {
+	uintptr_t phys_addr = (uintptr_t) entry->base_addr + (((bus - entry->start_bus) << 20) | (slot << 15) | (func << 12) | offset);
 
 	uintptr_t virt_addr = pci_get_or_map_page(phys_addr);
 	*(volatile uint32_t*) virt_addr = value;
@@ -411,8 +399,7 @@ static void pci_write_mcfg(MCFGEntry* entry, uint8_t bus, uint8_t slot,
 
 uint32_t pci_config_read32(uint8_t bus, uint8_t slot, uint8_t func, uint8_t offset) {
 	MCFGEntry* entry = pci_find_mcfg_entry(bus);
-	return entry ? pci_read_mcfg(entry, bus, slot, func, offset)
-		: pci_read_legacy(bus, slot, func, offset);
+	return entry ? pci_read_mcfg(entry, bus, slot, func, offset) : pci_read_legacy(bus, slot, func, offset);
 }
 
 uint16_t pci_config_read16(uint8_t bus, uint8_t slot, uint8_t func, uint8_t offset) {
@@ -425,22 +412,17 @@ uint8_t pci_config_read8(uint8_t bus, uint8_t slot, uint8_t func, uint8_t offset
 	return (val >> ((offset & 3) * 8)) & 0xFF;
 }
 
-void pci_config_write32(uint8_t bus, uint8_t slot, uint8_t func,
-	uint8_t offset, uint32_t value) {
+void pci_config_write32(uint8_t bus, uint8_t slot, uint8_t func, uint8_t offset, uint32_t value) {
 	MCFGEntry* entry = pci_find_mcfg_entry(bus);
-	if (entry)
-		pci_write_mcfg(entry, bus, slot, func, offset, value);
-	else
-		pci_write_legacy(bus, slot, func, offset, value);
+	if (entry) pci_write_mcfg(entry, bus, slot, func, offset, value);
+	else pci_write_legacy(bus, slot, func, offset, value);
 }
 
-void pci_config_write16(uint8_t bus, uint8_t slot, uint8_t func,
-	uint8_t offset, uint16_t value) {
+void pci_config_write16(uint8_t bus, uint8_t slot, uint8_t func, uint8_t offset, uint16_t value) {
 	uint32_t shift = (offset & 2) * 8;
 	uint32_t mask = ~(0xFFFFu << shift);
 	uint32_t old = pci_config_read32(bus, slot, func, offset & ~0x3);
-	pci_config_write32(bus, slot, func, offset & ~0x3,
-		(old & mask) | ((uint32_t) value << shift));
+	pci_config_write32(bus, slot, func, offset & ~0x3, (old & mask) | ((uint32_t) value << shift));
 }
 
 void pci_config_write8(uint8_t bus, uint8_t slot, uint8_t func,
@@ -448,8 +430,7 @@ void pci_config_write8(uint8_t bus, uint8_t slot, uint8_t func,
 	uint32_t shift = (offset & 3) * 8;
 	uint32_t mask = ~(0xFFu << shift);
 	uint32_t old = pci_config_read32(bus, slot, func, offset & ~0x3);
-	pci_config_write32(bus, slot, func, offset & ~0x3,
-		(old & mask) | ((uint32_t) value << shift));
+	pci_config_write32(bus, slot, func, offset & ~0x3, (old & mask) | ((uint32_t) value << shift));
 }
 
 /**

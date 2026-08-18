@@ -17,7 +17,7 @@ void apollo_print_char(framebuffer_t* fb, const apollo_font_instance* font_inst,
 	uint8_t x_scale = font_inst->x_scaling;
 	uint8_t y_scale = font_inst->y_scaling;
 
-	if (c > font->max_char) { printf_serial("above max char?\r\n"); return; }
+	if (c > (int) font->max_char) { printf_serial("above max char?\r\n"); return; }
 	if (c < 0) { printf_serial("negative\r\n"); return; }
 
 	apollo_color_t foreground = color.foreground;
@@ -30,8 +30,8 @@ void apollo_print_char(framebuffer_t* fb, const apollo_font_instance* font_inst,
 		apollo_switch_color(fb->info->type, &background);
 	}
 
-	uint32_t scaled_width = font->font_width * x_scale;
-	uint32_t scaled_height = font->font_height * y_scale;
+	int32_t scaled_width = font->font_width * x_scale;
+	int32_t scaled_height = font->font_height * y_scale;
 
 	if (scaled_width > fb->info->width) return;
 	if (scaled_height > fb->info->height) return;
@@ -64,6 +64,11 @@ void apollo_print_char(framebuffer_t* fb, const apollo_font_instance* font_inst,
 		width_bytes = font->font_width / 8;
 		row_width = font->font_width * fb->info->pixel_width * x_scale;
 	}
+
+	// I apparently don't use this? Idk, maybe got factored out in a rewrite a while ago and didn't notice
+	// I don't have time to go through and figure out what happened to it, and font printing works fine
+	// I do this here to avoid a compiler warning from GCC, all the stuff writing to this will get compiled out regardless
+	(void) row_width;
 
 	// Bitmap fonts are directly through.
 	// The offset to the char we're printing is at the offset of c * font_height * font_width(in bytes, not bits)
@@ -101,12 +106,12 @@ void apollo_print_char(framebuffer_t* fb, const apollo_font_instance* font_inst,
 coordinate_pair apollo_print_string(framebuffer_t* fb, const apollo_font_instance* font_inst, const char* s, coordinate_pair p, apollo_font_color_t color, bool wrap, bool newline) {
 	if (fb == NULL || fb->info == NULL || font_inst == NULL || font_inst->font == NULL) return p;
 
-	apollo_font* font = font_inst->font;
+	const apollo_font* font = font_inst->font;
 	uint8_t x_scale = font_inst->x_scaling;
 	uint8_t y_scale = font_inst->y_scaling;
 
-	uint32_t scaled_width = font->font_width * x_scale;
-	uint32_t scaled_height = font->font_height * y_scale;
+	int32_t scaled_width = font->font_width * x_scale;
+	int32_t scaled_height = font->font_height * y_scale;
 
 	// We cant print out characters larger than the screen
 	if (scaled_width > fb->info->width) return p;

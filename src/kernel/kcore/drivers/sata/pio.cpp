@@ -29,7 +29,7 @@ void io_wait() {
 }
 
 bool identify(int drive_number) {
-	drive_info_t* drive_info;
+	// drive_info_t* drive_info;
 	sata_device_identify* current;
 	uint8_t drive_select;
 	uint16_t drive_register;

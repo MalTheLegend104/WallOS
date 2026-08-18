@@ -445,6 +445,7 @@ static struct acpi_irq_info acpi_irq_table[MAX_ACPI_IRQS];
 __attribute__((interrupt))
 __attribute__((__target__("general-regs-only")))
 void acpi_irq_wrapper_0(struct interrupt_frame* frame) {
+	(void) frame;
 	bool handled = false;
 
 	struct acpi_irq_info* irq = &acpi_irq_table[0];
@@ -452,6 +453,8 @@ void acpi_irq_wrapper_0(struct interrupt_frame* frame) {
 	for (size_t i = 0; i < irq->count; i++) {
 		if (irq->handlers[i].handler(irq->handlers[i].ctx) == ACPI_INTERRUPT_HANDLED) handled = true;
 	}
+
+	(void) handled; // why did we ever have this?
 
 	/* EOI once, after all handlers. This one doesn't need to send anything to the slave PIC. */
 	outb(0x20, 0x20);
@@ -461,6 +464,7 @@ void acpi_irq_wrapper_0(struct interrupt_frame* frame) {
 __attribute__((interrupt)) \
 __attribute__((__target__("general-regs-only"))) \
 void acpi_irq_wrapper_##n(struct interrupt_frame *frame) { \
+	(void) frame; \
     bool handled = false; \
     struct acpi_irq_info *irq = &acpi_irq_table[n]; \
     for (size_t i = 0; i < irq->count; i++) { \
