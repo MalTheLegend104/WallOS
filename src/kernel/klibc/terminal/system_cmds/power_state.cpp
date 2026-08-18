@@ -3,7 +3,7 @@
 
 #include <string.h>
 #include <stdlib.h>
-#include <system/timing.h>
+#include <system/timer.h>
 
 int shutdown_command(int argc, char** argv) {
 	// Time in seconds
@@ -19,7 +19,7 @@ int shutdown_command(int argc, char** argv) {
 	}
 
 	if (shutdown_time > 0) {
-		sleep(shutdown_time);
+		busy_wait_ms(shutdown_time);
 	}
 
 	acpi_shutdown();
@@ -38,7 +38,7 @@ int reboot_command(int argc, char** argv) {
 	}
 
 	if (reboot_time > 0) {
-		sleep(reboot_time);
+		busy_wait_ms(reboot_time);
 	}
 
 	acpi_reboot();

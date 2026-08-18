@@ -298,9 +298,10 @@ __attribute__((interrupt)) void keyboard_handler(struct interrupt_frame* frame) 
 	interrupt_eoi(1);
 }
 
-#include <system/timing.h>
+#include <system/timer.h>
+#include <x86_64/timing.h>
 __attribute__((interrupt)) void system_pit(struct interrupt_frame* frame) {
-	incriment_sys_time();
+	pit_handle_tick();
 	// outb(0x20, 0x20);
 	interrupt_eoi(0);
 }

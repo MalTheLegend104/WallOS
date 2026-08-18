@@ -6,7 +6,7 @@
 #include <cpu_io.h>
 #include <arch.h>
 
-#include <system/timing.h>
+#include <system/timer.h>
 
 #include <memory/virtual_mem.h>
 #include <memory/kernel_alloc.h>
@@ -68,12 +68,9 @@ static inline void xhci_memory_fence() {
 	cpu_memory_barrier();
 }
 
-// Oh look it's this stupid function again...
-// TODO: we really need to abstract this out, this is x86 dependent
 static inline void xhci_delay_us(uint32_t us) {
-	for (int i = 0; i < us; i++) {
-		outb(0x80, 0); // Takes roughly 1us
-	}
+	// This is actually (kinda) accurate now...
+	busy_wait_us(us);
 }
 
 // ------------------------------------------------------------------------------------------------

@@ -2,13 +2,38 @@
 #include "diskio.h"
 
 #include <string.h>
-#include <system/ktime.h>
+#include <system/timer.h>
 #include <filesystem/wdm.h>
 
 #define FF_MAX_DRIVES FF_VOLUMES
 
 static WDM_DriveHandle fatfs_drives[FF_MAX_DRIVES];
 static bool            fatfs_registered[FF_MAX_DRIVES];
+
+#include <system/timer.h>
+#include <stdio.h>
+
+// MS-DOS date/time packing, as used by FAT directory entries.
+// fdate: bits 9-15 = Year-1980, bits 5-8 = Month, bits 0-4 = Day
+// ftime: bits 11-15 = Hour, bits 5-10 = Minute, bits 0-4 = Second/2
+// I kinda reused logic from elsewhere, this shoudl really use endian_bits
+uint32_t fat_pack_time(const wall_time_t* t) {
+	uint16_t fdate = (uint16_t) ((((t->year - 1980) & 0x7F) << 9) | ((t->month & 0x0F) << 5) | (t->day & 0x1F));
+	uint16_t ftime = (uint16_t) (((t->hour & 0x1F) << 11) | ((t->minute & 0x3F) << 5) | ((t->second / 2) & 0x1F));
+	return ((uint32_t) fdate << 16) | ftime;
+}
+
+// This really isn't used
+void fat_print_time(uint32_t fdate, uint32_t ftime) {
+	uint16_t year = (uint16_t) ((fdate >> 9) + 1980);
+	uint8_t  month = (uint8_t) ((fdate >> 5) & 0x0F);
+	uint8_t  day = (uint8_t) (fdate & 0x1F);
+	uint8_t  hour = (uint8_t) ((ftime >> 11) & 0x1F);
+	uint8_t  minute = (uint8_t) ((ftime >> 5) & 0x3F);
+	uint8_t  second = (uint8_t) ((ftime & 0x1F) * 2);
+
+	printf("%04u-%02u-%02u %02u:%02u:%02u", year, month, day, hour, minute, second);
+}
 
 bool ff_register_drive(BYTE pdrv, WDM_DriveHandle handle) {
 	if (pdrv >= FF_MAX_DRIVES || !handle) return false;
@@ -113,7 +138,9 @@ DRESULT disk_ioctl(BYTE pdrv, BYTE cmd, void* buff) {
 }
 
 DWORD get_fattime(void) {
-	return get_system_msdos_time();
+	wall_time_t now;
+	uint32_t packed = wallclock_read(&now) ? fat_pack_time(&now) : 0; // yes this is a cursed way to read the time and pack it if it exists
+	return packed;
 }
 
 #include <memory/kernel_alloc.h>

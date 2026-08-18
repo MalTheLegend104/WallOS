@@ -92,7 +92,7 @@ dm_error_t dm_unbind_device(struct wallos_device* dev) {
 	return DM_ERROR_NONE;
 }
 
-
+#include <endian_bits.h>
 void dm_bind_all_registered(void) {
 	printf_serial("[DEVMGR] Starting global driver binding...\r\n");
 
@@ -104,6 +104,18 @@ void dm_bind_all_registered(void) {
 	for (device_node_t* node = internal_get_dev_registry(); node; node = node->next) {
 		wallos_device_t* dev = node->dev;
 		total_count++;
+
+		if (DEV_INT_IS_ALREADY_BOUND(dev->interfaces)) {
+			printf_serial("[DEVMGR] Device is already bound: %s\r\n", dev->name);
+			bound_count++; // was bound during discovery/registry, doesn't go through this layer
+			continue;
+		}
+
+		if (DEV_INT_IS_INTERFACE_ONLY(dev->interfaces)) {
+			printf_serial("[DEVMGR] Deice is interface only: %s\r\n", dev->name);
+			bound_count++; // all interfaces are explored by their driver. these are "bound"
+			continue;
+		}
 
 		// Only attempt to bind if it's a "real" device and doesn't have a driver yet
 		if (DEV_INT_IS_REAL(dev->interfaces) && dev->bound_driver == NULL) {

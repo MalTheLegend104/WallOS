@@ -2,7 +2,7 @@
 #include <terminal/commands/system_commands.h>
 #include <stdio.h>
 #include <string.h>
-#include <system/timing.h>
+#include <system/timer.h>
 #include <drivers/keyboard.h>
 #include <klibc/kprint.h>
 #include <klibc/logger.h>
@@ -329,7 +329,7 @@ void terminalMain() {
 	// They both require access to the command buffers.
 	registerCommand((Command) { helpMain, helpHelp, "help", 0, 0 });
 	registerCommand((Command) { historyCommand, historyHelp, "history", historyAliases, 1 });
-	sleep(1000);
+	busy_wait_ms(1000);
 	executeCommand("logo");  // This is where the cursor first gets enabled
 	display_flush();
 

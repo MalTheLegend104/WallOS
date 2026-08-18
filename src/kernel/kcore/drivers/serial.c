@@ -102,7 +102,7 @@ void serial_register_devices() {
 	for (int i = 0; i < PORT_COUNT; i++) {
 		if (!active_ports[i].present) continue;
 
-		wallos_device_t* dev = create_device(DEV_INT_PORT_IO | DEV_INT_UART, active_ports[i].port_name);
+		wallos_device_t* dev = create_device(DEV_INT_PORT_IO | DEV_INT_UART | DEV_INT_ALREADY_BOUND, active_ports[i].port_name);
 		if (!dev) {
 			printf_serial("[SERIAL] Failed to allocate device for %s\r\n", active_ports[i].port_name);
 			continue;

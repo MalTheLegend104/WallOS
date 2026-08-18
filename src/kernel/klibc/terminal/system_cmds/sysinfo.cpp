@@ -3,7 +3,7 @@
 #include <string.h>
 #include <stdarg.h>
 
-#include <system/timing.h>
+#include <system/timer.h>
 
 #include <klibc/kprint.h>
 #include <klibc/features.hpp>
@@ -29,7 +29,7 @@ void printValue(const char* title, const char* format, ...) {
 }
 
 void printUptime() {
-	size_t time = get_system_up_time();
+	size_t time = timer_uptime_ms();
 	// Calculate years, months, days, hours, minutes, and seconds
 	// Calculate years, months, days, hours, minutes, and seconds
 	size_t years = time / (0x16BEE00); // 0x16BEE00 = 1000 * 60 * 60 * 24 * 365

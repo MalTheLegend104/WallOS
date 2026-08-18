@@ -25,7 +25,9 @@
 
 #include <system/idt.h>
 #include <system/cpuid.h>
-#include <system/timing.h>
+#include <system/timer.h>
+
+#include <x86_64/timing.h>
 
 #include <terminal/terminal.h>
 #include <terminal/commands/system_commands.h>
@@ -303,7 +305,10 @@ void kernel_main(unsigned int magic, multiboot_info* mbt_info) {
 	// Everything else should come in the regular interrupt handler section.
 	// Everything that needs an IRQ should be done after the PIT as it messes with the mask
 	// If it requires allocations, add it after `initKernelAllocator()`
+	io_delay_init(); // uses outb(0x80, 0) to try to add a small delay. it's best effort if we don't have a good resolution timer
 	pit_init(1000);
+	rtc_cmos_init();
+
 	i8042_flush();
 	keyboard_init();
 	keyboard_debug();
@@ -332,9 +337,9 @@ void kernel_main(unsigned int magic, multiboot_info* mbt_info) {
 	// ------------------------------------------------------------------------------------------------
 	// ACPI
 	// ------------------------------------------------------------------------------------------------
-	uint64_t acpi_runtime = get_system_up_time();
+	uint64_t acpi_runtime = timer_uptime_ms();
 	initialize_acpi();
-	acpi_runtime = get_system_up_time() - acpi_runtime;
+	acpi_runtime = timer_uptime_ms() - acpi_runtime;
 	printf_color(PRINT_COLOR_PINK, PRINT_DEFAULT_BG, "ACPI Init took a total of %llu ms\n", acpi_runtime);
 
 	// ------------------------------------------------------------------------------------------------
@@ -343,6 +348,10 @@ void kernel_main(unsigned int magic, multiboot_info* mbt_info) {
 	serial_register_devices();
 	pci_discover();
 	// uhci_register();
+
+	// Not really device discovery, but it needs to exist after acpi init so...
+	hpet_init();
+	pit_init_dev();
 
 	// ------------------------------------------------------------------------------------------------
 	// Drive detection (and eventual virtual FS setup)
@@ -387,10 +396,10 @@ void kernel_main(unsigned int magic, multiboot_info* mbt_info) {
 	registerCommand((Command) { device_cmd, 0, "device", dev_aliases, 1 }); // "dev" is the only alias.
 	registerCommand((Command) { cpu_info, 0, "cpu", 0, 0 });
 	registerCommand((Command) { driver_cli, 0, "driver", 0, 0 });
-	// terminalMain();
+	terminalMain();
 
-	char* cmd[] = { "dev", "list" };
-	device_cmd(2, cmd);
+	// char* cmd[] = { "dev", "list" };
+	// device_cmd(2, cmd);
 
-	while (true) WALLOS_HLT();
+	// while (true) WALLOS_HLT();
 }

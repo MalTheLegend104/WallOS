@@ -13,6 +13,8 @@
 #include <memory/virtual_mem.h>
 #include <cpu_io.h>
 
+#include <system/timer.h>
+
 // There's a lot of unused params in here
 #pragma GCC diagnostic ignored "-Wunused-parameter" 
 
@@ -498,8 +500,6 @@ void uacpi_kernel_free(void* mem) {
 	kfree(mem);
 }
 
-#include <system/timing.h>
-
 /*
  * Returns the number of nanosecond ticks elapsed since boot,
  * strictly monotonic.
@@ -510,7 +510,7 @@ uacpi_u64 uacpi_kernel_get_nanoseconds_since_boot(void) {
 	// return UACPI_STATUS_UNIMPLEMENTED;
 	// ms -> us -> ns
 	// We only have ms accuracy
-	uacpi_u64 result = get_system_up_time() * 1000 * 1000;
+	uacpi_u64 result = timer_uptime_ms() * 1000 * 1000;
 	// printf_serial("[UACPI] uacpi_kernel_get_nanoseconds_since_boot() - returning %llu\r\n", result);
 	// printf_color(PRINT_COLOR_LIGHT_GREY, PRINT_DEFAULT_BG, "[UACPI] uacpi_kernel_get_nanoseconds_since_boot() - returning %llu\n", result);
 
@@ -526,15 +526,13 @@ void uacpi_kernel_stall(uacpi_u8 usec) {
 	uacpi_failure(__func__);
 	// return UACPI_STATUS_UNIMPLEMENTED;
 }
-
-#include <system/timing.h>
 /*
  * Sleep for N milliseconds.
  */
 void uacpi_kernel_sleep(uacpi_u64 msec) {
 	// printf_serial("[UACPI] uacpi_kernel_sleep(%llu) called\r\n", msec);
 	// printf_color(PRINT_COLOR_LIGHT_GREY, PRINT_DEFAULT_BG, "[UACPI] uacpi_kernel_sleep(%llu) called\n", msec);
-	sleep(msec);
+	busy_wait_ms(msec);
 	// printf_serial("[UACPI] uacpi_kernel_sleep() - complete\r\n");
 }
 

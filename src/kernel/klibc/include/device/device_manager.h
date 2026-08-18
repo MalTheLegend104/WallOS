@@ -16,13 +16,14 @@ extern "C" {
 
 	typedef uint64_t device_interface_flags_t;
 	/*
-	 * |63|62|61       53|52                32|31                12|11         0|
-	 *  0  0  0000000000 00000000000000000000 00000000000000000000 000000000000
+	 * |63|62|61|60      53|52                32|31                12|11         0|
+	 *  0  0  0  0000000000 00000000000000000000 00000000000000000000 000000000000
 	 * Meaning of Bits:
 	 *  0-11: Physical Transport Type. What physical communication type is used (MMIO, PCI, USB, etc.).
 	 * 12-31: Controller Type. What interface is used to control the device (AHCI, NVMe, XHCI, etc.).
 	 * 32-52: Protocol descriptors. What protocol(s) the device follows/exposes (HID, mass storage, network, etc.).
-	 * 53-62: Embedded device types. This is for low level communication types (GPIO, UART, SPI).
+	 * 53-60: Embedded device types. This is for low level communication types (GPIO, UART, SPI).
+	 *    61: Already Bound Device. Flag for devices fully initialized and managed by their driver early on.
 	 *    62: Indicates that the "device" is an interface only. This is meant to isolate the parent root devices from actual devices. (/dev/serial, /dev/pci, etc.)
 	 *    63: Indicates an unknown device. This *can* still be defined with other flags.
 	 *
@@ -38,6 +39,7 @@ extern "C" {
 		DEV_INT_USB = (1ULL << 3),  // USB bus 
 		DEV_INT_PLATFORM = (1ULL << 4),  // Firmware-described devices (ACPI)
 		DEV_INT_VIRTIO = (1ULL << 5),  // VirtIO transport
+		DEV_INT_TIMER = (1ULL << 6), // Generic timer interface
 
 		/* Controller (Bits 12-31) */
 		DEV_INT_AHCI = (1ULL << 12), // AHCI SATA 
@@ -56,12 +58,20 @@ extern "C" {
 		DEV_INT_NET_MAC = (1ULL << 36), // Network MAC layer (Ethernet/Wi-Fi link-layer interface)
 		DEV_INT_VIDEO = (1ULL << 37), // Video/display interface
 
-		/* Low-Speed / Embedded (Bits 52-62) */
+		/* Low-Speed / Embedded (Bits 52-60) */
 		DEV_INT_I2C = (1ULL << 52), // Inter-Integrated Circuit bus
 		DEV_INT_SPI = (1ULL << 53), // Serial Peripheral Interface bus
 		DEV_INT_UART = (1ULL << 54), // Universal Asynchronous Receiver/Transmitter 
 		DEV_INT_GPIO = (1ULL << 55), // General Purpose I/O
 		DEV_INT_SDIO = (1ULL << 56), // SD I/O interface (SD cards and embedded peripherals)
+
+		/* Bit 61: Already Bound Device
+		 * The device was bound to the driver during initialization.
+		 * This is for things like timers that are discovered, initialized, and handled all by their own driver during init.
+		 * Things that are bound by dm_bind() DO NOT get this flag set.
+		 * This is merely a flag to tell the driver system "hey we already got this covered"
+		 */
+		DEV_INT_ALREADY_BOUND = (1ULL << 61),
 
 		/* Bit 62: Synthetic node
 		 * Example: the "pci" node created by pci_discover to parent all PCI devices.
@@ -74,6 +84,9 @@ extern "C" {
 		DEV_INT_INVALID = 0xFFFFFFFFFFFFFFFF
 	} device_interface_t;
 
+
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wunused-function"
 	/**
 	 * @brief Get the flag name in string form.
 	 *
@@ -89,6 +102,7 @@ extern "C" {
 			case DEV_INT_USB: return "usb";
 			case DEV_INT_PLATFORM: return "platform";
 			case DEV_INT_VIRTIO: return "virtio";
+			case DEV_INT_TIMER: return "timer";
 
 			/* Controller */
 			case DEV_INT_AHCI: return "ahci";
@@ -115,27 +129,29 @@ extern "C" {
 			case DEV_INT_SDIO: return "sdio";
 
 			/* Special */
+			case DEV_INT_ALREADY_BOUND: return "already bound";
 			case DEV_INT_INTERFACE_ONLY: return "interface";
 			case DEV_INT_UNKNOWN: return "unknown";
 
 			default: return NULL;
 		}
 	}
+#pragma GCC diagnostic pop
 
-	// ------------------------------------------------------------------------------------------------
-	// Helper Macros
-	// ------------------------------------------------------------------------------------------------
-#define DEV_INT_MASK_TRANSPORT   0x0000000000000FFFULL
-#define DEV_INT_MASK_CONTROLLER  0x00000000FFFFF000ULL
-#define DEV_INT_MASK_PROTOCOL    0x000FFFFF00000000ULL
-#define DEV_INT_MASK_EMBEDDED    0x3FF0000000000000ULL
-#define DEV_INT_MASK_UNKNOWN     0x8000000000000000ULL
+// ------------------------------------------------------------------------------------------------
+// Helper Macros
+// ------------------------------------------------------------------------------------------------
+#define DEV_INT_MASK_TRANSPORT   0x0000000000000FFFULL // Bits 0-11
+#define DEV_INT_MASK_CONTROLLER  0x00000000FFFFF000ULL // Bits 12-31
+#define DEV_INT_MASK_PROTOCOL    0x000FFFFF00000000ULL // Bits 32-51
+#define DEV_INT_MASK_EMBEDDED    0x1FF0000000000000ULL // Bits 52-60
+#define DEV_INT_MASK_UNKNOWN     0x8000000000000000ULL // Bit 63
 
 #define DEV_INT_GET_TRANSPORT(x)   ((x) & DEV_INT_MASK_TRANSPORT)
 #define DEV_INT_GET_CONTROLLER(x)  ((x) & DEV_INT_MASK_CONTROLLER)
 #define DEV_INT_GET_PROTOCOL(x)    ((x) & DEV_INT_MASK_PROTOCOL)
 #define DEV_INT_GET_EMBEDDED(x)    ((x) & DEV_INT_MASK_EMBEDDED)
-#define DEV_INT_IS_UNKNOWN(x)      ((x) & DEV_INT_MASK_UNKNOWN)
+#define DEV_INT_IS_UNKNOWN(x)      (((x) & DEV_INT_MASK_UNKNOWN) != 0)
 
 #define DEV_INT_HAS(x, flag)       (((x) & (flag)) != 0)
 #define DEV_INT_HAS_ALL(x, flags)  (((x) & (flags)) == (flags))
@@ -146,14 +162,15 @@ extern "C" {
 #define DEV_INT_HAS_PROTOCOL(x)    (DEV_INT_GET_PROTOCOL(x) != 0)
 #define DEV_INT_HAS_EMBEDDED(x)    (DEV_INT_GET_EMBEDDED(x) != 0)
 
-#define DEV_INT_IS_PCI(x)          DEV_INT_HAS(x, DEV_INT_PCI)
-#define DEV_INT_IS_USB(x)          DEV_INT_HAS(x, DEV_INT_USB)
-#define DEV_INT_IS_MMIO(x)         DEV_INT_HAS(x, DEV_INT_MMIO)
-#define DEV_INT_IS_STORAGE_CTRL(x) DEV_INT_HAS_ANY((x), DEV_INT_AHCI | DEV_INT_NVME)
-#define DEV_INT_IS_USB_CTRL(x)     DEV_INT_HAS_ANY((x), DEV_INT_XHCI | DEV_INT_EHCI | DEV_INT_OHCI | DEV_INT_UHCI)
-#define DEV_INT_IS_NONE(x)         ((x) == DEV_INT_NONE)
-#define DEV_INT_IS_INVALID(x)      ((x) == DEV_INT_INVALID)
-#define DEV_INT_IS_INTERFACE_ONLY(x)  ((x) & DEV_INT_INTERFACE_ONLY)
+#define DEV_INT_IS_PCI(x)             DEV_INT_HAS(x, DEV_INT_PCI)
+#define DEV_INT_IS_USB(x)             DEV_INT_HAS(x, DEV_INT_USB)
+#define DEV_INT_IS_MMIO(x)            DEV_INT_HAS(x, DEV_INT_MMIO)
+#define DEV_INT_IS_STORAGE_CTRL(x)    DEV_INT_HAS_ANY((x), DEV_INT_AHCI | DEV_INT_NVME)
+#define DEV_INT_IS_USB_CTRL(x)        DEV_INT_HAS_ANY((x), DEV_INT_XHCI | DEV_INT_EHCI | DEV_INT_OHCI | DEV_INT_UHCI)
+#define DEV_INT_IS_NONE(x)            ((x) == DEV_INT_NONE)
+#define DEV_INT_IS_INVALID(x)         ((x) == DEV_INT_INVALID)
+#define DEV_INT_IS_INTERFACE_ONLY(x)  DEV_INT_HAS(x, DEV_INT_INTERFACE_ONLY)
+#define DEV_INT_IS_ALREADY_BOUND(x)   DEV_INT_HAS(x, DEV_INT_ALREADY_BOUND)
 #define DEV_INT_IS_REAL(x)            (!DEV_INT_IS_INTERFACE_ONLY(x))
 
 #define DEV_INT_MATCH_CONTROLLER(x, flag) (DEV_INT_GET_CONTROLLER(x) == (flag))
@@ -163,8 +180,11 @@ extern "C" {
 #define DEV_INT_CLEAR(x, flag)    ((x) &= ~(flag))
 #define DEV_INT_TOGGLE(x, flag)   ((x) ^= (flag))
 
-#define DEV_INT_MARK_UNKNOWN(x) ((x) |= DEV_INT_UNKNOWN)
-#define DEV_INT_CLEAR_UNKNOWN(x) ((x) &= ~DEV_INT_UNKNOWN)
+#define DEV_INT_MARK_UNKNOWN(x)   ((x) |= DEV_INT_UNKNOWN)
+#define DEV_INT_CLEAR_UNKNOWN(x)  ((x) &= ~DEV_INT_UNKNOWN)
+
+#define DEV_INT_MARK_BOUND(x)     ((x) |= DEV_INT_ALREADY_BOUND)
+#define DEV_INT_CLEAR_BOUND(x)    ((x) &= ~DEV_INT_ALREADY_BOUND)
 // ------------------------------------------------------------------------------------------------
 // ------------------------------------------------------------------------------------------------
 // Device Descriptor
@@ -265,8 +285,11 @@ extern "C" {
 	wallos_device_t* find_device_by_path(const char* path);
 	wallos_device_t* resolve_device(const char* input);
 
-
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wunused-variable"
+	// idk why but GCC complains about this being unused, when it very much is used
 	static const char* dev_aliases[] = { "dev" };
+#pragma GCC diagnostic pop
 	int device_cmd(int argc, char** argv);
 
 

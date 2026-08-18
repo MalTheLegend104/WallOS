@@ -2,10 +2,10 @@
 #include <stdbool.h>
 #include <stdio.h>
 
+#include <arch.h>
+
 #include <memory/semaphore.h>
 #include <memory/kernel_alloc.h>
-
-#include <system/timing.h>
 
 semaphore_t* semaphore_create(uint64_t max_count, uint64_t initial_count) {
 	if (initial_count > max_count) {
@@ -35,8 +35,7 @@ semaphore_status semaphore_wait(semaphore_t* sem, uint64_t units, uint64_t timeo
 		uint64_t old_count = __atomic_load_n(&(sem->count), __ATOMIC_RELAXED);
 
 		if (old_count >= units) {
-			if (__atomic_compare_exchange_n(&(sem->count), &old_count, old_count - units,
-				false, __ATOMIC_ACQUIRE, __ATOMIC_RELAXED)) {
+			if (__atomic_compare_exchange_n(&(sem->count), &old_count, old_count - units, false, __ATOMIC_ACQUIRE, __ATOMIC_RELAXED)) {
 				return SEMAPHORE_SUCCESS;
 			}
 			continue; // Retry immediately if CMPXCHG failed due to contention
@@ -48,9 +47,7 @@ semaphore_status semaphore_wait(semaphore_t* sem, uint64_t units, uint64_t timeo
 		// If we have a timeout and reached it, fail
 		if (timeout != 0xFFFF && time >= timeout) return SEMAPHORE_TIMEOUT;
 
-		__builtin_ia32_pause();
-		// Only sleep if you absolutely have to; for a spinlock-based sem, 
-		// just pausing is better for short ACPI operations.
+		cpu_pause();
 		time++;
 	}
 }

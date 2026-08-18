@@ -11,7 +11,8 @@
 #include <memory/kernel_alloc.h>
 
 #include <x86_64/ioapic.h>
-#include <system/timing.h>
+#include <x86_64/timing.h>
+#include <system/timer.h>
 
 void idle_task_main() {
 	while (1) {
@@ -21,9 +22,9 @@ void idle_task_main() {
 
 cpu_t system_cpus[WALLOS_SYSTEM_MAX_CPU];
 
-cpu_t* cpu_current(void) { }
-cpu_t* cpu_get(uint32_t cpu_id) { }
-uint32_t cpu_count(void) { }
+cpu_t* cpu_current(void) {}
+cpu_t* cpu_get(uint32_t cpu_id) {}
+uint32_t cpu_count(void) {}
 
 volatile int print_lock = 0;
 void safe_printf(const char* format, ...) {

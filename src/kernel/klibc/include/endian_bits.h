@@ -50,7 +50,7 @@ static inline void write64be(void* addr, uint64_t val) { uint8_t* p = (uint8_t*)
 // ------------------------------------------------------------------------------------------------
 
 /* Returns a value with bit n set. */
-#define BIT(n) (1UL << (n))
+#define BIT(n) (1ULL << (n))
 
 /* Sets bit n in x. */
 #define BIT_SET(x, n) ((x) |= BIT(n))

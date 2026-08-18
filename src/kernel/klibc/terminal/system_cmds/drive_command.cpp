@@ -7,7 +7,7 @@
 #include <filesystem/vfs.h>
 #include <filesystem/fatfs_vfs.h>
 
-#include <system/ktime.h>
+#include <system/timer.h>
 #include <klibc/kprint.h>
 
 /*

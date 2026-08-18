@@ -9,6 +9,8 @@
 #include <stdint.h>
 #include <stdarg.h>
 
+#include <system/timer.h>
+
 #include <klibc/logger.h>
 #include <drivers/serial.h>	
 #include <memory/virtual_mem.h>
@@ -58,7 +60,6 @@ ACPI_STATUS AcpiOsSignal(UINT32 function, void* info) {
 	return 0;
 }
 
-#include <system/timing.h>
 UINT64 AcpiOsGetTimer(void) {
 	// acpica_failure(__func__);
 	acpi_logger(INFO, "ACPICA: %s called.\n", __func__);
@@ -67,7 +68,7 @@ UINT64 AcpiOsGetTimer(void) {
 	// ACPICA wants it in 100ns units (why not just ns?)
 	// ms x 1000 = us
 	// us x 10 = 100ns
-	uint64_t result = get_system_up_time() * 1000 * 10;
+	uint64_t result = timer_uptime_ms() * 1000 * 10;
 
 	return result;
 }
@@ -287,9 +288,8 @@ ACPI_STATUS AcpiOsExecute(ACPI_EXECUTE_TYPE Type, ACPI_OSD_EXEC_CALLBACK Functio
 	return AE_OK;
 }
 
-#include <system/timing.h>
 void AcpiOsSleep(UINT64 Milliseconds) {
-	sleep(Milliseconds);
+	busy_wait_ms(Milliseconds);
 }
 
 void AcpiOsStall(UINT32 Microseconds) {
