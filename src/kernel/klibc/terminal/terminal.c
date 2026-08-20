@@ -310,11 +310,16 @@ extern void display_flush();
 extern char serial_getc();
 extern char serial_getc_nonblocking();
 
+#include <input/input_text.h>
+#include <arch.h>
+
 char get_input() {
 	char current = -1;
 	while (current == -1) {
-		current = nonblocking_keyboard_getc();
-		if (current == -1) current = serial_getc_nonblocking();
+		// current = nonblocking_keyboard_getc();
+		// if (current == -1) current = serial_getc_nonblocking();
+		current = input_getc_nonblocking();
+		cpu_relax();
 	}
 
 	return current;

@@ -130,6 +130,32 @@ extern "C" {
 	void timer_tick_us(uint32_t us);
 
 
+	// ------------------------------------------------------------------------------------------------
+	// ------------------------------------------------------------------------------------------------
+	// Timer Callbacks
+	// 
+	// Software timers driven by the system tick (timer_tick_us).
+	// All callbacks should take into account that they are being run in an interrupt context
+	// ------------------------------------------------------------------------------------------------
+	// ------------------------------------------------------------------------------------------------
+
+	typedef struct timer_callback {
+		uint64_t target_time_us;   // The absolute uptime when this should fire
+		uint64_t interval_us;      // If > 0, auto-rearms with this interval (periodic)
+
+		void (*callback_fn)(struct timer_callback* self, void* ctx);
+		void* ctx;
+
+		struct timer_callback* next;
+	} timer_callback_t;
+
+	// Registers a callback. 
+	// If 'periodic' is true, it will automatically reschedule itself every 'interval_us'.
+	void timer_register_callback(timer_callback_t* cb, uint64_t interval_us, bool periodic);
+
+	// Removes a callback from the queue
+	void timer_remove_callback(timer_callback_t* cb);
+
 #include <device/device_manager.h>
 	wallos_device_t* get_root_timer();
 

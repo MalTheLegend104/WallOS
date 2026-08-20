@@ -12,6 +12,7 @@
 #include <cpu_io.h>
 
 #include <system/idt.h>
+#include <input/input_handler.h>
 
 // Structure to track which ports actually exist
 typedef struct {
@@ -161,36 +162,183 @@ void write_string_serial(char* str) {
 	write_string_serial_mirrored(str);
 }
 
-// ---------------------------------------------------------------------------
-// Interrupt-driven receive — circular buffer
-//
-// Both head and tail are volatile so the compiler never caches them in a
-// register across the spin-loops in serial_getc / serial_has_char.
-// ---------------------------------------------------------------------------
 
-#define SERIAL_BUF_SIZE 1024
-static char serial_buffer[SERIAL_BUF_SIZE];
-static volatile uint32_t serial_buf_head = 0; // Written by ISR
-static volatile uint32_t serial_buf_tail = 0; // Written by consumer
+wallos_key_t ascii_to_wallos_key(uint8_t c, uint32_t* modifiers) {
+	*modifiers = WALLOS_MOD_NONE;
 
-// Push one byte into the ring buffer.
-// Must only be called from the ISR (or with interrupts disabled).
-static void serial_push(char c) {
-	uint32_t next = (serial_buf_head + 1) % SERIAL_BUF_SIZE;
-	if (next != serial_buf_tail) { // Drop on overflow rather than corrupt
-		serial_buffer[serial_buf_head] = c;
-		serial_buf_head = next;
+	// Conventional single-byte controls that have their own dedicated key rather than
+	// being reported as "Ctrl+<letter>", even though some of them technically fall
+	// inside the C0 Ctrl+A..Z range below.
+	switch (c) {
+		case 0x08: return WALLOS_KEY_BACKSPACE;      // Ctrl+H - most terminals send this for Backspace
+		case 0x09: return WALLOS_KEY_TAB;             // Ctrl+I
+		case 0x0A: case 0x0D: return WALLOS_KEY_ENTER; // Ctrl+J / Ctrl+M (LF / CR)
+		default: break;
+	}
+
+	// Remaining C0 control range - report as the base letter with the ctrl modifier set,
+	// so callers doing Ctrl+C-style shortcuts can check modifiers instead of hardcoding
+	// raw byte values.
+	if (c >= 0x01 && c <= 0x1A) {
+		*modifiers |= WALLOS_MOD_CTRL;
+		return (wallos_key_t) (WALLOS_KEY_A + (c - 0x01));
+	}
+
+	if (c >= 'a' && c <= 'z') return (wallos_key_t) (WALLOS_KEY_A + (c - 'a'));
+	if (c >= 'A' && c <= 'Z') {
+		*modifiers |= WALLOS_MOD_SHIFT;
+		return (wallos_key_t) (WALLOS_KEY_A + (c - 'A'));
+	}
+
+	switch (c) {
+		case '0': return WALLOS_KEY_NUM0; case ')': *modifiers |= WALLOS_MOD_SHIFT; return WALLOS_KEY_NUM0;
+		case '1': return WALLOS_KEY_NUM1; case '!': *modifiers |= WALLOS_MOD_SHIFT; return WALLOS_KEY_NUM1;
+		case '2': return WALLOS_KEY_NUM2; case '@': *modifiers |= WALLOS_MOD_SHIFT; return WALLOS_KEY_NUM2;
+		case '3': return WALLOS_KEY_NUM3; case '#': *modifiers |= WALLOS_MOD_SHIFT; return WALLOS_KEY_NUM3;
+		case '4': return WALLOS_KEY_NUM4; case '$': *modifiers |= WALLOS_MOD_SHIFT; return WALLOS_KEY_NUM4;
+		case '5': return WALLOS_KEY_NUM5; case '%': *modifiers |= WALLOS_MOD_SHIFT; return WALLOS_KEY_NUM5;
+		case '6': return WALLOS_KEY_NUM6; case '^': *modifiers |= WALLOS_MOD_SHIFT; return WALLOS_KEY_NUM6;
+		case '7': return WALLOS_KEY_NUM7; case '&': *modifiers |= WALLOS_MOD_SHIFT; return WALLOS_KEY_NUM7;
+		case '8': return WALLOS_KEY_NUM8; case '*': *modifiers |= WALLOS_MOD_SHIFT; return WALLOS_KEY_NUM8;
+		case '9': return WALLOS_KEY_NUM9; case '(': *modifiers |= WALLOS_MOD_SHIFT; return WALLOS_KEY_NUM9;
+
+		case '-': return WALLOS_KEY_MINUS;        case '_': *modifiers |= WALLOS_MOD_SHIFT; return WALLOS_KEY_MINUS;
+		case '=': return WALLOS_KEY_EQUALS;       case '+': *modifiers |= WALLOS_MOD_SHIFT; return WALLOS_KEY_EQUALS;
+		case '[': return WALLOS_KEY_LEFTBRACKET;  case '{': *modifiers |= WALLOS_MOD_SHIFT; return WALLOS_KEY_LEFTBRACKET;
+		case ']': return WALLOS_KEY_RIGHTBRACKET; case '}': *modifiers |= WALLOS_MOD_SHIFT; return WALLOS_KEY_RIGHTBRACKET;
+		case '\\': return WALLOS_KEY_BACKSLASH;   case '|': *modifiers |= WALLOS_MOD_SHIFT; return WALLOS_KEY_BACKSLASH;
+		case ';': return WALLOS_KEY_SEMICOLON;    case ':': *modifiers |= WALLOS_MOD_SHIFT; return WALLOS_KEY_SEMICOLON;
+		case '\'': return WALLOS_KEY_APOSTROPHE;  case '"': *modifiers |= WALLOS_MOD_SHIFT; return WALLOS_KEY_APOSTROPHE;
+		case '`': return WALLOS_KEY_TILDE;        case '~': *modifiers |= WALLOS_MOD_SHIFT; return WALLOS_KEY_TILDE;
+		case ',': return WALLOS_KEY_COMMA;        case '<': *modifiers |= WALLOS_MOD_SHIFT; return WALLOS_KEY_COMMA;
+		case '.': return WALLOS_KEY_PERIOD;       case '>': *modifiers |= WALLOS_MOD_SHIFT; return WALLOS_KEY_PERIOD;
+		case '/': return WALLOS_KEY_SLASH;        case '?': *modifiers |= WALLOS_MOD_SHIFT; return WALLOS_KEY_SLASH;
+
+		case ' ': return WALLOS_KEY_SPACE;
+		case 0x7F: return WALLOS_KEY_BACKSPACE; // DEL - some terminals send this instead of 0x08
+
+		default: return WALLOS_KEY_COULDNT_MAP;
+	}
+}
+
+/* ANSI/VT100 CSI ("ESC [ ...") escape sequence parsing state, advanced one byte at a time as bytes arrive from the UART.
+ * Limited from full set.
+ * This only handles the single-letter-final forms (arrows, Home, End) and the single-digit tilde-terminated forms (Insert/Delete/PageUp/PageDown/alt Home-End).
+ */
+typedef enum {
+	SERIAL_ESC_NONE,     // not currently mid-sequence
+	SERIAL_ESC_GOT_ESC,  // saw 0x1B, waiting to see if '[' follows
+	SERIAL_ESC_GOT_CSI,  // saw ESC [, waiting for an optional digit then a final byte
+} serial_esc_state_t;
+
+static serial_esc_state_t esc_state = SERIAL_ESC_NONE;
+static char esc_param = '\0'; // single accumulated digit for tilde-terminated sequences, if any
+static bool cr_seen = false;  // collapses a \r\n pair into a single Enter event
+
+static wallos_key_t csi_final_to_wallos_key(char final, char param) {
+	if (param == '\0') {
+		switch (final) {
+			case 'A': return WALLOS_KEY_UP;
+			case 'B': return WALLOS_KEY_DOWN;
+			case 'C': return WALLOS_KEY_RIGHT;
+			case 'D': return WALLOS_KEY_LEFT;
+			case 'H': return WALLOS_KEY_HOME;
+			case 'F': return WALLOS_KEY_END;
+			default:  return WALLOS_KEY_COULDNT_MAP;
+		}
+	}
+
+	if (final == '~') {
+		switch (param) {
+			case '1': return WALLOS_KEY_HOME;
+			case '2': return WALLOS_KEY_INSERT;
+			case '3': return WALLOS_KEY_DELETE;
+			case '4': return WALLOS_KEY_END;
+			case '5': return WALLOS_KEY_PAGEUP;
+			case '6': return WALLOS_KEY_PAGEDOWN;
+			default:  return WALLOS_KEY_COULDNT_MAP;
+		}
+	}
+
+	return WALLOS_KEY_COULDNT_MAP;
+}
+
+#include <system/timer.h>
+
+static void push_serial_key_event(wallos_key_t key, uint32_t modifiers) {
+	if (key == WALLOS_KEY_INVALID) {
+		return;
+	}
+
+	wallos_input_event_t event = {};
+	event.timestamp_ms = timer_uptime_ms();
+	event.device_id = SERIAL_KEYBOARD_DEVICE_ID;
+	event.type = WALLOS_INPUT_DEVICE_KEYBOARD;
+	event.data.keyboard.key = key;
+	event.data.keyboard.state = WALLOS_INPUT_STATE_PRESSED; // serial has no separate release/repeat signal
+	event.data.keyboard.modifiers = modifiers;
+
+	input_push_event(&event);
+}
+
+static void process_serial_byte(char c) {
+	switch (esc_state) {
+		case SERIAL_ESC_NONE: {
+				if ((uint8_t) c == 0x1B) {
+					esc_state = SERIAL_ESC_GOT_ESC;
+					cr_seen = false;
+					return; // don't emit anything yet, wait to see what follows
+				}
+
+				// Some terminals will send \r\n rather than just \r or \n. 
+				// Not a huge deal, but we still want those to be a single press event
+				if (c == '\n' && cr_seen) {
+					cr_seen = false;
+					return;
+				}
+				cr_seen = (c == '\r');
+
+				uint32_t mods;
+				wallos_key_t key = ascii_to_wallos_key((uint8_t) c, &mods);
+				push_serial_key_event(key, mods);
+				return;
+			}
+
+		case SERIAL_ESC_GOT_ESC: {
+				if (c == '[') {
+					esc_state = SERIAL_ESC_GOT_CSI;
+					esc_param = '\0';
+					return;
+				}
+
+				// Not actually a CSI sequence, was an actual esc press
+				// Emit it, then reprocess this byte from scratch since it was never part of a sequence to begin with.
+				esc_state = SERIAL_ESC_NONE;
+				push_serial_key_event(WALLOS_KEY_ESCAPE, WALLOS_MOD_NONE);
+				process_serial_byte(c);
+				return;
+			}
+
+		case SERIAL_ESC_GOT_CSI: {
+				if (c >= '0' && c <= '9' && esc_param == '\0') {
+					esc_param = c; // we only support a single parameter digit
+					return;
+				}
+
+				// Any other byte here is the sequence's final byte
+				wallos_key_t key = csi_final_to_wallos_key(c, esc_param);
+				esc_state = SERIAL_ESC_NONE;
+				esc_param = '\0';
+				push_serial_key_event(key, WALLOS_MOD_NONE);
+				return;
+			}
 	}
 }
 
 // ---------------------------------------------------------------------------
 // IRQ 4 handler (COM1)
 //
-// Drains the UART FIFO into the ring buffer.  Does NOT echo — if you need
-// echo, do it in the consumer (serial_getc) so you're not spinning in the ISR.
 //
-// If you ever need multi-port interrupt support, loop over active_ports and
-// check each port's IIR to find which one(s) fired before draining.
 // ---------------------------------------------------------------------------
 WALLOS_INTERRUPT_HANDLER
 void serial_irq_handler(struct interrupt_frame* frame) {
@@ -200,13 +348,19 @@ void serial_irq_handler(struct interrupt_frame* frame) {
 	// Drain the FIFO completely before returning.
 	while (inb(REG_LSR(port)) & 0x01) {
 		char c = inb(REG_DATA(port));
-		serial_push(c);
+
+		write_serial_port(port, c); // echo input
+		if (c == '\r') write_serial_port(port, '\n'); // we need the \n
+
+		process_serial_byte(c);
 	}
 
 	// Send EOI to the Master PIC.
 	// outb(0x20, 0x20);
 	interrupt_eoi(4);
 }
+
+#include <arch.h>
 
 // ---------------------------------------------------------------------------
 // Interrupt setup
@@ -216,11 +370,11 @@ void serial_irq_handler(struct interrupt_frame* frame) {
 // it does not re-initialise baud rate, FIFO, or loopback settings.
 // ---------------------------------------------------------------------------
 void setup_serial_interrupts() {
-	WALLOS_CLI();
+	cpu_disable_interrupts();
 	// IRQ 4 -> IDT vector 0x24 (PIC master offset 0x20 + IRQ 4)
 	add_interrupt_handler(0x24, (void*) serial_irq_handler, 0, 0x8E);
 	irq_enable(4);
-	WALLOS_STI();
+	cpu_enable_interrupts();
 
 	// Drain any stale bytes sitting in the FIFO before enabling the interrupt,
 	// otherwise the first IRQ may deliver garbage to the ring buffer.
@@ -237,44 +391,6 @@ void setup_serial_interrupts() {
 	uint8_t mcr = inb(REG_MCR(COM1));
 	outb(REG_MCR(COM1), mcr | 0x08);
 	io_wait();
-}
-
-// ---------------------------------------------------------------------------
-// Consumer API
-// ---------------------------------------------------------------------------
-
-// Block until a character is available, then return it.
-// Note: this is a busy-wait (uses PAUSE for power/pipeline friendliness).
-// If you have a scheduler, consider sleeping here instead.
-char serial_getc() {
-	while (serial_buf_head == serial_buf_tail) {
-		__asm__ volatile("pause");
-	}
-
-	char c = serial_buffer[serial_buf_tail];
-	serial_buf_tail = (serial_buf_tail + 1) % SERIAL_BUF_SIZE;
-
-	write_serial_port(COM1, c); // echo input
-	if (c == '\r') write_serial_port(COM1, '\n'); // we need the \n
-
-	return c;
-}
-
-// Return EOF immediately if no data is waiting, otherwise return the character.
-char serial_getc_nonblocking() {
-	if (serial_buf_head == serial_buf_tail) return EOF;
-
-	char c = serial_buffer[serial_buf_tail];
-	serial_buf_tail = (serial_buf_tail + 1) % SERIAL_BUF_SIZE;
-
-	write_serial_port(COM1, c); // echo input
-	if (c == '\r') write_serial_port(COM1, '\n'); // we need the \n
-
-	return c;
-}
-
-bool serial_has_char() {
-	return serial_buf_head != serial_buf_tail;
 }
 
 // ------------------------------------------------------------------------------------------------

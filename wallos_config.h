@@ -61,6 +61,11 @@
 // This tells the OS that we have 64 bit write/read rather than needing to split it up into 32bit write/read
 #define WALLOS_ARCH_64
 
+// Depth of each per-device-type event queue
+// This means this number is the max amount of events for each device type
+// For example, if a keyboard driver pushes 100 events before the input system is drained, the last 46 will be dropped
+#define WALLOS_INPUT_QUEUE_CAPACITY 64
+
 // ------------------------------------------------------------------------------------------------
 // ------------------------------------------------------------------------------------------------
 // Error Checking

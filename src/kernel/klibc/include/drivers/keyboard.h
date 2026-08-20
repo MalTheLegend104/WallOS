@@ -9,7 +9,7 @@
 extern "C" {
 #endif
 	typedef enum {
-		// Not actual chars
+	// Not actual chars
 		SC_ESCAPE = 0x01, SC_BACKSPACE = 0x0E,
 		SC_TAB = 0x0F, SC_LEFT_CONTROL = 0x1D,
 		SC_ENTER = 0x1C, SC_LEFT_SHIFT = 0x2A,
@@ -63,7 +63,31 @@ extern "C" {
 		SC_KEYPAD_PERIOD = 0x53, SC_KEYPAD_PLUS = 0x4E,
 
 		SC_ESCAPED_0 = 0xE0, SC_ESCAPED_1 = 0xE1,
+
+		// Navigation cluster
+		SC_ESC_HOME = 0x47, SC_ESC_UP = 0x48, SC_ESC_PAGE_UP = 0x49,
+		SC_ESC_LEFT = 0x4B, SC_ESC_RIGHT = 0x4D,
+		SC_ESC_END = 0x4F, SC_ESC_DOWN = 0x50, SC_ESC_PAGE_DOWN = 0x51,
+		SC_ESC_INSERT = 0x52, SC_ESC_DELETE = 0x53,
+
+		// Meta / Apps
+		SC_ESC_LEFT_META = 0x5B, SC_ESC_RIGHT_META = 0x5C, SC_ESC_APPS = 0x5D,
+
+		// ACPI power keys
+		SC_ESC_POWER = 0x5E, SC_ESC_SLEEP = 0x5F, SC_ESC_WAKE = 0x63,
+
+		// Multimedia keys
+		SC_ESC_PREV_TRACK = 0x10, SC_ESC_NEXT_TRACK = 0x19,
+		SC_ESC_MUTE = 0x20, SC_ESC_VOLUME_DOWN = 0x2E, SC_ESC_VOLUME_UP = 0x30,
+		SC_ESC_PLAY_PAUSE = 0x22, SC_ESC_STOP = 0x24, SC_ESC_MEDIA_SELECT = 0x6D,
+		SC_ESC_CALCULATOR = 0x21, SC_ESC_MY_COMPUTER = 0x6B, SC_ESC_EMAIL = 0x6C,
+
+		// WWW/browser keys
+		SC_ESC_WWW_HOME = 0x32, SC_ESC_WWW_SEARCH = 0x65, SC_ESC_WWW_FAVORITES = 0x66,
+		SC_ESC_WWW_REFRESH = 0x67, SC_ESC_WWW_STOP = 0x68, SC_ESC_WWW_FORWARD = 0x69,
+		SC_ESC_WWW_BACK = 0x6A,
 	} Scancode;
+
 
 	typedef struct {
 		bool l_shift;

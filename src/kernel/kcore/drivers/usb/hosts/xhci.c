@@ -897,19 +897,7 @@ int xhci_get_port_status(usb_hcd_t* hcd, uint8_t port, usb_port_status_t* status
 
 	xhci_controller_t* hc = (xhci_controller_t*) hcd->hcd_data;
 	if (port >= hc->max_ports) return -2;
-	// int i = 0;
 	uint32_t portsc = mmio_read32((volatile void*) &hc->ports[port].portsc);
-	// for (; i < 100; i++) {
-	// 	portsc = mmio_read32((volatile void*) &hc->ports[port].portsc);
-
-	// 	if (FIELD_GET(GENMASK(0, 0), portsc)) break;
-
-	// 	xhci_delay_us(1000);
-	// }
-	// if (FIELD_GET(GENMASK(0, 0), portsc)) {
-	// 	if (i > 0)
-	// 		printf_color(PRINT_COLOR_LIGHT_GREEN, PRINT_DEFAULT_BG, "[XHCI] took %d to clear\r\n", i);
-	// }
 
 	uint8_t ccs = FIELD_GET(GENMASK(0, 0), portsc);
 	if (ccs != 0) connected = true;
@@ -961,7 +949,7 @@ int xhci_reset_port(usb_hcd_t* hcd, uint8_t port) {
 
 	xhci_delay_us(10); // very generous delay to let the controller handle this
 
-	int timeout = 100; // 10ms
+	int timeout = 10; // 10ms
 	while (FIELD_GET(GENMASK(4, 4), mmio_read32((volatile void*) &hc->ports[port].portsc)) != 0) {
 		xhci_delay_us(timeout * 1000);
 		timeout--;

@@ -1,6 +1,7 @@
 #include <acpi/acpi_api.h>
 #include <stdio.h>
 #include <cpu_io.h>
+#include <arch.h>
 
 #ifdef WALLOS_USE_ACPICA
 #include <acpi.h>
@@ -46,7 +47,7 @@ __attribute__((noreturn)) void acpi_shutdown(void) {
 	}
 
 	// Disable interrupts before final shutdown
-	WALLOS_CLI();
+	cpu_disable_interrupts();
 
 	status = AcpiEnterSleepState(5);
 	if (ACPI_FAILURE(status)) {
@@ -64,7 +65,7 @@ __attribute__((noreturn)) void acpi_shutdown(void) {
 	}
 
 	// Disable interrupts before final shutdown
-	WALLOS_CLI();
+	cpu_disable_interrupts();
 
 	status = uacpi_enter_sleep_state(UACPI_SLEEP_STATE_S5);
 	if (uacpi_unlikely_error(status)) {
@@ -104,7 +105,7 @@ __attribute__((noreturn)) void acpi_reboot(void) {
 		for (int i = 0; i < 1000000; i++) {
 			WALLOS_PAUSE();
 		}
-	}
+}
 #endif
 
 	// If ACPI reset didn't work, try a few legacy methods
@@ -124,7 +125,7 @@ __attribute__((noreturn)) void acpi_reboot(void) {
 
 	// Method 2: Triple fault (last resort)
 	printf("Keyboard controller reset failed, triggering triple fault...\n");
-	WALLOS_CLI();
+	cpu_disable_interrupts();
 
 	// Load invalid IDT to cause triple fault
 	struct {

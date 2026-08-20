@@ -26,14 +26,6 @@
  */
 #define cpu_hlt() __asm__ volatile("hlt")
 
-/**
- * Disable maskable interrupts.
- */
-#define cpu_cli() __asm__ volatile("cli" ::: "memory")
 
-/**
- * Enable maskable interrupts.
- */
-#define cpu_sti() __asm__ volatile("sti" ::: "memory")
 
 #endif // WALLOS_ARCH_X86_64_H

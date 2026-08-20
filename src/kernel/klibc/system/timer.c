@@ -1,7 +1,7 @@
 #include <system/timer.h>
 #include <string.h>
 #include <memory/kernel_alloc.h>
-
+#include <arch.h>
 
 static counter_clock_t* counter_list = NULL;
 static counter_clock_t* counter_best = NULL;
@@ -16,6 +16,9 @@ static wallos_device_t* timer_root_dev = NULL;
 
 // Internal storage for the total system uptime, in microseconds
 static volatile uint64_t system_uptime_us = 0;
+
+// List of all of our current timer callbacks
+static timer_callback_t* callback_list = NULL;
 
 // ------------------------------------------------------------------------------------------------
 // Cached clock for us/ns waits
@@ -162,7 +165,87 @@ void busy_wait_us(uint32_t us) {
 
 void busy_wait_ms(uint32_t ms) { busy_wait_us(ms * 1000); }
 
-void timer_tick_us(uint32_t us) { system_uptime_us += us; }
+static void insert_callback_sorted(timer_callback_t* cb) {
+	if (!callback_list || cb->target_time_us < callback_list->target_time_us) {
+		cb->next = callback_list;
+		callback_list = cb;
+		return;
+	}
+
+	timer_callback_t* curr = callback_list;
+	while (curr->next && curr->next->target_time_us <= cb->target_time_us) {
+		curr = curr->next;
+	}
+
+	cb->next = curr->next;
+	curr->next = cb;
+}
+
+void timer_register_callback(timer_callback_t* cb, uint64_t interval_us, bool periodic) {
+	if (!cb || !cb->callback_fn || interval_us == 0) return;
+
+	cpu_disable_interrupts();
+
+	cb->interval_us = periodic ? interval_us : 0;
+	cb->target_time_us = system_uptime_us + interval_us;
+
+	insert_callback_sorted(cb);
+
+	cpu_enable_interrupts();
+}
+
+void timer_remove_callback(timer_callback_t* cb) {
+	if (!callback_list || !cb) return;
+
+	cpu_disable_interrupts();
+
+	if (callback_list == cb) {
+		callback_list = cb->next;
+	} else {
+		timer_callback_t* curr = callback_list;
+		while (curr->next) {
+			if (curr->next == cb) {
+				curr->next = cb->next;
+				break;
+			}
+			curr = curr->next;
+		}
+	}
+
+	cpu_enable_interrupts();
+}
+
+void timer_tick_us(uint32_t us) {
+	system_uptime_us += us;
+
+	// Process callbacks
+	while (callback_list && callback_list->target_time_us <= system_uptime_us) {
+
+		timer_callback_t* cb = callback_list;
+		callback_list = cb->next;
+
+		if (cb->callback_fn) {
+			cb->callback_fn(cb, cb->ctx);
+		}
+
+		// Periodic timer re-arming
+		if (cb->interval_us > 0) {
+			// There is a chance that our clock interrupt isn't fired exactly on the same interval every time
+			// Re-arm based on when it was *supposed* to fire to prevent drift
+			cb->target_time_us += cb->interval_us;
+
+			// We need to make sure this callback doesn't get fired a ton of times if the interrupt system gets backed up
+			// The system may fire a ton of interrupts back to back if we disable interrupts for a long time
+			// If this is the case, we make sure to bind the interval to the current time
+			if (cb->target_time_us <= system_uptime_us) {
+				cb->target_time_us = system_uptime_us + cb->interval_us;
+			}
+
+			insert_callback_sorted(cb);
+		}
+	}
+}
+
 uint64_t timer_uptime_us(void) { return system_uptime_us; }
 uint64_t timer_uptime_ms(void) { return system_uptime_us / 1000ULL; }
 
