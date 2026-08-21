@@ -165,6 +165,10 @@ extern "C" {
 
 	wallos_acpi_dev_t acpi_identify_handle(const acpi_handle_t handle);
 
+	// This should be called by some polling loop
+	// For now it gets called from the terminal loop.
+	void acpi_poll_events(void);
+
 #ifdef __cplusplus
 }
 #endif

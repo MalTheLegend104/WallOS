@@ -32,11 +32,12 @@ void acpi_vlogger(LogType type, const char* fmt, va_list args) {
 		default: vprintf(fmt, args);	break;
 	}
 }
-
+#include <drivers/serial.h>
 void acpi_logger(LogType type, const char* fmt, ...) {
 	va_list args;
 	va_start(args, fmt);
 	vlogger(type, fmt, args);
+	// vprintf_serial(fmt, args);
 	va_end(args);
 }
 
@@ -48,11 +49,6 @@ void acpica_failure(const char* str) {
 	asm volatile("cli");
 	asm volatile("hlt");
 	panic_sa(msg, 2);
-}
-
-ACPI_STATUS AcpiOsWritePciConfiguration(ACPI_PCI_ID* pciId, UINT32 reg, UINT64 value, UINT32 width) {
-	acpica_failure(__func__);
-	return 0;
 }
 
 ACPI_STATUS AcpiOsSignal(UINT32 function, void* info) {
@@ -133,29 +129,60 @@ ACPI_STATUS AcpiOsReadMemory(ACPI_PHYSICAL_ADDRESS address, UINT64* value, UINT3
 	return 0;
 }
 
+#include <drivers/pci.h>
+
 ACPI_STATUS AcpiOsReadPciConfiguration(ACPI_PCI_ID* pciId, UINT32 reg, UINT64* value, UINT32 width) {
-	// Print out information about the request
-	printf("ACPI: Read PCI config\n");
-	printf("  Segment: %u\n", pciId->Segment);
-	printf("  Bus:     %u\n", pciId->Bus);
-	printf("  Device:  %u\n", pciId->Device);
-	printf("  Function:%u\n", pciId->Function);
-	printf("  Register:0x%X\n", reg);
-	printf("  Width:   %u bits\n", width);
+	if (!pciId || !value) {
+		return AE_BAD_PARAMETER;
+	}
 
-	printf_serial("ACPI: Read PCI config\r\n");
-	printf_serial("  Segment: %u\r\n", pciId->Segment);
-	printf_serial("  Bus:     %u\r\n", pciId->Bus);
-	printf_serial("  Device:  %u\r\n", pciId->Device);
-	printf_serial("  Function:%u\r\n", pciId->Function);
-	printf_serial("  Register:0x%X\r\n", reg);
-	printf_serial("  Width:   %u bits\r\n", width);
+	uint8_t bus = (uint8_t) pciId->Bus;
+	uint8_t slot = (uint8_t) pciId->Device;
+	uint8_t func = (uint8_t) pciId->Function;
+	uint8_t offset = (uint8_t) reg;
 
-	// Set *value to 0 to avoid undefined reads
-	if (value) *value = 0;
+	switch (width) {
+		case 8:
+			*value = pci_config_read8(bus, slot, func, offset);
+			break;
+		case 16:
+			*value = pci_config_read16(bus, slot, func, offset);
+			break;
+		case 32:
+			*value = pci_config_read32(bus, slot, func, offset);
+			break;
+		default:
+			return AE_BAD_PARAMETER;
+	}
 
-	// Tell ACPICA that this read is not actually implemented
-	return AE_NOT_IMPLEMENTED;
+	return AE_OK;
+}
+
+ACPI_STATUS AcpiOsWritePciConfiguration(ACPI_PCI_ID* pciId, UINT32 reg, UINT64 value, UINT32 width) {
+	if (!pciId) {
+		return AE_BAD_PARAMETER;
+	}
+
+	uint8_t bus = (uint8_t) pciId->Bus;
+	uint8_t slot = (uint8_t) pciId->Device;
+	uint8_t func = (uint8_t) pciId->Function;
+	uint8_t offset = (uint8_t) reg;
+
+	switch (width) {
+		case 8:
+			pci_config_write8(bus, slot, func, offset, (uint8_t) value);
+			break;
+		case 16:
+			pci_config_write16(bus, slot, func, offset, (uint16_t) value);
+			break;
+		case 32:
+			pci_config_write32(bus, slot, func, offset, (uint32_t) value);
+			break;
+		default:
+			return AE_BAD_PARAMETER;
+	}
+
+	return AE_OK;
 }
 
 
@@ -283,9 +310,33 @@ ACPI_THREAD_ID AcpiOsGetThreadId() {
 	return 1;
 }
 
+typedef struct {
+	ACPI_OSD_EXEC_CALLBACK function;
+	void* context;
+} acpi_deferred_work_t;
+
+#define ACPI_DEFERRED_QUEUE_SIZE 16
+static acpi_deferred_work_t deferred_queue[ACPI_DEFERRED_QUEUE_SIZE];
+static volatile uint32_t deferred_head = 0;
+static volatile uint32_t deferred_tail = 0;
+
 ACPI_STATUS AcpiOsExecute(ACPI_EXECUTE_TYPE Type, ACPI_OSD_EXEC_CALLBACK Function, void* Context) {
-	acpica_failure(__func__);
+	uint32_t next = (deferred_tail + 1) % ACPI_DEFERRED_QUEUE_SIZE;
+	if (next == deferred_head) {
+		return AE_NO_MEMORY; // queue full
+	}
+	deferred_queue[deferred_tail].function = Function;
+	deferred_queue[deferred_tail].context = Context;
+	deferred_tail = next;
 	return AE_OK;
+}
+
+void acpi_process_deferred_work(void) {
+	while (deferred_head != deferred_tail) {
+		acpi_deferred_work_t work = deferred_queue[deferred_head];
+		deferred_head = (deferred_head + 1) % ACPI_DEFERRED_QUEUE_SIZE;
+		if (work.function) work.function(work.context);
+	}
 }
 
 void AcpiOsSleep(UINT64 Milliseconds) {
@@ -442,9 +493,8 @@ struct acpi_irq_info {
 
 static struct acpi_irq_info acpi_irq_table[MAX_ACPI_IRQS];
 
-__attribute__((interrupt))
-__attribute__((__target__("general-regs-only")))
-void acpi_irq_wrapper_0(struct interrupt_frame* frame) {
+// This one is left here, not as a macro, just so it's obvious as to what it's doing.
+WALLOS_INTERRUPT_HANDLER void acpi_irq_wrapper_0(struct interrupt_frame* frame) {
 	(void) frame;
 	bool handled = false;
 
@@ -457,26 +507,10 @@ void acpi_irq_wrapper_0(struct interrupt_frame* frame) {
 	(void) handled; // why did we ever have this?
 
 	/* EOI once, after all handlers. This one doesn't need to send anything to the slave PIC. */
-	outb(0x20, 0x20);
+	interrupt_eoi(0);
 }
 
-#define DEFINE_ACPI_IRQ_WRAPPER(n) \
-__attribute__((interrupt)) \
-__attribute__((__target__("general-regs-only"))) \
-void acpi_irq_wrapper_##n(struct interrupt_frame *frame) { \
-	(void) frame; \
-    bool handled = false; \
-    struct acpi_irq_info *irq = &acpi_irq_table[n]; \
-    for (size_t i = 0; i < irq->count; i++) { \
-        if (irq->handlers[i].handler(irq->handlers[i].ctx) == \
-            ACPI_INTERRUPT_HANDLED) { \
-            handled = true; \
-        } \
-    } \
-	(void) handled; \
-    interrupt_eoi(n); \
-}
-
+#define DEFINE_ACPI_IRQ_WRAPPER(n) WALLOS_INTERRUPT_HANDLER void acpi_irq_wrapper_##n(struct interrupt_frame *frame) { (void) frame; bool handled = false; struct acpi_irq_info *irq = &acpi_irq_table[n]; for (size_t i = 0; i < irq->count; i++) { if (irq->handlers[i].handler(irq->handlers[i].ctx) == ACPI_INTERRUPT_HANDLED) { handled = true; }} (void) handled;interrupt_eoi(n); }
 DEFINE_ACPI_IRQ_WRAPPER(1)
 DEFINE_ACPI_IRQ_WRAPPER(2)
 DEFINE_ACPI_IRQ_WRAPPER(3)
@@ -529,10 +563,15 @@ ACPI_STATUS AcpiOsInstallInterruptHandler(UINT32 irq, ACPI_OSD_HANDLER handler, 
 	if (!info->installed) {
 		uint8_t vector = 0x20 + irq;
 
+
 		acpi_logger(INFO, "ACPICA: Installing IRQ %u (vector 0x%x)\n", irq, vector);
+		// printf_serial("ACPICA: Installing IRQ %u (vector 0x%x)\r\n", irq, vector);
 
 		add_interrupt_handler(vector, acpi_irq_wrappers[irq], 0, 0x8E);
 		irq_enable(irq);
+		if (irq == 9) {
+			irq_set_level_triggered(9);
+		}
 		info->installed = true;
 	}
 

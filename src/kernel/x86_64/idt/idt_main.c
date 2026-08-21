@@ -58,6 +58,34 @@ void interrupt_eoi(uint8_t irq_number) {
 	}
 }
 
+/* A few IRQs are required to be level triggered rather than edge triggered.
+ * This is currently only used by ACPI but I want this abstraction in case I need it again.
+ */
+
+void irq_set_level_triggered(uint8_t irq) {
+	if (irq > 15) {
+		return; // The 8259 PIC only handles IRQs 0-15
+	}
+
+	uint16_t port = (irq < 8) ? 0x4D0 : 0x4D1;
+	uint8_t bit = irq % 8;
+
+	uint8_t elcr = inb(port);
+	outb(port, elcr | (1 << bit));
+}
+
+void irq_set_edge_triggered(uint8_t irq) {
+	if (irq > 15) {
+		return;
+	}
+
+	uint16_t port = (irq < 8) ? 0x4D0 : 0x4D1;
+	uint8_t bit = irq % 8;
+
+	uint8_t elcr = inb(port);
+	outb(port, elcr & ~(1 << bit));
+}
+
 // ------------------------------------------------------------------------------------------------
 // ------------------------------------------------------------------------------------------------
 // Generic IRQ Handlers for all interrupts

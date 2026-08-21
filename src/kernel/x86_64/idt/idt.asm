@@ -75,8 +75,11 @@ irq_enable:
         ret
     .slave:
         ; Recursively enable master IRQ2, or else slave IRQs will not work.
-        mov     rdi,    2
+        push    rcx         ; Save original IRQ number (rcx) before the recursive call
+        mov     rdi,    2   ; Recursively enable master IRQ2
         call    irq_enable
+        pop     rcx          ; Restore original IRQ number
+
         ; Subtract 8 from the IRQ.
         sub     cl,     8
         ; Compute the mask ~(1 << IRQ).

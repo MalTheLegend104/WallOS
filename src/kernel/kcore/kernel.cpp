@@ -228,6 +228,16 @@ void keyboard_debug() {
 #include <klibc/kernel_rng.h>
 #include <drivers/usb/hosts/xhci.h>
 
+extern "C" int tst_command(int argc, char** argv) {
+	// this is just going to be a "permanent" command to let me quickly test things.
+	// I routinely end up adding and removing this stupid command signature from this file when needing to do targeted testing.
+
+	(void) argc;
+	(void) argv;
+
+	return 0;
+}
+
 void kernel_main(unsigned int magic, multiboot_info* mbt_info) {
 	// ------------------------------------------------------------------------------------------------
 	// Very early init
@@ -314,19 +324,13 @@ void kernel_main(unsigned int magic, multiboot_info* mbt_info) {
 	keyboard_debug();
 
 	// ------------------------------------------------------------------------------------------------
-	// Physical Memory & ACPI
+	// Physical Memory & Allocators
 	// ------------------------------------------------------------------------------------------------
 	Memory::PhysicalMemInit();
-	acpi_tables();
-
-	// ------------------------------------------------------------------------------------------------
-	// Allocators
-	// ------------------------------------------------------------------------------------------------
 	initKernelAllocator();
 
 	// The last thing this requires is the allocator.
 	display_init_late();
-
 	// ------------------------------------------------------------------------------------------------
 	// Regular Interrupt Handlers
 	// ------------------------------------------------------------------------------------------------
@@ -396,6 +400,7 @@ void kernel_main(unsigned int magic, multiboot_info* mbt_info) {
 	registerCommand((Command) { device_cmd, 0, "device", dev_aliases, 1 }); // "dev" is the only alias.
 	registerCommand((Command) { cpu_info, 0, "cpu", 0, 0 });
 	registerCommand((Command) { driver_cli, 0, "driver", 0, 0 });
+	// registerCommand((Command) { tst_command, 0, "tst", 0, 0 });
 	terminalMain();
 
 	// char* cmd[] = { "dev", "list", "-u" };

@@ -73,6 +73,9 @@ extern "C" {
 	 */
 	extern void irq_disable(uint8_t irq);
 
+	void irq_set_level_triggered(uint8_t irq);
+	void irq_set_edge_triggered(uint8_t irq);
+
 	/**
 	 * @brief Abstracted EOI handler.
 	 *

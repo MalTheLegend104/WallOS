@@ -266,18 +266,21 @@ static HPETTable* g_hpet = NULL;
 static MCFGTable* g_mcfg = NULL;
 
 MADTTable* get_madt() {
+	if (!acpi_setup_complete()) return NULL;
 	if (!g_madt)
 		g_madt = parse_madt();
 	return g_madt;
 }
 
 HPETTable* get_hpet() {
+	if (!acpi_setup_complete()) return NULL;
 	if (!g_hpet)
 		g_hpet = parse_hpet();
 	return g_hpet;
 }
 
 MCFGTable* get_mcfg() {
+	if (!acpi_setup_complete()) return NULL;
 	if (!g_mcfg)
 		g_mcfg = parse_mcfg();
 	return g_mcfg;

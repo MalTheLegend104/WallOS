@@ -29,7 +29,7 @@ bool acpi_is_present(void) {
 	return false;
 }
 
-bool is_acpi_setup_complete = false;
+static bool is_acpi_setup_complete = false;
 bool acpi_setup_complete(void) { return is_acpi_setup_complete; }
 void acpi_set_setup_completed(void) { is_acpi_setup_complete = true; }
 
@@ -105,7 +105,7 @@ __attribute__((noreturn)) void acpi_reboot(void) {
 		for (int i = 0; i < 1000000; i++) {
 			WALLOS_PAUSE();
 		}
-}
+	}
 #endif
 
 	// If ACPI reset didn't work, try a few legacy methods

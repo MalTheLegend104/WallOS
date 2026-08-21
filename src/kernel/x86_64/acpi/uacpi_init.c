@@ -1,7 +1,5 @@
 #include <uacpi/acpi.h>
 
-
-
 #include <uacpi/uacpi.h>
 #include <uacpi/event.h>
 #include <uacpi/uacpi.h>
@@ -28,6 +26,94 @@
 
 #ifdef WALLOS_USE_UACPI
 
+#include <uacpi/event.h>
+#include <uacpi/utilities.h>
+
+static volatile bool power_button_pressed = false;
+static volatile bool sleep_button_pressed = false;
+
+/* Fixed hardware event handlers (run from SCI interrupt context) */
+
+static uacpi_interrupt_ret uacpi_fixed_power_button_handler(uacpi_handle ctx) {
+	power_button_pressed = true;
+	printf("Power button handler invoked\n");
+	return UACPI_INTERRUPT_HANDLED;
+}
+
+static uacpi_interrupt_ret uacpi_fixed_sleep_button_handler(uacpi_handle ctx) {
+	sleep_button_pressed = true;
+	return UACPI_INTERRUPT_HANDLED;
+}
+
+/* Control-method device notify handler (deferred work queue) */
+
+static uacpi_status uacpi_system_notify_handler(uacpi_handle ctx, uacpi_namespace_node* node, uacpi_u64 value) {
+	if (value != 0x80) { // 0x80 = Device-Specific generic notify
+		return UACPI_STATUS_OK;
+	}
+
+	uacpi_object* hid_obj = NULL;
+	uacpi_status status = uacpi_eval(node, "_HID", NULL, &hid_obj);
+
+	if (status == UACPI_STATUS_OK && hid_obj != NULL) {
+		if (hid_obj->type == UACPI_OBJECT_STRING) {
+			if (!strcmp(hid_obj->buffer->text, "PNP0C0C")) {
+				power_button_pressed = true;
+				printf("Power button (control method) handler invoked\n");
+			} else if (!strcmp(hid_obj->buffer->text, "PNP0C0E")) {
+				sleep_button_pressed = true;
+			}
+		}
+		uacpi_object_unref(hid_obj);
+	}
+
+	return UACPI_STATUS_OK;
+}
+
+#include <uacpi/notify.h>
+
+void install_acpi_event_handlers(void) {
+	uacpi_status status;
+
+	// Power Button Fixed Event
+	status = uacpi_install_fixed_event_handler(UACPI_FIXED_EVENT_POWER_BUTTON, uacpi_fixed_power_button_handler, NULL);
+	if (uacpi_unlikely_error(status)) {
+		printf("Failed to install power button handler: %s\n", uacpi_status_to_string(status));
+	}
+
+	// Sleep Button Fixed Event
+	status = uacpi_install_fixed_event_handler(UACPI_FIXED_EVENT_SLEEP_BUTTON, uacpi_fixed_sleep_button_handler, NULL);
+	if (uacpi_unlikely_error(status)) {
+		printf("Failed to install sleep button handler: %s\n", uacpi_status_to_string(status));
+	}
+
+	// System Notify Handler
+	status = uacpi_install_notify_handler(uacpi_namespace_root(), uacpi_system_notify_handler, NULL);
+	if (uacpi_unlikely_error(status)) {
+		printf("Failed to install ACPI system notify handler: %s\n", uacpi_status_to_string(status));
+	}
+
+	logger(INFO, "uACPI power/sleep button handlers installed.\n");
+}
+
+extern void acpi_process_deferred_work(void);
+
+void acpi_poll_events(void) {
+	acpi_process_deferred_work();
+
+	if (power_button_pressed) {
+		power_button_pressed = false;
+		// logger(INFO, "ACPI power button event. Shutdown requested.\n");
+		acpi_shutdown();
+	}
+
+	if (sleep_button_pressed) {
+		sleep_button_pressed = false;
+		logger(INFO, "ACPI sleep button event. Sleep requested...\n");
+		// Sleep isn't implemented...
+	}
+}
+
 void init_failure(const char* str) {
 	const char* msg[] = { "uACPI initialization failed: ", str };
 	printf("uACPI initialization failed: %s\n", str);
@@ -37,15 +123,10 @@ void init_failure(const char* str) {
 	panic_sa(msg, 2);
 }
 
-void acpi_tables(void) {
-
-}
-
 void initialize_acpi(void) {
 	printf_color(PRINT_COLOR_GREEN, PRINT_DEFAULT_BG, "Trying to initialize ACPI tables...\r\n");
 
-
-// uACPI's initialization phase handles table discovery and loading
+	// uACPI's initialization phase handles table discovery and loading
 	uacpi_status status = uacpi_initialize(0);
 	if (uacpi_unlikely_error(status)) {
 		printf_serial("Status: %s\r\n", uacpi_status_to_string(status));
@@ -55,8 +136,6 @@ void initialize_acpi(void) {
 
 	printf_serial("Successfully loaded tables.\r\n");
 	printf_color(PRINT_COLOR_GREEN, PRINT_DEFAULT_BG, "Successfully loaded tables.\n");
-	// Note: uacpi_initialize() was already called in acpi_tables()
-	// So we check if it's already initialized or call it here if acpi_tables() wasn't called
 
 	logger(INFO, "uACPI Initialized.\n");
 
@@ -68,8 +147,6 @@ void initialize_acpi(void) {
 
 	logger(INFO, "uACPI loaded namespace.\n");
 
-	// This requires talking to PCI devices, which we don't have yet (probably next thing I do)
-	// It handles this "gracefully", just spams the terminal with errors that it can't initialize certain devices.
 	// Initialize the namespace (calls _STA/_INI/_REG methods)
 	status = uacpi_namespace_initialize();
 	if (uacpi_unlikely_error(status)) {
@@ -77,6 +154,8 @@ void initialize_acpi(void) {
 	}
 
 	logger(INFO, "uACPI namespace initialized.\n");
+
+	install_acpi_event_handlers();
 
 	acpi_set_setup_completed();
 }

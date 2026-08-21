@@ -325,6 +325,8 @@ char get_input() {
 	return current;
 }
 
+#include <acpi/acpi_api.h>
+
 void terminalMain() {
 	registerSystemCommands();
 	printf_color(PRINT_COLOR_PINK, PRINT_DEFAULT_BG, "Initalizing Terminal...");
@@ -359,9 +361,23 @@ void terminalMain() {
 			memset(oldCommand, 0, MAX_COMMAND_BUF);
 		}
 
+		char current = '\0';
+
+		while (true) {
+			int input = input_getc_nonblocking();
+			if (input != -1) {
+				current = input;
+				break;
+			}
+
+			acpi_poll_events();
+			busy_wait_ms(1);
+		}
+
+
 		// char current = kb_getc();
 		// char current = serial_getc();
-		char current = get_input();
+		// char current = get_input();
 		KeyboardState state = getKeyboardState();
 
 

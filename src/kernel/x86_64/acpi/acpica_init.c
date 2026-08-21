@@ -5,6 +5,95 @@
 #include <drivers/serial.h>
 #include <klibc/logger.h>
 #include <acpi/acpi_init.h>
+#include <acpi/acpi_api.h>
+#include <stdbool.h>
+
+static volatile bool power_button_pressed = false;
+static volatile bool sleep_button_pressed = false;
+
+/* Fixed hardware event handlers (run directly from SCI context) */
+
+static UINT32 acpi_fixed_power_button_handler(void* context) {
+	power_button_pressed = true;
+	return ACPI_INTERRUPT_HANDLED;
+}
+
+static UINT32 acpi_fixed_sleep_button_handler(void* context) {
+	sleep_button_pressed = true;
+	return ACPI_INTERRUPT_HANDLED;
+}
+
+/* Control-method device notify handler (runs via AcpiOsExecute, through our deferred work queue) */
+static void acpi_system_notify_handler(ACPI_HANDLE device, UINT32 value, void* context) {
+	if (value != 0x80) {
+		return; // we only care about the generic "something happened" notify
+	}
+
+	ACPI_OBJECT hidObj;
+	ACPI_BUFFER hidBuf = { sizeof(ACPI_OBJECT), &hidObj };
+	if (ACPI_FAILURE(AcpiEvaluateObject(device, "_HID", NULL, &hidBuf))) {
+		return;
+	}
+
+	if (hidObj.Type != ACPI_TYPE_STRING) {
+		return;
+	}
+
+	if (!strcmp(hidObj.String.Pointer, "PNP0C0C")) {
+		power_button_pressed = true;
+	} else if (!strcmp(hidObj.String.Pointer, "PNP0C0E")) {
+		sleep_button_pressed = true;
+	}
+}
+
+void install_acpi_event_handlers(void) {
+	ACPI_STATUS status;
+
+	status = AcpiInstallFixedEventHandler(ACPI_EVENT_POWER_BUTTON, acpi_fixed_power_button_handler, NULL);
+	if (ACPI_FAILURE(status)) {
+		printf("Failed to install power button handler: %s\n", AcpiFormatException(status));
+	} else {
+		status = AcpiEnableEvent(ACPI_EVENT_POWER_BUTTON, 0);
+		if (ACPI_FAILURE(status)) {
+			printf("Failed to enable power button event: %s\n", AcpiFormatException(status));
+		}
+	}
+
+	status = AcpiInstallFixedEventHandler(ACPI_EVENT_SLEEP_BUTTON, acpi_fixed_sleep_button_handler, NULL);
+	if (ACPI_FAILURE(status)) {
+		printf("Failed to install sleep button handler: %s\n", AcpiFormatException(status));
+	} else {
+		status = AcpiEnableEvent(ACPI_EVENT_SLEEP_BUTTON, 0);
+		if (ACPI_FAILURE(status)) {
+			printf("Failed to enable sleep button event: %s\n", AcpiFormatException(status));
+		}
+	}
+
+	status = AcpiInstallNotifyHandler(ACPI_ROOT_OBJECT, ACPI_SYSTEM_NOTIFY, acpi_system_notify_handler, NULL);
+	if (ACPI_FAILURE(status)) {
+		printf("Failed to install ACPI system notify handler: %s\n", AcpiFormatException(status));
+	}
+
+	logger(INFO, "ACPI power/sleep button handlers installed.\n");
+}
+
+extern void acpi_process_deferred_work();
+
+void acpi_poll_events(void) {
+	acpi_process_deferred_work();
+
+	if (power_button_pressed) {
+		power_button_pressed = false;
+		// logger(INFO, "ACPI power button event. Shutdown requested.\n");
+		acpi_shutdown();
+	}
+
+	if (sleep_button_pressed) {
+		sleep_button_pressed = false;
+		logger(INFO, "ACPI sleep button event. Sleep requested...\n");
+		// This isn't implemented...
+	}
+}
 
 ACPI_STATUS acpi_device_callback(ACPI_HANDLE object, UINT32 nestingLevel, void* context, void** returnValue) {
 	ACPI_BUFFER namebuf = { ACPI_ALLOCATE_BUFFER, NULL };
@@ -140,6 +229,7 @@ void print_fadt() {
 	} else {
 		// Parse the FADT table
 		ACPI_TABLE_FADT* fadt = (ACPI_TABLE_FADT*) table;
+		printf("SCI Interrupt (GSI):  %u\n", fadt->SciInterrupt);
 		printf("FADT pointer addr: 0x%llx\n", fadt);
 		printf("Making assumption system is a: ");
 		switch (fadt->PreferredProfile) {
@@ -394,6 +484,7 @@ void print_acpi_table_info(const char* sig) {
 		if (fadt->Header.Length > 140) {
 			printf("  X_DSDT Address: 0x%llX\n", fadt->XDsdt);
 		}
+		printf("SCI Interrupt (GSI):  %u\n", fadt->SciInterrupt);
 		printf("Making assumption system is a: ");
 		switch (fadt->PreferredProfile) {
 			case 0: printf("Unspecified\n"); 		break;
@@ -409,24 +500,6 @@ void print_acpi_table_info(const char* sig) {
 	} else if (!memcmp(table->Signature, "APIC", 4)) { // MADT
 		ACPI_TABLE_MADT* madt = (ACPI_TABLE_MADT*) table;
 		dump_madt(madt);
-		// printf("  Local APIC Address: 0x%X\n", madt->Address);
-		// printf("  Flags: 0x%X (1=PCAT Dual 8259)\n", madt->Flags);
-
-		// // Subtable parsing
-		// ACPI_SUBTABLE_HEADER* sub = (ACPI_SUBTABLE_HEADER*) ((uint8_t*) madt + sizeof(ACPI_TABLE_MADT));
-		// while ((uint8_t*) sub < (uint8_t*) madt + madt->Header.Length) {
-		// 	if (sub->Type == ACPI_MADT_TYPE_LOCAL_APIC) {
-		// 		ACPI_MADT_LOCAL_APIC* la = (ACPI_MADT_LOCAL_APIC*) sub;
-		// 		printf("    - Processor Local APIC: ID %u, APIC ID %u, Flags 0x%X\n", la->ProcessorId, la->Id, la->LapicFlags);
-		// 	} else if (sub->Type == ACPI_MADT_TYPE_IO_APIC) {
-		// 		ACPI_MADT_IO_APIC* io = (ACPI_MADT_IO_APIC*) sub;
-		// 		printf("    - I/O APIC: ID %u, Address 0x%X, GSI Base %u\n", io->Id, io->Address, io->GlobalIrqBase);
-		// 	} else if (sub->Type == ACPI_MADT_TYPE_INTERRUPT_OVERRIDE) {
-		// 		ACPI_MADT_INTERRUPT_OVERRIDE* iso = (ACPI_MADT_INTERRUPT_OVERRIDE*) sub;
-		// 		printf("    - Int Source Override: Bus %u, IRQ %u -> GSI %u\n", iso->Bus, iso->SourceIrq, iso->GlobalIrq);
-		// 	}
-		// 	sub = (ACPI_SUBTABLE_HEADER*) ((uint8_t*) sub + sub->Length);
-		// }
 	} else if (!memcmp(table->Signature, "MCFG", 4)) {
 		// MCFG has a reserved 8-byte block before the base address allocations
 		ACPI_MCFG_ALLOCATION* alloc = (ACPI_MCFG_ALLOCATION*) ((uint8_t*) table + sizeof(ACPI_TABLE_HEADER) + 8);
@@ -517,12 +590,6 @@ static ACPI_TABLE_DESC TableArray[ACPI_MAX_INIT_TABLES];
 
 #include <drivers/serial.h>
 
-void acpi_tables(void) {
-	// printf_color(PRINT_COLOR_GREEN, PRINT_DEFAULT_BG, "Early ACPICA init...\r\n");
-
-
-}
-
 void initialize_acpi(void) {
 	ACPI_STATUS status = AcpiInitializeSubsystem();
 	if (ACPI_FAILURE(status)) {
@@ -554,14 +621,14 @@ void initialize_acpi(void) {
 		init_failure("Failed to enable ACPI subsystem.");
 	}
 
-
 	logger(INFO, "ACPICA enabled subsystem.\n");
+
+	install_acpi_event_handlers();
 
 	status = AcpiInitializeObjects(ACPI_FULL_INITIALIZATION);
 	if (ACPI_FAILURE(status)) {
 		init_failure("Failed to initialize ACPI Objects.");
 	}
-
 
 	logger(INFO, "ACPICA driver fully initialized.\n");
 	extern void acpi_set_setup_completed(void);

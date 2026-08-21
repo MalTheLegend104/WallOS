@@ -1,3 +1,4 @@
+#ifdef WALLOS_USE_UACPI
 #include <uacpi/acpi.h>
 #include <uacpi/kernel_api.h>
 
@@ -301,12 +302,12 @@ uacpi_status uacpi_kernel_initialize(uacpi_init_level current_init_lvl);
 void uacpi_kernel_deinitialize(void);
 #endif
 
+#include <drivers/pci.h>
+
 /*
  * Open a PCI device at 'address' for reading & writing.
  *
- * Note that this must be able to open any arbitrary PCI device, not just those
- * detected during kernel PCI enumeration, since the following pattern is
- * relatively common in AML firmware:
+ * Note that this must be able to open any arbitrary PCI device, since the following pattern is relatively common in AML firmware:
  *    Device (THC0)
  *    {
  *        // Device at 00:10.06
@@ -332,27 +333,60 @@ void uacpi_kernel_deinitialize(void);
  * configuration space of the device.
  */
 uacpi_status uacpi_kernel_pci_device_open(uacpi_pci_address address, uacpi_handle* out_handle) {
-	// printf_serial("[UACPI] uacpi_kernel_pci_device_open() called\r\n");
-	// uacpi_failure(__func__);
-	// printf_color(PRINT_COLOR_LIGHT_GREY, PRINT_DEFAULT_BG, "[UACPI] uacpi_kernel_pci_device_open() called\r\n");
-	return UACPI_STATUS_UNIMPLEMENTED;
-}
-void uacpi_kernel_pci_device_close(uacpi_handle) {
-	// printf_serial("[UACPI] uacpi_kernel_pci_device_close() called\r\n");
-	// printf_color(PRINT_COLOR_LIGHT_GREY, PRINT_DEFAULT_BG, "[UACPI] uacpi_kernel_pci_device_close() called\r\n");
+	// Your current PCI API does not support PCI segments (domains)
+	// We dont support segments ("domains")
+	if (address.segment != 0) {
+		return UACPI_STATUS_INVALID_ARGUMENT;
+	}
 
-	// uacpi_failure(__func__);
+	// Pack the bus, slot, and function into the void* handle
+	uintptr_t packed_address = (address.bus << 16) | (address.device << 8) | address.function;
+	*out_handle = (uacpi_handle) packed_address;
+
+	return UACPI_STATUS_OK;
+}
+
+void uacpi_kernel_pci_device_close(uacpi_handle handle) {
+	(void) handle;
+	// Nothing to free since we didn't allocate memory!
 }
 
 uacpi_status kernel_pci_read(uacpi_handle device, uacpi_size offset, void* value, size_t bitwidth) {
-	// printf_serial("[UACPI] kernel_pci_read() called\r\n");
-	// printf_color(PRINT_COLOR_LIGHT_GREY, PRINT_DEFAULT_BG, "[UACPI] kernel_pci_read() called\r\n");
-	return UACPI_STATUS_UNIMPLEMENTED;
+	uintptr_t val = (uintptr_t) device;
+	uint8_t func = val & 0xFF;
+	uint8_t slot = (val >> 8) & 0xFF;
+	uint8_t bus = (val >> 16) & 0xFF;
+
+	if (bitwidth == 8) {
+		*(uacpi_u8*) value = pci_config_read8(bus, slot, func, offset);
+	} else if (bitwidth == 16) {
+		*(uacpi_u16*) value = pci_config_read16(bus, slot, func, offset);
+	} else if (bitwidth == 32) {
+		*(uacpi_u32*) value = pci_config_read32(bus, slot, func, offset);
+	} else {
+		return UACPI_STATUS_INVALID_ARGUMENT;
+	}
+
+	return UACPI_STATUS_OK;
 }
+
 uacpi_status kernel_pci_write(uacpi_handle device, uacpi_size offset, size_t value, size_t bitwidth) {
-	// printf_serial("[UACPI] kernel_pci_write() called\r\n");
-	// printf_color(PRINT_COLOR_LIGHT_GREY, PRINT_DEFAULT_BG, "[UACPI] kernel_pci_read() called\r\n");
-	return UACPI_STATUS_UNIMPLEMENTED;
+	uintptr_t val = (uintptr_t) device;
+	uint8_t func = val & 0xFF;
+	uint8_t slot = (val >> 8) & 0xFF;
+	uint8_t bus = (val >> 16) & 0xFF;
+
+	if (bitwidth == 8) {
+		pci_config_write8(bus, slot, func, offset, (uint8_t) value);
+	} else if (bitwidth == 16) {
+		pci_config_write16(bus, slot, func, offset, (uint16_t) value);
+	} else if (bitwidth == 32) {
+		pci_config_write32(bus, slot, func, offset, (uint32_t) value);
+	} else {
+		return UACPI_STATUS_INVALID_ARGUMENT;
+	}
+
+	return UACPI_STATUS_OK;
 }
 
 /*
@@ -912,14 +946,49 @@ void uacpi_kernel_unlock_spinlock(uacpi_handle handle, uacpi_cpu_flags flags) {
 	spinlock_unlock((spinlock_t*) handle);
 }
 
-/*
- * Schedules deferred work for execution.
- * Might be invoked from an interrupt context.
- */
+#include <uacpi/kernel_api.h>
+#include <uacpi/types.h>
+
+typedef struct {
+	uacpi_work_handler function;
+	uacpi_handle context;
+} uacpi_deferred_work_t;
+
+#define UACPI_DEFERRED_QUEUE_SIZE 16
+static uacpi_deferred_work_t deferred_queue[UACPI_DEFERRED_QUEUE_SIZE];
+static volatile uint32_t deferred_head = 0;
+static volatile uint32_t deferred_tail = 0;
+
+#include <arch.h>
+
 uacpi_status uacpi_kernel_schedule_work(uacpi_work_type type, uacpi_work_handler handler, uacpi_handle ctx) {
-	printf_serial("[UACPI] uacpi_kernel_schedule_work(type=%d) called\r\n", type);
-	// printf("[UACPI] Warning: schedule_work called but not implemented\n");
-	return UACPI_STATUS_UNIMPLEMENTED;
+	(void) type; // We don't strictly need to differentiate work types for a basic queue
+
+	uint32_t next = (deferred_tail + 1) % UACPI_DEFERRED_QUEUE_SIZE;
+	if (next == deferred_head) {
+		return UACPI_STATUS_OUT_OF_MEMORY; // Queue full
+	}
+
+	deferred_queue[deferred_tail].function = handler;
+	deferred_queue[deferred_tail].context = ctx;
+
+	// Prevent compiler from reordering the tail update before the payload write
+	cpu_compiler_barrier();
+
+	deferred_tail = next;
+	return UACPI_STATUS_OK;
+}
+
+void acpi_process_deferred_work(void) {
+	while (deferred_head != deferred_tail) {
+		uacpi_deferred_work_t work = deferred_queue[deferred_head];
+
+		deferred_head = (deferred_head + 1) % UACPI_DEFERRED_QUEUE_SIZE;
+
+		if (work.function) {
+			work.function(work.context);
+		}
+	}
 }
 
 
@@ -936,5 +1005,5 @@ uacpi_status uacpi_kernel_wait_for_work_completion(void) {
 
 	return UACPI_STATUS_UNIMPLEMENTED;
 }
-
+#endif // UACPI_BAREBONES_MODE
 #endif // WALLOS_USE_UACPI
