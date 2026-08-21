@@ -57,16 +57,8 @@ ACPI_STATUS AcpiOsSignal(UINT32 function, void* info) {
 }
 
 UINT64 AcpiOsGetTimer(void) {
-	// acpica_failure(__func__);
-	acpi_logger(INFO, "ACPICA: %s called.\n", __func__);
-
-	// We keep track of uptime in 1ms units.
-	// ACPICA wants it in 100ns units (why not just ns?)
-	// ms x 1000 = us
-	// us x 10 = 100ns
-	uint64_t result = timer_uptime_ms() * 1000 * 10;
-
-	return result;
+	// ACPI wants 100-nanosecond units
+	return timer_uptime_no_interrupts() / 100;
 }
 
 ACPI_STATUS AcpiOsPhysicalTableOverride(ACPI_TABLE_HEADER* existingTable, ACPI_PHYSICAL_ADDRESS* newAddress, UINT32* newTableLength) {
@@ -344,7 +336,12 @@ void AcpiOsSleep(UINT64 Milliseconds) {
 }
 
 void AcpiOsStall(UINT32 Microseconds) {
-	acpica_failure(__func__);
+	uint64_t start_ns = timer_uptime_no_interrupts();
+	uint64_t wait_ns = Microseconds * 1000ull;
+
+	while ((timer_uptime_no_interrupts() - start_ns) < wait_ns) {
+		__asm__ volatile ("pause");
+	}
 }
 
 ACPI_STATUS AcpiOsEnterSleep(UINT8 SleepState, UINT32 RegaValue, UINT32 RegbValue) {

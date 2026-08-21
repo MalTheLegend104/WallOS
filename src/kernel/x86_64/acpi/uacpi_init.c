@@ -114,6 +114,25 @@ void acpi_poll_events(void) {
 	}
 }
 
+extern bool ec_generic_handler(bool is_read, uint64_t address, uint32_t bit_width, uint64_t* value);
+
+static uacpi_status uacpi_ec_handler(uacpi_region_op op, uacpi_region_op_args* args, void* user) {
+	bool is_read = (op == UACPI_REGION_OP_READ);
+
+	// uACPI usually provides byte_width instead of bit_width
+	uint32_t bit_width = args->byte_width * 8;
+
+	if (ec_generic_handler(is_read, args->offset, bit_width, &args->value)) {
+		return UACPI_STATUS_OK;
+	}
+	return UACPI_STATUS_HARDWARE_TIMEOUT;
+}
+
+void acpi_install_ec_handler(void) {
+	// Install globally. uACPI handles propagating this to the EC region.
+	uacpi_install_address_space_handler(uacpi_namespace_root(), UACPI_ADDRESS_SPACE_EMBEDDED_CONTROL, uacpi_ec_handler, NULL);
+}
+
 void init_failure(const char* str) {
 	const char* msg[] = { "uACPI initialization failed: ", str };
 	printf("uACPI initialization failed: %s\n", str);
@@ -156,6 +175,8 @@ void initialize_acpi(void) {
 	logger(INFO, "uACPI namespace initialized.\n");
 
 	install_acpi_event_handlers();
+
+	acpi_install_ec_handler();
 
 	acpi_set_setup_completed();
 }

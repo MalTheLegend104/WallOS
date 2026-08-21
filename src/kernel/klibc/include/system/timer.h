@@ -120,6 +120,8 @@ extern "C" {
 	void busy_wait_us(uint32_t us);
 	void busy_wait_ms(uint32_t ms);
 
+
+	uint64_t timer_uptime_us(void);
 	// Uptime in ms, derived from the best registered counter_clock.
 	uint64_t timer_uptime_ms(void);
 
@@ -129,6 +131,13 @@ extern "C" {
 	// Call this function from the timekeeping interrupt
 	void timer_tick_us(uint32_t us);
 
+	// Uses an interruptless method to get uptime. 
+	// This is mostly required in certain driver contexts that will busy-wait on uptime, rather than asking the OS to sleep
+	// *cough* thanks acpica *cough*
+	// This is expected to be implemented in the architecture layer. 
+	uint64_t timer_uptime_no_interrupts(void);
+	// expected to be called very early
+	void timer_no_interrupts_init(void);
 
 	// ------------------------------------------------------------------------------------------------
 	// ------------------------------------------------------------------------------------------------

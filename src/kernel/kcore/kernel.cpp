@@ -318,6 +318,7 @@ void kernel_main(unsigned int magic, multiboot_info* mbt_info) {
 	io_delay_init(); // uses outb(0x80, 0) to try to add a small delay. it's best effort if we don't have a good resolution timer
 	pit_init(1000);
 	rtc_cmos_init();
+	timer_no_interrupts_init(); // sets up TSC timing for ACPI on x86_64
 
 	i8042_flush();
 	keyboard_init();

@@ -590,6 +590,21 @@ static ACPI_TABLE_DESC TableArray[ACPI_MAX_INIT_TABLES];
 
 #include <drivers/serial.h>
 
+extern bool ec_generic_handler(bool is_read, uint64_t address, uint32_t bit_width, uint64_t* value);
+
+static ACPI_STATUS acpica_ec_handler(UINT32 Function, ACPI_PHYSICAL_ADDRESS Address, UINT32 BitWidth, UINT64* Value, void* HandlerContext, void* RegionContext) {
+	bool is_read = (Function == ACPI_READ);
+
+	if (ec_generic_handler(is_read, Address, BitWidth, (uint64_t*) Value)) {
+		return AE_OK;
+	}
+	return AE_ERROR;
+}
+
+void acpi_install_ec_handler(void) {
+	AcpiInstallAddressSpaceHandler(ACPI_ROOT_OBJECT, ACPI_ADR_SPACE_EC, acpica_ec_handler, NULL, NULL);
+}
+
 void initialize_acpi(void) {
 	ACPI_STATUS status = AcpiInitializeSubsystem();
 	if (ACPI_FAILURE(status)) {
@@ -629,6 +644,8 @@ void initialize_acpi(void) {
 	if (ACPI_FAILURE(status)) {
 		init_failure("Failed to initialize ACPI Objects.");
 	}
+
+	acpi_install_ec_handler();
 
 	logger(INFO, "ACPICA driver fully initialized.\n");
 	extern void acpi_set_setup_completed(void);
