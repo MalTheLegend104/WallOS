@@ -11,8 +11,7 @@
 #include <stdlib.h>
 #include <stdio.h>
 
-#include <filesystem/wdm.h>
-#include <memory/virtual_mem.h>
+#include <wdm.h>
 // ------------------------------------------------------------------------------------------------
 // ------------------------------------------------------------------------------------------------
 // Registry
@@ -32,6 +31,8 @@ struct WDM_Drive {
 	WDM_DriveInfo info;
 	struct WDM_Drive* parent; // NULL if this is a physical / root drive
 
+	char name[33]; // optional name for the drive. drive can be retrieved using WDM_GetDriveFromName()
+
 	// Metadata caching
 	bool has_metadata;
 	WDM_PartitionMeta meta;
@@ -48,6 +49,17 @@ static bool             wdm_initialized = false;
 // Internal helpers
 // ------------------------------------------------------------------------------------------------
 // ------------------------------------------------------------------------------------------------
+
+// True if name is NOT taken, false otherwise.
+static bool validate_handle_name(const char* name) {
+	for (int i = 0; i < WDM_MAX_DRIVES; i++) {
+		if (wdm_drives[i].active &&
+			strncmp(wdm_drives[i].name, name, 32) == 0)
+			return false;
+	}
+
+	return true;
+}
 
 static bool validate_handle(WDM_DriveHandle handle) {
 	if (!handle) {
@@ -253,6 +265,9 @@ WDM_Status WDM_Enumerate(WDM_DriveHandle* handles, uint32_t max, uint32_t* total
 			continue;
 		}
 
+		// Skip non-root drives (so mostly just partitions)
+		if (wdm_drives[i].parent != NULL) continue;
+
 		if (handles && count < max) {
 			handles[count] = &wdm_drives[i];
 		}
@@ -370,7 +385,6 @@ WDM_Status WDM_Flush(WDM_DriveHandle handle) {
 // Partition Abstraction Layer
 // ------------------------------------------------------------------------------------------------
 // ------------------------------------------------------------------------------------------------
-#include <memory/kernel_alloc.h>
 
 typedef struct {
 	WDM_DriveHandle parent;
@@ -460,87 +474,52 @@ WDM_Status WDM_GetPartitionMetadata(WDM_DriveHandle handle, WDM_PartitionMeta* m
 
 #include <filesystem/partitions/wallos_gpt.h>
 #include <device/device_manager.h>
-
-#include <drivers/serial.h>
+#include <filesystem/partitions/wallos_mbr.h>
 
 WDM_Status WDM_ScanAndRegisterPartitions(WDM_DriveHandle wdm_parent, struct wallos_device* dev_parent) {
-	if (!wdm_parent || !dev_parent) {
-		printf_serial("[WDM] Invalid parameters.\r\n");
-		return WDM_ERR_INVALID;
-	}
-
-	printf_serial("[WDM] Scanning partitions on %s...\r\n", dev_parent->name);
+	if (!wdm_parent || !dev_parent) return WDM_ERR_INVALID;
 
 	WDM_DriveInfo info;
-	if (WDM_GetInfo(wdm_parent, &info) != WDM_OK) {
-		printf_serial("[WDM] Failed to query drive information.\r\n");
-		return WDM_ERR_INVALID;
-	}
-
-	printf_serial("[WDM] Sector size: %u bytes\r\n", info.sector_size);
+	if (WDM_GetInfo(wdm_parent, &info) != WDM_OK) return WDM_ERR_INVALID;
 
 	uint8_t* sector_buf = kalloc(info.sector_size);
-	if (!sector_buf) {
-		printf_serial("[WDM] Failed to allocate sector buffer.\r\n");
-		return WDM_ERR_BUSY;
-	}
+	if (!sector_buf) return WDM_ERR_BUSY;
 
-	// Yes this is ugly, I just didn't want to replicate this code.
-#define REGISTER_PARTITION_NODE(NAME, START, LENGTH, META) do { \
-		printf_serial("[WDM] Registering %s (LBA=%llu, sectors=%llu)...\r\n", NAME, (unsigned long long)(START), (unsigned long long)(LENGTH)); \
-		WDM_DriveHandle p_handle = WDM_AddPartition(wdm_parent, START, LENGTH, META); \
-		if (p_handle) { \
-			wallos_device_t* child_dev = create_device(dev_parent->interfaces, NAME); \
-			if (child_dev) { \
-				child_dev->parent = dev_parent; \
-				child_dev->driver_data = p_handle; \
-				child_dev->next_sibling = dev_parent->first_child; \
-				dev_parent->first_child = child_dev; \
-				register_device(child_dev); \
-				printf_serial("[WDM] Registered device %s.\r\n", NAME); \
-			} else { \
-				printf_serial("[WDM] Failed to create device node for %s.\r\n", NAME); \
-				WDM_Unregister(p_handle); \
-				kfree((void*)(NAME)); \
-			} \
-		} else { \
-			printf_serial("[WDM] Failed to register partition %s.\r\n", NAME); \
-			kfree((void*)(NAME)); \
-		} \
+	// Helper Macro for Device Tree Integration
+	// Inherits flags from parent
+#define REGISTER_PARTITION_NODE(NAME, START, LENGTH, META) do {                       \
+		WDM_DriveHandle p_handle = WDM_AddPartition(wdm_parent, START, LENGTH, META);     \
+			if (p_handle) {                                                               \
+				WDM_RegisterName(p_handle, NAME);                                         \
+				wallos_device_t* child_dev = create_device(dev_parent->interfaces, NAME); \
+				if (child_dev) {                                                          \
+					child_dev->parent = dev_parent;                                       \
+					child_dev->driver_data = p_handle;                                    \
+					child_dev->next_sibling = dev_parent->first_child;                    \
+					dev_parent->first_child = child_dev;                                  \
+					register_device(child_dev);                                           \
+				} else {                                                                  \
+					WDM_UnregisterName(p_handle);                                         \
+					WDM_Unregister(p_handle);                                             \
+				}                                                                         \
+			}                                                                             \
 	} while (0)
 
-	// Try GPT first
-	printf_serial("[WDM] Attempting GPT detection...\r\n");
-
+	// First we attempt the GPT
 	gpt_partition_table_t gpt_table;
 	memset(&gpt_table, 0, sizeof(gpt_table));
 
 	if (parse_gpt(wdm_parent, sector_buf, info.sector_size, &gpt_table, GPT_FLAGS_NONE) == GPT_NO_ERROR) {
-		printf_serial("[WDM] GPT detected.\r\n");
-
 		uint32_t validation = validate_gpt(&gpt_table);
-
 		if (validation == 0) {
-			printf_serial("[WDM] GPT validation succeeded (%u entries).\r\n",
-				gpt_table.num_entries);
-
 			uint32_t part_idx = 0;
-
 			for (uint32_t i = 0; i < gpt_table.num_entries; i++) {
 				if (gpt_table.entries[i].first_lba != 0 && gpt_table.entries[i].last_lba != 0) {
-					// We arbitrarily limit it to 64 characters.
-					// There's really no reason for this, just what I felt like and should fit cleanly with our allocator
-					char* part_name = kalloc(64);
-					if (!part_name) {
-						printf_serial("[WDM] Failed to allocate partition name buffer.\r\n");
-						continue;
-					}
-					snprintf(part_name, 64, "%sp%u", dev_parent->name, part_idx);
-
+					char part_name[64];
+					snprintf(part_name, sizeof(part_name), "%sp%u", dev_parent->name, part_idx);
 					uint64_t total_sectors = (gpt_table.entries[i].last_lba - gpt_table.entries[i].first_lba) + 1;
 
-					printf_serial("[WDM] GPT Partition %u: LBA %llu-%llu (%llu sectors)\r\n", part_idx, (unsigned long long)gpt_table.entries[i].first_lba, (unsigned long long)gpt_table.entries[i].last_lba, (unsigned long long)total_sectors);
-
+					// Extract Metadata
 					WDM_PartitionMeta meta;
 					memset(&meta, 0, sizeof(meta));
 					memcpy(meta.type_guid, gpt_table.entries[i].partition_type_guid, 16);
@@ -549,28 +528,18 @@ WDM_Status WDM_ScanAndRegisterPartitions(WDM_DriveHandle wdm_parent, struct wall
 					memcpy(meta.partition_name, gpt_table.entries[i].partition_name, sizeof(meta.partition_name));
 
 					REGISTER_PARTITION_NODE(part_name, gpt_table.entries[i].first_lba, total_sectors, &meta);
-
 					part_idx++;
 				}
 			}
-
-			printf_serial("[WDM] GPT scan complete (%u partitions).\r\n", part_idx);
-
 			kfree(gpt_table.entries);
 			kfree(sector_buf);
 			return WDM_OK;
 		} else {
-			printf_serial("[WDM] GPT validation failed (0x%08X). Not falling back to MBR.\r\n", validation);
-
 			if (gpt_table.entries) kfree(gpt_table.entries);
-
 			kfree(sector_buf);
-			return WDM_OK;
+			return WDM_OK; // Return here so we don't fall through to MBR
 		}
 	}
-
-	printf_serial("[WDM] No valid GPT found. Trying MBR...\r\n");
-
 	if (gpt_table.entries) kfree(gpt_table.entries);
 
 	// Fallback to MBR
@@ -580,33 +549,180 @@ WDM_Status WDM_ScanAndRegisterPartitions(WDM_DriveHandle wdm_parent, struct wall
 		parse_mbr(&mbr_table, sector_buf, info.sector_size);
 
 		uint32_t part_idx = 0;
-
 		for (int i = 0; i < 4; i++) {
-			if (mbr_table.partition_entries[i].partition_type != 0 &&
-				mbr_table.partition_entries[i].sector_count > 0) {
+			if (mbr_table.partition_entries[i].partition_type != 0 && mbr_table.partition_entries[i].sector_count > 0) {
+				char part_name[64];
+				snprintf(part_name, sizeof(part_name), "%sp%u", dev_parent->name, part_idx);
 
-				char* part_name = kalloc(64);
-				if (!part_name) {
-					printf_serial("[WDM] Failed to allocate partition name buffer.\r\n");
-					continue;
-				}
-				snprintf(part_name, 64, "%sp%u", dev_parent->name, part_idx);
-
-				printf_serial("[WDM] MBR Partition %u: Type=0x%02X LBA=%u Size=%u sectors\r\n", part_idx, mbr_table.partition_entries[i].partition_type, mbr_table.partition_entries[i].lba_start, mbr_table.partition_entries[i].sector_count);
-
+				// Pass NULL for MBR metadata
 				REGISTER_PARTITION_NODE(part_name, mbr_table.partition_entries[i].lba_start, mbr_table.partition_entries[i].sector_count, NULL);
-
 				part_idx++;
 			}
 		}
-
-		printf_serial("[WDM] MBR scan complete (%u partitions).\r\n", part_idx);
-
 		kfree(sector_buf);
 		return WDM_OK;
 	}
 
-	printf_serial("[WDM] Failed to read MBR sector.\r\n");
+	kfree(sector_buf);
+	return WDM_ERR_NOT_FOUND;
+}
+
+WDM_Status WDM_EnumeratePartitions(WDM_DriveHandle parent, WDM_DriveHandle* handles, uint32_t max, uint32_t* total) {
+	if (!wdm_initialized) {
+		return WDM_ERR_IO;
+	}
+	if (!parent) {
+		return WDM_ERR_INVALID;
+	}
+
+	uint32_t count = 0;
+
+	for (int i = 0; i < WDM_MAX_DRIVES; i++) {
+		// Find active drives that explicitly list 'parent' as their parent
+		if (wdm_drives[i].active && wdm_drives[i].parent == parent) {
+			if (handles && count < max) {
+				handles[count] = &wdm_drives[i];
+			}
+			count++;
+		}
+	}
+
+	if (total) {
+		*total = count;
+	}
+
+	return WDM_OK;
+}
+
+WDM_Status WDM_RegisterName(WDM_DriveHandle handle, const char* name) {
+	if (!validate_handle(handle)) {
+		return WDM_ERR_INVALID;
+	}
+
+	if (strlen(name) == 0) return WDM_OK; // technically an empty name isn't a problem
+	if (strlen(handle->name) != 0) return WDM_ERR_ALREADY_EXISTS; // already has a name attached
+
+	if (!validate_handle_name(name)) return WDM_ERR_ALREADY_EXISTS;
+
+	strncpy(handle->name, name, 32);
+	handle->name[32] = '\0';
+
+	return WDM_OK;
+}
+
+WDM_Status WDM_UnregisterName(WDM_DriveHandle handle) {
+	if (!validate_handle(handle)) {
+		return WDM_ERR_INVALID;
+	}
+
+	memset(handle->name, 0, 32);
+	return WDM_OK;
+}
+
+WDM_DriveHandle WDM_GetDriveFromName(const char* name) {
+	if (strlen(name) == 0) return NULL;
+
+	for (int i = 0; i < WDM_MAX_DRIVES; i++) {
+		if (wdm_drives[i].active && strncmp(wdm_drives[i].name, name, 32) == 0) return &wdm_drives[i];
+	}
+
+	return NULL;
+}
+
+WDM_Status WDM_GetNameFromDrive(WDM_DriveHandle handle, char* name_out, uint8_t len) {
+	if (!validate_handle(handle)) {
+		return WDM_ERR_INVALID;
+	}
+
+	if (name_out == NULL) {
+		return WDM_ERR_INVALID;
+	}
+
+	size_t name_len = strlen(handle->name);
+
+	// Include space for the terminating NUL
+	if (len < (name_len + 1)) {
+		return WDM_ERR_OVERFLOW;
+	}
+
+	strcpy(name_out, handle->name);
+
+	return WDM_OK;
+}
+
+WDM_Status WDM_RescanPartitions(WDM_DriveHandle wdm_parent, struct wallos_device* dev_parent) {
+	if (!wdm_parent || !dev_parent) return WDM_ERR_INVALID;
+
+	WDM_DriveInfo info;
+	if (WDM_GetInfo(wdm_parent, &info) != WDM_OK) return WDM_ERR_INVALID;
+
+	uint8_t* sector_buf = kalloc(info.sector_size);
+	if (!sector_buf) return WDM_ERR_BUSY;
+
+	// First we attempt the GPT
+	gpt_partition_table_t gpt_table;
+	memset(&gpt_table, 0, sizeof(gpt_table));
+
+	if (parse_gpt(wdm_parent, sector_buf, info.sector_size, &gpt_table, GPT_FLAGS_NONE) == GPT_NO_ERROR) {
+		uint32_t validation = validate_gpt(&gpt_table);
+		if (validation == 0) {
+			uint32_t part_idx = 0;
+			for (uint32_t i = 0; i < gpt_table.num_entries; i++) {
+				if (gpt_table.entries[i].first_lba != 0 && gpt_table.entries[i].last_lba != 0) {
+					char part_name[64];
+					snprintf(part_name, sizeof(part_name), "%sp%u", dev_parent->name, part_idx);
+
+					// Only register if it hasn't been scanned/added previously
+					if (WDM_GetDriveFromName(part_name) == NULL) {
+						uint64_t total_sectors = (gpt_table.entries[i].last_lba - gpt_table.entries[i].first_lba) + 1;
+
+						// Extract Metadata
+						WDM_PartitionMeta meta;
+						memset(&meta, 0, sizeof(meta));
+						memcpy(meta.type_guid, gpt_table.entries[i].partition_type_guid, 16);
+						memcpy(meta.unique_guid, gpt_table.entries[i].unique_partition_guid, 16);
+						meta.attributes = gpt_table.entries[i].attributes;
+						memcpy(meta.partition_name, gpt_table.entries[i].partition_name, sizeof(meta.partition_name));
+
+						REGISTER_PARTITION_NODE(part_name, gpt_table.entries[i].first_lba, total_sectors, &meta);
+					}
+					part_idx++;
+				}
+			}
+			kfree(gpt_table.entries);
+			kfree(sector_buf);
+			return WDM_OK;
+		} else {
+			if (gpt_table.entries) kfree(gpt_table.entries);
+			kfree(sector_buf);
+			return WDM_OK; // Return here so we don't fall through to MBR
+		}
+	}
+	if (gpt_table.entries) kfree(gpt_table.entries);
+
+	// Fallback to MBR
+	if (WDM_Read(wdm_parent, 0, 1, sector_buf, WDM_FLAG_NONE) == WDM_OK) {
+		mbr_partition_table_t mbr_table;
+		memset(&mbr_table, 0, sizeof(mbr_table));
+		parse_mbr(&mbr_table, sector_buf, info.sector_size);
+
+		uint32_t part_idx = 0;
+		for (int i = 0; i < 4; i++) {
+			if (mbr_table.partition_entries[i].partition_type != 0 && mbr_table.partition_entries[i].sector_count > 0) {
+				char part_name[64];
+				snprintf(part_name, sizeof(part_name), "%sp%u", dev_parent->name, part_idx);
+
+				// Only register if it hasn't been scanned/added previously
+				if (WDM_GetDriveFromName(part_name) == NULL) {
+					// Pass NULL for MBR metadata
+					REGISTER_PARTITION_NODE(part_name, mbr_table.partition_entries[i].lba_start, mbr_table.partition_entries[i].sector_count, NULL);
+				}
+				part_idx++;
+			}
+		}
+		kfree(sector_buf);
+		return WDM_OK;
+	}
 
 	kfree(sector_buf);
 	return WDM_ERR_NOT_FOUND;

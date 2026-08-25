@@ -9,8 +9,8 @@ ACPICA_LIB 			= -lacpica
 UACPI_INCLUDE_DIR = -I"$(CURDIR)/libs/uacpi/include"
 UACPI_LIB = -luacpi
 
-FATFS_INCLUDE_DIR  = -I"$(CURDIR)/libs/FatFs/source"
-FATFS_LIB 			= -lfatfs
+# FATFS_INCLUDE_DIR  = -I"$(CURDIR)/libs/FatFs/source"
+# FATFS_LIB 			= -lfatfs
 
 APOLLO_INCLUDE_DIR  = -I"$(CURDIR)/libs/apollo/include"
 APOLLO_LIB 			= -lapollo

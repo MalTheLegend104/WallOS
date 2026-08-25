@@ -35,3 +35,26 @@ int memcmp(const void* s1, const void* s2, size_t n) {
 	}
 	return 0;
 }
+
+int strcasecmp(const char* s1, const char* s2) {
+	const unsigned char* p1 = (const unsigned char*) s1;
+	const unsigned char* p2 = (const unsigned char*) s2;
+	int c1, c2;
+
+	do {
+		c1 = *p1++;
+		c2 = *p2++;
+
+		/* Convert uppercase to lowercase using ASCII offset */
+		if (c1 >= 'A' && c1 <= 'Z') {
+			c1 += ('a' - 'A'); // +32
+		}
+		if (c2 >= 'A' && c2 <= 'Z') {
+			c2 += ('a' - 'A'); // +32
+		}
+
+		/* If we reached the end of the strings, or characters differ */
+	} while (c1 == c2 && c1 != '\0');
+
+	return c1 - c2;
+}

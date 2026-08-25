@@ -32,7 +32,7 @@
 #include <terminal/terminal.h>
 #include <terminal/commands/system_commands.h>
 
-#include <ff.h>
+// #include <ff.h>
 
 
 /* Okay, this is where the fun begins. Literally and figuratively.
@@ -223,7 +223,6 @@ void keyboard_debug() {
 #include <filesystem/wdm.h>
 #include <filesystem/initrd.h>
 #include <filesystem/vfs.h>
-#include <filesystem/fatfs_vfs.h>
 #include <klibc/internal_calls.h>
 #include <klibc/kernel_rng.h>
 #include <drivers/usb/hosts/xhci.h>
@@ -365,7 +364,7 @@ void kernel_main(unsigned int magic, multiboot_info* mbt_info) {
 	detect_ide_drives();
 	// TODO: I commented this out because initializing a specific drive on one of my test PCs takes FOREVER
 	// Need to re-enable this when done with AHCI
-	// ahci_register_driver();
+	ahci_register_driver();
 
 	WDM_Init();
 	WDM_DriveHandle initrd = initrd_wdm_init(INITRD_FLAG_NONE);
@@ -373,7 +372,8 @@ void kernel_main(unsigned int magic, multiboot_info* mbt_info) {
 	// mount_drive(0, initrd); // pdrv 0, same as before
 	// fatfs_vfs_ctx_t* ctx = fatfs_vfs_alloc_ctx(initrd, 9);
 	// VFS_Mount("/initrd", initrd, &fatfs_vfs_ops, ctx);
-
+	// TODO: This needs to be made to NOT be FAT12
+	// Or I need a VFS layer for FAT12/16
 	mount_drive("/initrd", initrd, 0);
 
 	// register_usb_controller_drivers();

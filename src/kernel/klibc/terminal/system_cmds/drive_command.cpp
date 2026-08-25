@@ -5,10 +5,13 @@
 
 #include <filesystem/wdm.h>
 #include <filesystem/vfs.h>
-#include <filesystem/fatfs_vfs.h>
+#include <filesystem/fat/fat.h>
+#include <filesystem/fat/fat32_vfs.h>
+
 
 #include <system/timer.h>
 #include <klibc/kprint.h>
+
 
 /*
  * Tracks every VFS_Mount() call made through this command layer.
@@ -20,8 +23,8 @@
 typedef struct {
 	bool             active;
 	char             vfs_path[VFS_PATH_MAX]; /**< Mount point, e.g. "/"        */
-	fatfs_vfs_ctx_t* ctx;                    /**< Binding-layer context        */
-	BYTE             pdrv;                   /**< FatFs pdrv (for ls/tree)     */
+	vfs_fat32_ctx_t* ctx;                    /**< Binding-layer context        */
+	// uint8_t          pdrv;                   /**< FatFs pdrv (for ls/tree)     */
 } mount_entry_t;
 
 static mount_entry_t mount_table[CMD_MOUNT_MAX];
@@ -29,8 +32,7 @@ static mount_entry_t mount_table[CMD_MOUNT_MAX];
 /** Find a mount entry by VFS path, or NULL. */
 mount_entry_t* find_mount(const char* vfs_path) {
 	for (int i = 0; i < CMD_MOUNT_MAX; i++) {
-		if (mount_table[i].active &&
-			strcmp(mount_table[i].vfs_path, vfs_path) == 0)
+		if (mount_table[i].active && strcmp(mount_table[i].vfs_path, vfs_path) == 0)
 			return &mount_table[i];
 	}
 	return NULL;
@@ -154,7 +156,8 @@ int drive_info_cmd(int argc, char** argv) {
 			printf("Mounted Volumes:\n");
 			any = true;
 		}
-		printf("  pdrv %u -> %s\n", (unsigned) mount_table[i].pdrv, mount_table[i].vfs_path);
+		// printf("  pdrv %u -> %s\n", (unsigned) mount_table[i].pdrv, mount_table[i].vfs_path);
+		printf("\t%s\n", mount_table[i].vfs_path);
 	}
 	if (!any) printf("No volumes currently mounted.\n");
 
@@ -191,14 +194,9 @@ int drive_mount_cmd(int argc, char** argv) {
 
 	const char* vfs_path = argv[1];
 	int         wdm_idx = argv[2][0] - '0';
-	int         pdrv = (argc >= 4) ? (argv[3][0] - '0') : wdm_idx;
 
 	if (strlen(vfs_path) >= VFS_PATH_MAX) {
 		printf("Error: mount path too long.\n");
-		return 0;
-	}
-	if (pdrv < 0 || pdrv >= FF_VOLUMES) {
-		printf("Error: pdrv must be 0-%d.\n", FF_VOLUMES - 1);
 		return 0;
 	}
 	if (find_mount(vfs_path)) {
@@ -219,9 +217,9 @@ int drive_mount_cmd(int argc, char** argv) {
 	WDM_DriveHandle h = handles[wdm_idx];
 
 	/* Allocate the fatfs binding. */
-	fatfs_vfs_ctx_t* ctx = fatfs_vfs_alloc_ctx(h, (BYTE) pdrv);
+	vfs_fat32_ctx_t* ctx = vfs_fat32_alloc();
 	if (!ctx) {
-		printf("Error: failed to allocate FatFs context for pdrv %d.\n", pdrv);
+		printf("Error: failed to allocate FAT32 context.\n");
 		return 0;
 	}
 
@@ -229,22 +227,21 @@ int drive_mount_cmd(int argc, char** argv) {
 	mount_entry_t* slot = alloc_mount_slot();
 	if (!slot) {
 		printf("Error: local mount table full.\n");
-		fatfs_vfs_free_ctx(ctx);
+		vfs_fat32_free(ctx);
 		return 0;
 	}
 
-	printf("Mounting drive %d at '%s'...\n", wdm_idx, vfs_path, pdrv);
+	printf("Mounting drive %d at '%s'...\n", wdm_idx, vfs_path);
 
-	VFS_Status st = VFS_Mount(vfs_path, h, &fatfs_vfs_ops, ctx);
+	VFS_Status st = VFS_Mount(vfs_path, h, &vfs_fat32_ops, ctx);
 	if (st != VFS_OK) {
 		printf("Error: VFS_Mount failed: %s\n", vfs_strerror(st));
-		fatfs_vfs_free_ctx(ctx);
+		vfs_fat32_free(ctx);
 		return 0;
 	}
 
 	slot->active = true;
 	slot->ctx = ctx;
-	slot->pdrv = (BYTE) pdrv;
 	strncpy(slot->vfs_path, vfs_path, VFS_PATH_MAX - 1);
 	slot->vfs_path[VFS_PATH_MAX - 1] = '\0';
 
@@ -273,7 +270,7 @@ int drive_unmount_cmd(int argc, char** argv) {
 		return 0;
 	}
 
-	fatfs_vfs_free_ctx(slot->ctx);
+	vfs_fat32_free(slot->ctx);
 	slot->active = false;
 	slot->ctx = NULL;
 
@@ -289,32 +286,30 @@ int drive_unmount_cmd(int argc, char** argv) {
  *
  * @param vfs_path  Absolute VFS mount point (e.g. "/").
  * @param handle    Live WDM_DriveHandle for the underlying device.
- * @param pdrv      FatFs physical drive slot to use (0 ... FF_VOLUMES-1).
+ * @param pdrv      FatFs physical drive slot to use (0 ... VFS_FAT32_OPEN_MAX-1).
  *
  * @return true on success, false on any failure.
  */
+
 bool mount_drive(const char* vfs_path, WDM_DriveHandle handle, int pdrv) {
-	if (!vfs_path || !handle || pdrv < 0 || pdrv >= FF_VOLUMES) return false;
-	if (find_mount(vfs_path)) return true;
-
-	fatfs_vfs_ctx_t* ctx = fatfs_vfs_alloc_ctx(handle, (BYTE) pdrv);
-	if (!ctx) return false;
-
+	(void) pdrv; // TODO: remove this
 	mount_entry_t* slot = alloc_mount_slot();
-	if (!slot) {
-		fatfs_vfs_free_ctx(ctx);
+	vfs_fat32_ctx_t* ctx = vfs_fat32_alloc();
+
+	if (!ctx) {
+		printf("NO CONTEXT!\n");
 		return false;
 	}
 
-	VFS_Status st = VFS_Mount(vfs_path, handle, &fatfs_vfs_ops, ctx);
+	VFS_Status st = VFS_Mount(vfs_path, handle, &vfs_fat32_ops, ctx);
 	if (st != VFS_OK) {
-		fatfs_vfs_free_ctx(ctx);
+		printf("VFS_Status: %d!\n", st);
+		vfs_fat32_free(ctx);
 		return false;
 	}
 
-	slot->active = true;
 	slot->ctx = ctx;
-	slot->pdrv = (BYTE) pdrv;
+	slot->active = true;
 	strncpy(slot->vfs_path, vfs_path, VFS_PATH_MAX - 1);
 	slot->vfs_path[VFS_PATH_MAX - 1] = '\0';
 	return true;
@@ -652,7 +647,7 @@ int drive_command(int argc, char** argv) {
 	const char* sub = sub_argv[0];
 
 	if (strcmp(sub, "info") == 0) return drive_info_cmd(sub_argc, sub_argv);
-	else if (strcmp(sub, "test") == 0) return drive_test_cmd(sub_argc, sub_argv);
+	if (strcmp(sub, "test") == 0) return drive_test_cmd(sub_argc, sub_argv);
 	else if (strcmp(sub, "mount") == 0) return drive_mount_cmd(sub_argc, sub_argv);
 	else if (strcmp(sub, "unmount") == 0) return drive_unmount_cmd(sub_argc, sub_argv);
 	else if (strcmp(sub, "ls") == 0) return drive_ls_cmd(sub_argc, sub_argv);

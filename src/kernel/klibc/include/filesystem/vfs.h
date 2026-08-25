@@ -41,7 +41,7 @@ extern "C" {
 	// ------------------------------------------------------------------------------------------------
 	// Basic types
 	//
-	// NOTE: Some of this may seem weird (like VFS_FD being an int). Almost everything "weird" was 
+	// NOTE: Some of this may seem weird (like VFS_FD being an int). Almost everything "weird" was
 	//       done in an attempt to make POSIX compliance easier.
 	// ------------------------------------------------------------------------------------------------
 	// ------------------------------------------------------------------------------------------------
@@ -310,6 +310,7 @@ extern "C" {
 	 * @retval VFS_ERR_TOOLONG  if @p path exceeds VFS_PATH_MAX.
 	 * @retval VFS_ERR_MNTFULL  if VFS_MOUNT_MAX entries are already registered.
 	 * @retval VFS_ERR_IO       if @p ops->on_mount() returns non-OK.
+	 * @retval VFS_ERR_BUSY     if the mount point @p path is already used.
 	 */
 	VFS_Status VFS_Mount(
 		const char* path,

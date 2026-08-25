@@ -37,6 +37,7 @@ extern "C" {
 		WDM_ERR_OVERFLOW = -9,     /**< LBA + sector count exceeds drive end */
 		WDM_ERR_UNSUPPORTED = -10, /**< Operation not supported by driver    */
 		WDM_ERR_DMA = -11,         /**< DMA mapping or transfer failure      */
+		WDM_ERR_ALREADY_EXISTS = -12, /**< Something already exists          */
 	} WDM_Status;
 
 	/** Flags passed to read/write operations. */
@@ -376,6 +377,50 @@ extern "C" {
 	WDM_Status WDM_Unregister(WDM_DriveHandle handle);
 
 	/**
+	 * @brief Register a name to the given drive.
+	 * This name is copied into an internal structure, and will be destroyed on WDM_UnregisterName() or WDM_Unregister() on the drive.
+	 *
+	 * @param handle Handle of the drive to name.
+	 * @param name String of the drive name. Anything over 32 length will be truncated.
+	 * @retval WDM_OK on sucess
+	 * @retval WDM_ERR_NOT_FOUND if handle is not found
+	 * @retval WDM_ERR_ALREADY_EXISTS if name is already attached to another drive, or this drive already has a name
+	 */
+	WDM_Status WDM_RegisterName(WDM_DriveHandle handle, const char* name);
+
+	/**
+	 * @brief Unregister the name for the provided handle.
+	 * This function will return OK even there was no name associated with the drive.
+	 *
+	 * @param handle handle to remove the registered name from
+	 * @retavl WDM_OK on success
+	 * @retval WDM_ERR_INVALID if handle is invalid
+	 */
+	WDM_Status WDM_UnregisterName(WDM_DriveHandle handle);
+
+	/**
+	 * @brief Get the drive with the given name.
+	 *
+	 * @param name Name of the drive you want to retrieve
+	 * @return handle of the drive if found, NULL otherwise
+	 */
+	WDM_DriveHandle WDM_GetDriveFromName(const char* name);
+
+	/**
+	 * @brief Copies the name of the given drive into the output buffer, if the drive exists and there is a name associated with it.
+	 *
+	 * WDM stores drive names of at most 32 characters long.
+	 *
+	 * @param handle Drive to get the name of
+	 * @param name_out Provided string to copy the name into
+	 * @param len Length of the provided buffer
+	 * @retval WDM_OK if successfully copied.
+	 * @retval WDM_ERR_INVALID if handle is invalid
+	 * @retval WDM_ERR_OVERFLOW if buffer is not large enough to get the entire name
+	 */
+	WDM_Status WDM_GetNameFromDrive(WDM_DriveHandle handle, char* name_out, uint8_t len);
+
+	/**
 	 * @brief List all currently registered drive handles
 	 *
 	 * Fills `handles` with up to `max` entries and stores the total registered count in `*total` (even if it exceeds `max`).
@@ -494,9 +539,6 @@ extern "C" {
 	);
 #endif
 
-// TODO: This should probably be in it's own ifdef
-// I kinda plan on making WDM an open source module on it's own, I think it could be useful in embedded contexts
-
 	typedef struct {
 		uint8_t  type_guid[16];
 		uint8_t  unique_guid[16];
@@ -549,6 +591,16 @@ extern "C" {
 	struct wallos_device;
 
 	/**
+	 * Scans the parent drive for MBR/GPT partition entries, and mounts any new ones that are not already registered.
+	 *
+	 * @param wdm_parent Parent drive to scan
+	 * @param dev_parent Parent device
+	 * @retval WDM_ERR_INVALID if parameters are null
+	 * @retval WDM_OK on success
+	 */
+	WDM_Status WDM_RescanPartitions(WDM_DriveHandle wdm_parent, struct wallos_device* dev_parent);
+
+	/**
 	 * Scans the parent drive for MBR/GPT partition entries, and mounts them if they exist.
 	 * It will also register them with the device registry, as children of the provided parent.
 	 *
@@ -558,6 +610,30 @@ extern "C" {
 	 * @retval
 	 */
 	WDM_Status WDM_ScanAndRegisterPartitions(WDM_DriveHandle wdm_parent, struct wallos_device* dev_parent);
+
+	// This needs to be given more thought. This is really left up to the individual drivers.
+	// Maybe we add a field to DeviceInfo relating it to a device
+	// WDM_DriveHandle WDM_GetDriveByDevice(struct wallos_device* dev);
+
+	/**
+	 * @brief List all logical partitions registered under a parent drive.
+	 *
+	 * Fills `handles` with up to `max` entries and stores the total partition count in `*total` (even if it exceeds `max`).
+	 * Pass `handles = NULL`  and `max = 0` to query the count only.
+	 *
+	 * @param parent  The parent drive handle (e.g., the physical disk).
+	 * @param handles output array of partition handles (or NULL)
+	 * @param max     maximum number of entries to fill
+	 * @param total   receives total partition count
+	 * @retval WDM_OK on success
+	 * @retval WDM_ERR_INVALID if parent is invalid
+	 */
+	WDM_Status WDM_EnumeratePartitions(
+		WDM_DriveHandle  parent,
+		WDM_DriveHandle* handles,
+		uint32_t         max,
+		uint32_t* total
+	);
 
 #ifdef __cplusplus
 }
