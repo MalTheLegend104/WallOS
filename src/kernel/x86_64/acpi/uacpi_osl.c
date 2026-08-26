@@ -555,10 +555,12 @@ uacpi_u64 uacpi_kernel_get_nanoseconds_since_boot(void) {
  * Spin for N microseconds.
  */
 void uacpi_kernel_stall(uacpi_u8 usec) {
-	// printf_serial("[UACPI] uacpi_kernel_stall(%u) called\r\n", usec);
-	// printf_color(PRINT_COLOR_LIGHT_GREY, PRINT_DEFAULT_BG, "[UACPI] uacpi_kernel_stall(%u) called\n", usec);
-	uacpi_failure(__func__);
-	// return UACPI_STATUS_UNIMPLEMENTED;
+	uint64_t start_ns = timer_uptime_no_interrupts();
+	uint64_t wait_ns = (uint64_t) usec * 1000ull;
+
+	while ((timer_uptime_no_interrupts() - start_ns) < wait_ns) {
+		__asm__ volatile ("pause");
+	}
 }
 /*
  * Sleep for N milliseconds.
@@ -717,6 +719,10 @@ uacpi_status uacpi_kernel_install_interrupt_handler(uacpi_u32 irq, uacpi_interru
 
 	// Enable the IRQ in the PIC
 	irq_enable(irq);
+
+	if (irq == 9) {
+		irq_set_level_triggered(9);
+	}
 
 	// Return the slot index as the handle
 	*out_irq_handle = (uacpi_handle) (uintptr_t) slot;

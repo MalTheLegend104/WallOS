@@ -111,14 +111,49 @@ ACPI_STATUS AcpiOsReadPort(ACPI_IO_ADDRESS Address, UINT32* Value, UINT32 Width)
 	return AE_OK;
 }
 
-ACPI_STATUS AcpiOsWriteMemory(ACPI_PHYSICAL_ADDRESS address, UINT64 value, UINT32 width) {
-	acpica_failure(__func__);
-	return 0;
+ACPI_STATUS AcpiOsReadMemory(ACPI_PHYSICAL_ADDRESS address, UINT64* value, UINT32 width) {
+	if (!value) {
+		return AE_BAD_PARAMETER;
+	}
+
+	// Reuse AcpiOsMapMemory's logic
+	// handles the "already mapped" identity case and the oversized-request check for us too.
+	void* virt = AcpiOsMapMemory(address, width / 8);
+	if (!virt) {
+		return AE_NO_MEMORY;
+	}
+
+	switch (width) {
+		case 8:  *value = *(volatile UINT8*) virt; break;
+		case 16: *value = *(volatile UINT16*) virt; break;
+		case 32: *value = *(volatile UINT32*) virt; break;
+		case 64: *value = *(volatile UINT64*) virt; break;
+		default:
+			return AE_BAD_PARAMETER;
+	}
+
+	printf_serial("[ACPICA] ACPI_MEM: Read 0x%llx from Addr 0x%llx (width %u)\r\n", *value, (uint64_t) address, width);
+
+	return AE_OK;
 }
 
-ACPI_STATUS AcpiOsReadMemory(ACPI_PHYSICAL_ADDRESS address, UINT64* value, UINT32 width) {
-	acpica_failure(__func__);
-	return 0;
+ACPI_STATUS AcpiOsWriteMemory(ACPI_PHYSICAL_ADDRESS address, UINT64 value, UINT32 width) {
+	void* virt = AcpiOsMapMemory(address, width / 8);
+	if (!virt) {
+		return AE_NO_MEMORY;
+	}
+
+	switch (width) {
+		case 8:  *(volatile UINT8*) virt = (UINT8) value; break;
+		case 16: *(volatile UINT16*) virt = (UINT16) value; break;
+		case 32: *(volatile UINT32*) virt = (UINT32) value; break;
+		case 64: *(volatile UINT64*) virt = value; break;
+		default: return AE_BAD_PARAMETER;
+	}
+
+	printf_serial("[ACPICA] ACPI_MEM: Write 0x%llx to Addr 0x%llx (width %u)\r\n", value, (uint64_t) address, width);
+
+	return AE_OK;
 }
 
 #include <drivers/pci.h>
@@ -242,28 +277,123 @@ ACPI_STATUS AcpiOsTableOverride(ACPI_TABLE_HEADER* ExistingTable, ACPI_TABLE_HEA
 }
 
 // Memory
+
+/* This is designed to match the uACPI OSL for this.
+ * I've found that ACPICA has at least O(n^2) calls to this based on how many tables there are.
+ * Because I wasn't de-allocating the virtual pages, ACPICA was essentially trying to map ~1.5GB of virtual kernel pages, which is space we didn't have.
+ */
+#define ACPI_MAP_PAGE_SIZE  PAGE_2MB_SIZE
+#define ACPI_MAP_PAGE_MASK  (~(ACPI_PHYSICAL_ADDRESS)(ACPI_MAP_PAGE_SIZE - 1))
+
+// This should be more than plenty
+#define ACPI_MAP_CACHE_SLOTS 1024
+
+typedef struct {
+	ACPI_PHYSICAL_ADDRESS phys_base; // page-aligned base physical address
+	ACPI_SIZE mapped_len; // page-aligned total length passed to the VMM
+	void* virt_base; // what mapKernelLocation returned
+	uint32_t refcount; // how many live AcpiOsMapMemory calls reference this
+} acpi_map_cache_entry_t;
+
+static acpi_map_cache_entry_t _acpi_map_cache[ACPI_MAP_CACHE_SLOTS];
+static uint32_t _acpi_map_cache_used = 0;
+
+// Same mixing function as the uACPI OSL's cache
+static inline uint32_t _acpi_map_hash(ACPI_PHYSICAL_ADDRESS phys_base, ACPI_SIZE mapped_len) {
+	uint64_t v = (uint64_t) phys_base ^ ((uint64_t) mapped_len << 32);
+	v ^= v >> 33;
+	v *= 0xff51afd7ed558ccdULL;
+	v ^= v >> 33;
+	return (uint32_t) (v & (ACPI_MAP_CACHE_SLOTS - 1));
+}
+
+// Returns the cache slot for (phys_base, mapped_len), or -1 if not found
+static int _acpi_map_cache_find(ACPI_PHYSICAL_ADDRESS phys_base, ACPI_SIZE mapped_len) {
+	uint32_t slot = _acpi_map_hash(phys_base, mapped_len);
+	for (uint32_t i = 0; i < ACPI_MAP_CACHE_SLOTS; i++) {
+		uint32_t idx = (slot + i) & (ACPI_MAP_CACHE_SLOTS - 1);
+		acpi_map_cache_entry_t* e = &_acpi_map_cache[idx];
+		if (!e->virt_base) return -1;  // empty slot => not present
+		if (e->phys_base == phys_base && e->mapped_len == mapped_len) return (int) idx;
+	}
+	return -1;
+}
+
+static int _acpi_map_cache_insert(ACPI_PHYSICAL_ADDRESS phys_base, ACPI_SIZE mapped_len, void* virt_base) {
+	if (_acpi_map_cache_used >= ACPI_MAP_CACHE_SLOTS) {
+		printf_serial("[ACPICA][MAP_CACHE] WARNING: cache full (%u slots), cannot insert phys=0x%llx\r\n",
+			ACPI_MAP_CACHE_SLOTS, (uint64_t) phys_base);
+		return -1;
+	}
+	uint32_t slot = _acpi_map_hash(phys_base, mapped_len);
+	for (uint32_t i = 0; i < ACPI_MAP_CACHE_SLOTS; i++) {
+		uint32_t idx = (slot + i) & (ACPI_MAP_CACHE_SLOTS - 1);
+		if (!_acpi_map_cache[idx].virt_base) {
+			_acpi_map_cache[idx].phys_base = phys_base;
+			_acpi_map_cache[idx].mapped_len = mapped_len;
+			_acpi_map_cache[idx].virt_base = virt_base;
+			_acpi_map_cache[idx].refcount = 1;
+			_acpi_map_cache_used++;
+			return (int) idx;
+		}
+	}
+	return -1;
+}
+
 void* AcpiOsMapMemory(ACPI_PHYSICAL_ADDRESS PhysicalAddress, ACPI_SIZE Length) {
 	if (PhysicalAddress >= KERNEL_VIRTUAL_BASE) return (void*) PhysicalAddress; // It's already mapped.
 
+	// Compute the true page-aligned region we need the VMM to map.
+	ACPI_PHYSICAL_ADDRESS page_offset = PhysicalAddress & (ACPI_MAP_PAGE_SIZE - 1);
+	ACPI_PHYSICAL_ADDRESS phys_base = PhysicalAddress & ACPI_MAP_PAGE_MASK;
+	ACPI_SIZE aligned_len = (Length + page_offset + ACPI_MAP_PAGE_SIZE - 1) & ACPI_MAP_PAGE_MASK;
+
+	// Cache lookup
+	int idx = _acpi_map_cache_find(phys_base, aligned_len);
+	if (idx >= 0) {
+		_acpi_map_cache[idx].refcount++;
+		return (void*) ((uintptr_t) _acpi_map_cache[idx].virt_base + page_offset);
+	}
+
 	// Arbitrary Cutoff, 256 continuous MB.
-	if (Length > 0x200000 * 128) {
+	if (aligned_len > 0x200000 * 128) {
 		// Map only the requested location, get the table header, return 0.
 		char* magic = (char*) mapKernelLocation(PhysicalAddress, 0x24);
 		acpi_logger(WARN, "Very long memory map request. \n\t\tTarget Signature: \"%c%c%c%c\"\n", magic[0], magic[1], magic[2], magic[3]);
 		return 0;
 	}
 
-	void* ret = (void*) mapKernelLocation(PhysicalAddress, Length);
+	// Cache miss.
+	void* virt_base = (void*) mapKernelLocation(phys_base, aligned_len);
+	if (!virt_base) {
+		return 0;
+	}
 
-	// printf_serial("\r\nMAP REQUEST:\r\n\tRequest PHYS: 0x%llx\r\n\tRequest LEN:  0x%llx\r\n\tMapped Return: 0x%llx\r\n", PhysicalAddress, Length, ret);
-	// printf("\nMAP REQUEST:\n\tRequest PHYS: 0x%llx\n\tRequest LEN:  0x%llx\n\tMapped Return: 0x%llx\n", PhysicalAddress, Length, ret);
+	_acpi_map_cache_insert(phys_base, aligned_len, virt_base);
 
-	return ret;
+	return (void*) ((uintptr_t) virt_base + page_offset);
 }
 
 void AcpiOsUnmapMemory(void* where, ACPI_SIZE length) {
-	// I dont really care about unmapping right now. 
-	// printf_serial("UNMAP:\r\n\tMem Addr: 0x%llx\r\n\tLen: 0x%llx\r\n", where, length);
+	if ((uintptr_t) where >= KERNEL_VIRTUAL_BASE) return;  // identity-mapped, nothing to do
+
+	// We don't have the original physical address here, so we match on virt.
+	ACPI_SIZE page_offset = (uintptr_t) where & (ACPI_MAP_PAGE_SIZE - 1);
+	void* virt_base = (void*) ((uintptr_t) where & ACPI_MAP_PAGE_MASK);
+	ACPI_SIZE aligned_len = (length + page_offset + ACPI_MAP_PAGE_SIZE - 1) & ACPI_MAP_PAGE_MASK;
+
+	for (uint32_t i = 0; i < ACPI_MAP_CACHE_SLOTS; i++) {
+		acpi_map_cache_entry_t* e = &_acpi_map_cache[i];
+		if (!e->virt_base) continue;
+		if (e->virt_base == virt_base && e->mapped_len == aligned_len) {
+			if (e->refcount > 0) e->refcount--;
+			// Even with refcount 0, there's a very high chance ACPICA will want to remap the same location
+			return;
+		}
+	}
+	// Not found in cache
+	// This is basically a no-op. 
+	// I really need to rewrite the damn VMM
 }
 
 ACPI_STATUS AcpiOsGetPhysicalAddress(void* LogicalAddress, ACPI_PHYSICAL_ADDRESS* PhysicalAddress) {

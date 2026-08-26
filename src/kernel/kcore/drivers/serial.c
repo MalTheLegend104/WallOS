@@ -370,6 +370,8 @@ void serial_irq_handler(struct interrupt_frame* frame) {
 // it does not re-initialise baud rate, FIFO, or loopback settings.
 // ---------------------------------------------------------------------------
 void setup_serial_interrupts() {
+	if (active_ports[0].present != true) return;
+
 	cpu_disable_interrupts();
 	// IRQ 4 -> IDT vector 0x24 (PIC master offset 0x20 + IRQ 4)
 	add_interrupt_handler(0x24, (void*) serial_irq_handler, 0, 0x8E);
@@ -910,6 +912,7 @@ int printf_serial(const char* restrict format, ...) {
 }
 
 int vprintf_serial(const char* restrict format, va_list list) {
+	if (active_ports[0].present == false) return 0;
 	const char* current = format;
 	size_t written = 0;
 
