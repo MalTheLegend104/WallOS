@@ -14,6 +14,13 @@
 // I don't really want to throw around ifdef __X86_64__ or other flags like that, but do want a common interface
 #define WALLOS_ARCH_X86_64
 
+/* Detect native CPU byte order. */
+#if defined(__BYTE_ORDER__) && defined(__ORDER_BIG_ENDIAN__) && (__BYTE_ORDER__ == __ORDER_BIG_ENDIAN__)
+#define WALLOS_BIG_ENDIAN 1
+#else
+#define WALLOS_BIG_ENDIAN 0
+#endif
+
 // ------------------------------------------------------------------------------------------------
 // ------------------------------------------------------------------------------------------------
 // ACPI

@@ -1,10 +1,13 @@
+#ifdef WALLOS_USE_UACPI
 #include <uacpi/acpi.h>
 
 #include <uacpi/uacpi.h>
-#include <uacpi/event.h>
 #include <uacpi/uacpi.h>
 #include <uacpi/tables.h>
 #include <uacpi/types.h>
+#include <uacpi/opregion.h>
+#include <uacpi/notify.h>
+#include <uacpi/event.h>
 #include <uacpi/utilities.h>
 
 // We probably aren't supposed to use this, but it provides super useful things to us
@@ -23,11 +26,6 @@
 
 #include <acpi/acpi_init.h>
 #include <acpi/acpi_api.h>
-
-#ifdef WALLOS_USE_UACPI
-
-#include <uacpi/event.h>
-#include <uacpi/utilities.h>
 
 static volatile bool power_button_pressed = false;
 static volatile bool sleep_button_pressed = false;
@@ -69,8 +67,6 @@ static uacpi_status uacpi_system_notify_handler(uacpi_handle ctx, uacpi_namespac
 
 	return UACPI_STATUS_OK;
 }
-
-#include <uacpi/notify.h>
 
 void install_acpi_event_handlers(void) {
 	uacpi_status status;
@@ -116,21 +112,34 @@ void acpi_poll_events(void) {
 
 extern bool ec_generic_handler(bool is_read, uint64_t address, uint32_t bit_width, uint64_t* value);
 
-static uacpi_status uacpi_ec_handler(uacpi_region_op op, uacpi_region_op_args* args, void* user) {
-	bool is_read = (op == UACPI_REGION_OP_READ);
-
-	// uACPI usually provides byte_width instead of bit_width
-	uint32_t bit_width = args->byte_width * 8;
-
-	if (ec_generic_handler(is_read, args->offset, bit_width, &args->value)) {
+static uacpi_status uacpi_ec_handler(uacpi_region_op op, uacpi_handle op_data) {
+	// uACPI sends attach/detach events when initializing or destroying region handlers
+	if (op == UACPI_REGION_OP_ATTACH || op == UACPI_REGION_OP_DETACH) {
 		return UACPI_STATUS_OK;
 	}
+
+	if (op != UACPI_REGION_OP_READ && op != UACPI_REGION_OP_WRITE) {
+		return UACPI_STATUS_INVALID_ARGUMENT;
+	}
+
+	uacpi_region_rw_data* rw = (uacpi_region_rw_data*) op_data;
+	bool is_read = (op == UACPI_REGION_OP_READ);
+	uint32_t bit_width = rw->byte_width * 8;
+
+	if (ec_generic_handler(is_read, rw->offset, bit_width, &rw->value)) {
+		return UACPI_STATUS_OK;
+	}
+
 	return UACPI_STATUS_HARDWARE_TIMEOUT;
 }
 
 void acpi_install_ec_handler(void) {
 	// Install globally. uACPI handles propagating this to the EC region.
-	uacpi_install_address_space_handler(uacpi_namespace_root(), UACPI_ADDRESS_SPACE_EMBEDDED_CONTROL, uacpi_ec_handler, NULL);
+	uacpi_status status = uacpi_install_address_space_handler(uacpi_namespace_root(), UACPI_ADDRESS_SPACE_EMBEDDED_CONTROLLER, uacpi_ec_handler, NULL);
+
+	if (uacpi_unlikely_error(status)) {
+		logger(ERROR, "Failed to install EC address space handler: %s\n", uacpi_status_to_string(status));
+	}
 }
 
 void init_failure(const char* str) {

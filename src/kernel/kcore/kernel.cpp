@@ -226,6 +226,7 @@ void keyboard_debug() {
 #include <klibc/internal_calls.h>
 #include <klibc/kernel_rng.h>
 #include <drivers/usb/hosts/xhci.h>
+#include <acpi/acpi_api.h>
 
 extern "C" int tst_command(int argc, char** argv) {
 	// this is just going to be a "permanent" command to let me quickly test things.
@@ -413,5 +414,11 @@ void kernel_main(unsigned int magic, multiboot_info* mbt_info) {
 	// // char* cmd2[] = { "time", "-i" };
 	// // time_command(2, cmd2);
 
-	// while (true) WALLOS_HLT();
+	// while (true) 
+	while (true) {
+		acpi_poll_events();
+		// the only interrupts should be ACPI, serial, or timer at 1000hz
+		// We could busy wait or pause, but it really wouldn't matter. 
+		WALLOS_HLT();
+	}
 }

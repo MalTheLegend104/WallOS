@@ -332,13 +332,6 @@ static inline void mmio_write16_as32(volatile void* addr, uint16_t value) {
 // Byte swapping / endian conversion
 // ------------------------------------------------------------------------------------------------
 
-/* Detect native CPU byte order. */
-#if defined(__BYTE_ORDER__) && defined(__ORDER_BIG_ENDIAN__) && (__BYTE_ORDER__ == __ORDER_BIG_ENDIAN__)
-#define WALLOS_BIG_ENDIAN 1
-#else
-#define WALLOS_BIG_ENDIAN 0
-#endif
-
 /* Reverses the byte order of a 16-bit value. */
 static inline uint16_t bswap16(uint16_t val) {
 	return (uint16_t) ((val >> 8) | (val << 8));
