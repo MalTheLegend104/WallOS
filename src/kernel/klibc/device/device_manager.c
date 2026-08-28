@@ -390,22 +390,26 @@ void print_dev_brief(wallos_device_t* dev) {
 	);
 }
 
-int device_cmd(int argc, char** argv) {
-	if (argc < 2) {
-		printf_color(PRINT_COLOR_LIGHT_CYAN, PRINT_DEFAULT_BG, "Device commands:\n");
-		printf_color(PRINT_COLOR_WHITE, PRINT_DEFAULT_BG,
-			"  dev list [name]        - List registered devices (paths)\n"
-			"  dev tree [name] [-d n] - Display the full device hierarchy\n"
-			"  dev path <name>        - Get the path of a specific device\n"
-			"  dev info <name>        - Show identity and topology info\n"
-			"  dev refresh <name>     - Recalculate path for a device\n"
-		);
+#include <terminal/terminal.h>
 
-		printf_serial("[DEVMGR] usage requested\r\n");
+const ws_command_argument_t device_cmd_args[] = {
+	{ WS_ARG_TYPE_GENERIC, false, "command",   NULL,  "One of: list, tree, path, info, refresh." },
+	{ WS_ARG_TYPE_GENERIC, false, "name",      NULL,  "Device name (root for list/tree, required for path/info/refresh)." },
+	{ WS_ARG_TYPE_FLAG,    false, "--unbound", "-u",  "List only unbound devices." },
+	{ WS_ARG_TYPE_FLAG,    false, "--bound",   "-b",  "List only bound devices." },
+	{ WS_ARG_TYPE_UINT32,  false, "--depth",   "-d",  "Maximum depth to display for 'tree'." },
+};
+const size_t device_cmd_args_count = sizeof(device_cmd_args) / sizeof(device_cmd_args[0]);
+
+int device_cmd(int argc, char** argv) {
+	ws_context_t* ctx = ws_getCurrentContext();
+
+	if (!ws_parse_args(ctx, argc, argv) || !ws_has_arg(ctx, "command")) {
+		ws_executeCommand("help dev");
 		return 0;
 	}
 
-	const char* cmd = argv[1];
+	const char* cmd = ws_get_generic(ctx, "command");
 
 	// ------------------------------------------------------------------------
 	// dev list
@@ -414,25 +418,21 @@ int device_cmd(int argc, char** argv) {
 		wallos_device_t* root = NULL;
 		dev_list_filter_t filter = DEV_LIST_FILTER_ALL;
 
-		for (int i = 2; i < argc; i++) {
-			if (strcmp(argv[i], "-u") == 0 || strcmp(argv[i], "--unbound") == 0) {
-				if (filter == DEV_LIST_FILTER_BOUND) {
-					printf_color(PRINT_COLOR_LIGHT_RED, PRINT_DEFAULT_BG, "[error] --unbound and --bound are mutually exclusive\n");
-					return -1;
-				}
-				filter = DEV_LIST_FILTER_UNBOUND;
-			} else if (strcmp(argv[i], "-b") == 0 || strcmp(argv[i], "--bound") == 0) {
-				if (filter == DEV_LIST_FILTER_UNBOUND) {
-					printf_color(PRINT_COLOR_LIGHT_RED, PRINT_DEFAULT_BG, "[error] --unbound and --bound are mutually exclusive\n");
-					return -1;
-				}
-				filter = DEV_LIST_FILTER_BOUND;
-			} else {
-				root = resolve_device(argv[i]);
-				if (!root) {
-					printf_color(PRINT_COLOR_LIGHT_RED, PRINT_DEFAULT_BG, "[error] device '%s' not found\n", argv[i]);
-					return -1;
-				}
+		if (ws_get_flag(ctx, "--unbound") && ws_get_flag(ctx, "--bound")) {
+			printf_color(PRINT_COLOR_LIGHT_RED, PRINT_DEFAULT_BG, "[error] --unbound and --bound are mutually exclusive\n");
+			return -1;
+		} else if (ws_get_flag(ctx, "--unbound")) {
+			filter = DEV_LIST_FILTER_UNBOUND;
+		} else if (ws_get_flag(ctx, "--bound")) {
+			filter = DEV_LIST_FILTER_BOUND;
+		}
+
+		if (ws_has_arg(ctx, "name")) {
+			const char* name = ws_get_generic(ctx, "name");
+			root = resolve_device(name);
+			if (!root) {
+				printf_color(PRINT_COLOR_LIGHT_RED, PRINT_DEFAULT_BG, "[error] device '%s' not found\n", name);
+				return -1;
 			}
 		}
 
@@ -442,7 +442,6 @@ int device_cmd(int argc, char** argv) {
 		printf_color(PRINT_COLOR_LIGHT_CYAN, PRINT_DEFAULT_BG, header);
 
 		if (root) {
-			// Print the root itself (if it matches the filter), then all descendants
 			if (device_matches_filter(root, filter)) {
 				print_device_list_entry(root);
 			}
@@ -458,8 +457,6 @@ int device_cmd(int argc, char** argv) {
 		return 0;
 	}
 
-
-
 	// ------------------------------------------------------------------------
 	// dev tree
 	// ------------------------------------------------------------------------
@@ -469,15 +466,16 @@ int device_cmd(int argc, char** argv) {
 		wallos_device_t* root = NULL;
 		int max_depth = -1; // -1 = unlimited
 
-		for (int i = 2; i < argc; i++) {
-			if ((strcmp(argv[i], "--depth") == 0 || strcmp(argv[i], "-d") == 0) && i + 1 < argc) {
-				max_depth = (int) strtol(argv[++i], NULL, 10);
-			} else {
-				root = resolve_device(argv[i]);
-				if (!root) {
-					printf_color(PRINT_COLOR_LIGHT_RED, PRINT_DEFAULT_BG, "[error] device '%s' not found\n", argv[i]);
-					return -1;
-				}
+		if (ws_has_arg(ctx, "--depth")) {
+			max_depth = (int) ws_get_uint64(ctx, "--depth");
+		}
+
+		if (ws_has_arg(ctx, "name")) {
+			const char* name = ws_get_generic(ctx, "name");
+			root = resolve_device(name);
+			if (!root) {
+				printf_color(PRINT_COLOR_LIGHT_RED, PRINT_DEFAULT_BG, "[error] device '%s' not found\n", name);
+				return -1;
 			}
 		}
 
@@ -487,14 +485,14 @@ int device_cmd(int argc, char** argv) {
 	}
 
 	// Commands below require a device name
-	if (argc < 3) {
+	if (!ws_has_arg(ctx, "name")) {
 		printf_color(PRINT_COLOR_LIGHT_RED, PRINT_DEFAULT_BG, "[error] missing device name\n");
 
 		printf_serial("[DEVMGR] missing argument for command '%s'\r\n", cmd);
 		return -1;
 	}
 
-	const char* name = argv[2];
+	const char* name = ws_get_generic(ctx, "name");
 	wallos_device_t* dev = resolve_device(name);
 
 	if (!dev) {
@@ -542,7 +540,6 @@ int device_cmd(int argc, char** argv) {
 
 		printf_color(PRINT_COLOR_WHITE, PRINT_DEFAULT_BG, "  Children: %d\n", child_count);
 
-		// Debug dump
 		printf_serial("[DEVMGR] info dev=%p name='%s'\r\n", dev, dev_name);
 		printf_serial("           vid:did=%04x:%04x flags=0x%llx\r\n", dev->vendor_id, dev->device_id, (uint64_t) dev->interfaces);
 		printf_serial("           parent=%p first_child=%p next_sibling=%p children=%d\r\n", dev->parent, dev->first_child, dev->next_sibling, child_count);

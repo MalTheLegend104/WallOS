@@ -97,6 +97,13 @@ namespace Memory {
 	uintptr_t GetMappingEnd();
 }
 
+#include <terminal/terminal.h>
+const ws_command_argument_t virt_mem_cli_args[] = {
+	{ WS_ARG_TYPE_GENERIC, false, "command",  NULL, "One of: help, info, walk, v2p, dump." },
+	{ WS_ARG_TYPE_GENERIC, false, "argument", NULL, "Virtual address (walk/v2p) or table name (dump)." },
+};
+const size_t virt_mem_cli_args_count = sizeof(virt_mem_cli_args) / sizeof(virt_mem_cli_args[0]);
+
 extern "C" {
 #endif //__cplusplus
 

@@ -15,7 +15,7 @@
 
 extern "C" {
 	extern uint64_t kernel_end;
-	int sysinfo(int argc, char** argv);
+	int sysinfo(void);
 	void sysinfo_boot();
 }
 
@@ -97,15 +97,12 @@ void printMemInfo() {
 	}
 }
 
-#pragma GCC diagnostic ignored "-Wunused-parameter" 
 /**
  * @brief Prints general system information.
  *
- * @param argc Ignored
- * @param argv Ignored
  * @return int Always 0
  */
-int sysinfo(int argc, char** argv) {
+int sysinfo(void) {
 	/* This is supposed to be similar to neofetch on linux:
 	 * OS: WallOS v0.1
 	 * Uptime: <time>

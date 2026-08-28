@@ -912,72 +912,41 @@ static void cmd_info(void) {
 #undef INFO_ROW
 }
 
-/* I should turn this into an actual help menu entry, but smeh... */
-static void cmd_help(void) {
-	printf_color(PRINT_COLOR_CYAN, PRINT_DEFAULT_BG, "\nvirt_mem_cli commands:\n");
-
-	// I just want these to have different colors and spaced differently.
-	// I think I may make more help entries in this style, maybe make an actual header for this.
-#define HELP_ROW(cmd_str, desc_str) \
-    do { \
-        printf_color(PRINT_COLOR_LIGHT_GREY, PRINT_DEFAULT_BG, "  %-18s", cmd_str); \
-        printf_color(PRINT_DEFAULT_FG,       PRINT_DEFAULT_BG, desc_str "\n"); \
-    } while(0)
-
-	HELP_ROW("info", "print VMM layout summary");
-	HELP_ROW("walk  <vaddr>", "walk page tables for a virtual address");
-	HELP_ROW("v2p   <vaddr>", "translate virtual to physical (base page)");
-	HELP_ROW("dump  [pml4|kpdp|kpde|kpte|pdp|pde|pde3gb]", "dump table entries (full output on serial)");
-	HELP_ROW("help", "this message");
-
-#undef HELP_ROW
-
-	printf_color(PRINT_COLOR_DARK_GREY, PRINT_DEFAULT_BG, "\n  Addresses may be decimal or 0x-prefixed hex.\n\n");
-
-	printf_serial(
-		"\r\nvirt_mem_cli commands:\r\n"
-		"  info\r\n  walk <vaddr>\r\n  v2p <vaddr>\r\n"
-		"  dump pml4|kpdp|kpde|kpte|pdp|pde|pde3gb\r\n"
-		"  help\r\n"
-	);
-}
+#include <terminal/terminal.h>
 
 extern "C" int virt_mem_cli(int argc, char** argv) {
-	if (argc < 2) {
-		cmd_help();
+	ws_context_t* ctx = ws_getCurrentContext();
+
+	if (!ws_parse_args(ctx, argc, argv) || !ws_has_arg(ctx, "command")) {
+		ws_executeCommand("help vmm");
 		return 0;
 	}
 
-	const char* cmd = argv[1];
+	const char* cmd = ws_get_generic(ctx, "command");
 
-	if (strcmp(cmd, "help") == 0) {
-		cmd_help();
-
-	} else if (strcmp(cmd, "info") == 0) {
+	if (strcmp(cmd, "info") == 0) {
 		cmd_info();
 
 	} else if (strcmp(cmd, "walk") == 0) {
-		if (argc < 3) {
-			printf_color(PRINT_COLOR_LIGHT_RED, PRINT_DEFAULT_BG,
-				"[VMM] usage: walk <vaddr>\n");
+		if (!ws_has_arg(ctx, "argument")) {
+			printf_color(PRINT_COLOR_LIGHT_RED, PRINT_DEFAULT_BG, "[VMM] usage: walk <vaddr>\n");
 			return 1;
 		}
-		cmd_walk((uint64_t) strtoull(argv[2], NULL, 0));
+		cmd_walk((uint64_t) strtoull(ws_get_generic(ctx, "argument"), NULL, 0));
+
 	} else if (strcmp(cmd, "v2p") == 0) {
-		if (argc < 3) {
-			printf_color(PRINT_COLOR_LIGHT_RED, PRINT_DEFAULT_BG,
-				"[VMM] usage: v2p <vaddr>\n");
+		if (!ws_has_arg(ctx, "argument")) {
+			printf_color(PRINT_COLOR_LIGHT_RED, PRINT_DEFAULT_BG, "[VMM] usage: v2p <vaddr>\n");
 			return 1;
 		}
-		cmd_v2p((uint64_t) strtoull(argv[2], NULL, 0));
+		cmd_v2p((uint64_t) strtoull(ws_get_generic(ctx, "argument"), NULL, 0));
 
 	} else if (strcmp(cmd, "dump") == 0) {
-		if (argc < 3) {
-			printf_color(PRINT_COLOR_LIGHT_RED, PRINT_DEFAULT_BG,
-				"[VMM] usage: dump <table>\n");
+		if (!ws_has_arg(ctx, "argument")) {
+			printf_color(PRINT_COLOR_LIGHT_RED, PRINT_DEFAULT_BG, "[VMM] usage: dump <table>\n");
 			return 1;
 		}
-		const char* tbl = argv[2];
+		const char* tbl = ws_get_generic(ctx, "argument");
 		if (strcmp(tbl, "pml4") == 0) dump_table("pml4", pml4, TABLE_ENTRIES);
 		else if (strcmp(tbl, "kpdp") == 0) dump_table("kpdp", kpdp, TABLE_ENTRIES);
 		else if (strcmp(tbl, "kpde") == 0) dump_table("kpde", kpde, TABLE_ENTRIES);

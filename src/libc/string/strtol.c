@@ -146,6 +146,70 @@ long long strtoll(const char* restrict nptr, char** restrict endptr, int base) {
 #undef LLONG_MAX
 #undef LLONG_MIN
 
+#define ULONG_MAX (~0UL)
+unsigned long strtoul(const char* restrict nptr, char** restrict endptr, int base) {
+	if (nptr == NULL) return 0;
+	const char* p = nptr, * endp;
+	bool overflow = 0, is_neg = 0;
+	unsigned long n = 0UL, cutoff;
+	int cutlim;
+	if (base < 0 || base == 1 || base > 36) {
+		return 0UL;
+	}
+	endp = nptr;
+	while (*p == ' ')
+		p++;
+	/* Handle optional sign; per C standard, if '-' is present, the parsed value is converted to unsigned and negated (-n). */
+	if (*p == '+') {
+		p++;
+	} else if (*p == '-') {
+		is_neg = 1;
+		p++;
+	}
+	if (*p == '0') {
+		p++;
+		endp = p;
+		if (base == 16 && (*p == 'X' || *p == 'x')) {
+			p++;
+		} else if (base == 0) {
+			if (*p == 'X' || *p == 'x') {
+				base = 16, p++;
+			} else {
+				base = 8;
+			}
+		}
+	} else if (base == 0) {
+		base = 10;
+	}
+	cutoff = ULONG_MAX / base;
+	cutlim = ULONG_MAX % base;
+	while (1) {
+		int c;
+		if (*p >= 'A')
+			c = ((*p - 'A') & (~('a' ^ 'A'))) + 10;
+		else if (*p <= '9')
+			c = *p - '0';
+		else
+			break;
+		if (c < 0 || c >= base) break;
+		endp = ++p;
+		if (overflow) {
+			if (endptr) continue;
+			break;
+		}
+		if (n > cutoff || (n == cutoff && c > cutlim)) {
+			overflow = 1; continue;
+		}
+		n = n * base + c;
+	}
+	if (endptr) *endptr = (char*) endp;
+	if (overflow) {
+		return ULONG_MAX;
+	}
+	return is_neg ? -n : n;
+}
+#undef ULONG_MAX
+
 #define ULLONG_MAX (~0ULL)
 unsigned long long strtoull(const char* restrict nptr, char** restrict endptr, int base) {
 	if (nptr == NULL) return 0;

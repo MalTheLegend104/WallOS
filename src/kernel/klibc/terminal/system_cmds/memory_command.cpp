@@ -11,16 +11,29 @@
 
 #include <terminal/terminal.h>
 #include <terminal/commands/system_commands.h>
+#include <terminal/wall_shell.h>
 
 extern "C" {
 	extern uint64_t kernel_end;
 	int meminfo(int argc, char** argv);
-	int meminfo_help(int argc, char** argv);
 }
 
 extern size_t mem_map_size;
 
 const mmap_info* memory_info;
+
+// Defined with extern "C" linkage so it can be referenced from system_commands.c
+// (a plain C translation unit) in registerSystemCommands().
+extern "C" const ws_command_argument_t meminfo_args[] = {
+	{ WS_ARG_TYPE_FLAG, false, "--total",         "-t",  "Prints the amount of total system memory." },
+	{ WS_ARG_TYPE_FLAG, false, "--usable",        "-u",  "Prints the amount of usable system memory." },
+	{ WS_ARG_TYPE_FLAG, false, "--reserved",      "-r",  "Prints the amount of reserved system memory." },
+	{ WS_ARG_TYPE_FLAG, false, "--mmap-size",     "-ms", "Prints the size of the system memory map." },
+	{ WS_ARG_TYPE_FLAG, false, "--kernel",        "-k",  "Prints the size of the raw kernel." },
+	{ WS_ARG_TYPE_FLAG, false, "--free-physical", "-fp", "Prints the amount of free physical memory." },
+	{ WS_ARG_TYPE_FLAG, false, "--used-physical", "-up", "Prints the amount of used physical memory." },
+};
+extern "C" const size_t meminfo_args_count = sizeof(meminfo_args) / sizeof(meminfo_args[0]);
 
 void printTotal() {
 	printf_color(PRINT_COLOR_PINK, PRINT_DEFAULT_BG, "Total Memory:\n");
@@ -104,32 +117,38 @@ void printUsedPhysical() {
 	display_set_colors_default();
 }
 
-bool printIndividual(int argc, char** argv) {
+bool printIndividual(const ws_context_t* ctx) {
 	bool printedSomething = false;
-	for (int i = 1; i < argc; i++) {
-		if (strcmp(argv[i], "-t") == 0 || strcmp(argv[i], "--total") == 0) {
-			printTotal();
-			printedSomething = true;
-		} else if (strcmp(argv[i], "-u") == 0 || strcmp(argv[i], "--usable") == 0) {
-			printUsable();
-			printedSomething = true;
-		} else if (strcmp(argv[i], "-r") == 0 || strcmp(argv[i], "--reserved") == 0) {
-			printReserved();
-			printedSomething = true;
-		} else if (strcmp(argv[i], "-ms") == 0 || strcmp(argv[i], "--mmap-size") == 0) {
-			printMapSize();
-			printedSomething = true;
-		} else if (strcmp(argv[i], "-k") == 0 || strcmp(argv[i], "--kernel") == 0) {
-			printKernelSize();
-			printedSomething = true;
-		} else if (strcmp(argv[i], "-fp") == 0 || strcmp(argv[i], "--free-physical") == 0) {
-			printFreePhysical();
-			printedSomething = true;
-		} else if (strcmp(argv[i], "-up") == 0 || strcmp(argv[i], "--used-physical") == 0) {
-			printUsedPhysical();
-			printedSomething = true;
-		}
+
+	if (ws_get_flag(ctx, "--total")) {
+		printTotal();
+		printedSomething = true;
 	}
+	if (ws_get_flag(ctx, "--usable")) {
+		printUsable();
+		printedSomething = true;
+	}
+	if (ws_get_flag(ctx, "--reserved")) {
+		printReserved();
+		printedSomething = true;
+	}
+	if (ws_get_flag(ctx, "--mmap-size")) {
+		printMapSize();
+		printedSomething = true;
+	}
+	if (ws_get_flag(ctx, "--kernel")) {
+		printKernelSize();
+		printedSomething = true;
+	}
+	if (ws_get_flag(ctx, "--free-physical")) {
+		printFreePhysical();
+		printedSomething = true;
+	}
+	if (ws_get_flag(ctx, "--used-physical")) {
+		printUsedPhysical();
+		printedSomething = true;
+	}
+
 	return printedSomething;
 }
 
@@ -137,7 +156,8 @@ int meminfo(int argc, char** argv) {
 	memory_info = Memory::Info::getMMapInfo();
 
 	if (argc > 1) {
-		if (printIndividual(argc, argv)) {
+		ws_context_t* ctx = ws_getCurrentContext();
+		if (ws_parse_args(ctx, argc, argv) && printIndividual(ctx)) {
 			return 0;
 		}
 	}
@@ -149,113 +169,6 @@ int meminfo(int argc, char** argv) {
 	printKernelSize();
 	printFreePhysical();
 	printUsedPhysical();
-
-	return 0;
-}
-
-int meminfo_help(int argc, char** argv) {
-	if (argc > 1) {
-		if (strcmp(argv[1], "-t") == 0 || strcmp(argv[1], "--total") == 0) {
-			HelpEntry entry = {
-				"MemInfo (Total)",
-				"Prints the amount of total system memory.\n\nThis memory is NOT guaranteed to all be usable. The system may have reserved memory for peripherals, bios structures, etc.",
-				NULL,
-				0,
-				NULL,
-				0
-			};
-			printSpecificHelp(&entry);
-			return 0;
-		} else if (strcmp(argv[1], "-u") == 0 || strcmp(argv[1], "--usable") == 0) {
-			HelpEntry entry = {
-				"MemInfo (Usable)",
-				"Prints the amount of usable system memory.\n\nThis memory is all the memory that can be used for general purposes by the OS.",
-				NULL,
-				0,
-				NULL,
-				0
-			};
-			printSpecificHelp(&entry);
-			return 0;
-		} else if (strcmp(argv[1], "-r") == 0 || strcmp(argv[1], "--reserved") == 0) {
-			HelpEntry entry = {
-				"MemInfo (Reserved)",
-				"Prints the amount of reserved system memory.\n\nThis memory is NOT usable. The system may have reserved memory for peripherals, bios structures, etc. The OS has no control over this.",
-				NULL,
-				0,
-				NULL,
-				0
-			};
-			printSpecificHelp(&entry);
-			return 0;
-		} else if (strcmp(argv[1], "--mmap-size") == 0) {
-			HelpEntry entry = {
-				"MemInfo (System Memory Map Size)",
-				"Prints the size of the system memory map.\n\nThis is mostly for debugging purposes, but may be interesting to users.",
-				NULL,
-				0,
-				NULL,
-				0
-			};
-			printSpecificHelp(&entry);
-			return 0;
-		} else if (strcmp(argv[1], "-k") == 0 || strcmp(argv[1], "--kernel") == 0) {
-			HelpEntry entry = {
-				"MemInfo (Kernel)",
-				"Prints the size of the raw kernel.\n\nThis does NOT include memory reserved by the kernel during operation, it is the size of the kernel that was loaded into memory on boot.",
-				NULL,
-				0,
-				NULL,
-				0
-			};
-			printSpecificHelp(&entry);
-			return 0;
-		} else if (strcmp(argv[1], "-fp") == 0 || strcmp(argv[1], "--free-physical") == 0) {
-			HelpEntry entry = {
-				"MemInfo (Free Physical Pages)",
-				"Prints the amount of free physical memory.\n\nShows both the number of 4KB pages tracked by the buddy allocator and the total free bytes in various units (bytes, KiB, MiB).",
-				NULL,
-				0,
-				NULL,
-				0
-			};
-			printSpecificHelp(&entry);
-			return 0;
-		} else if (strcmp(argv[1], "-up") == 0 || strcmp(argv[1], "--used-physical") == 0) {
-			HelpEntry entry = {
-				"MemInfo (Used Physical Memory)",
-				"Prints the amount of used physical memory.\n\nShows both the number of 4KB pages in use and the total used bytes in various units (bytes, KiB, MiB). Calculated as usable memory minus free memory.",
-				NULL,
-				0,
-				NULL,
-				0
-			};
-			printSpecificHelp(&entry);
-			return 0;
-		}
-	}
-
-	const char* optional[] = {
-		"--total, -t      -> Prints the amount of total system memory.\n",
-		"--usable, -u     -> Prints the amount of usable system memory.\n",
-		"--reserved,-r    -> Prints the amount of reserved system memory.\n",
-		"--mmap-size, -ms -> Prints the size of the system memory map.\n",
-		"--kernel, -k     -> Prints the size of the raw kernel.\n",
-		"--free-physical,",
-		"-fp              -> Prints the amount of free physical memory.\n",
-		"--used-physical,",
-		"-up              -> Prints the amount of used physical memory.\n",
-		"If no flags are provided it will print all of the above.",
-	};
-	HelpEntry entry = {
-		"MemInfo",
-		"Command to display useful memory information.",
-		NULL,
-		0,
-		optional,
-		10
-	};
-	printSpecificHelp(&entry);
 
 	return 0;
 }

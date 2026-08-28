@@ -465,13 +465,22 @@ void cpu_info_status(void) {
 	cpu_info_ticks();
 }
 
+#include <terminal/terminal.h>
+const ws_command_argument_t cpu_info_args[] = {
+	{ WS_ARG_TYPE_GENERIC, false, "command", NULL, "One of: init, list, freq, ticks, status, accuracy." },
+	{ WS_ARG_TYPE_GENERIC, false, "value",   NULL, "'on' or 'off' (accuracy only)." },
+};
+const size_t cpu_info_args_count = sizeof(cpu_info_args) / sizeof(cpu_info_args[0]);
+
 int cpu_info(int argc, char** argv) {
-	if (argc < 2) {
+	ws_context_t* ctx = ws_getCurrentContext();
+
+	if (!ws_parse_args(ctx, argc, argv) || !ws_has_arg(ctx, "command")) {
 		cpu_info_usage();
 		return 1;
 	}
 
-	const char* cmd = argv[1];
+	const char* cmd = ws_get_generic(ctx, "command");
 
 	if (strcmp(cmd, "init") == 0) {
 		arch_init_cpus();
@@ -484,19 +493,20 @@ int cpu_info(int argc, char** argv) {
 	} else if (strcmp(cmd, "status") == 0) {
 		cpu_info_status();
 	} else if (strcmp(cmd, "accuracy") == 0) {
-		if (argc < 3) {
+		if (!ws_has_arg(ctx, "value")) {
 			cpu_print(PRINT_COLOR_LIGHT_GREEN, "[CPU] Accuracy mode is %s. Usage: cpu_info accuracy <on|off>\r\n",
 				lapic_timer_accuracy_mode ? "ON" : "OFF");
 			return 1;
 		}
-		if (strcmp(argv[2], "on") == 0) {
+		const char* value = ws_get_generic(ctx, "value");
+		if (strcmp(value, "on") == 0) {
 			lapic_timer_accuracy_mode = true;
 			cpu_print(PRINT_COLOR_LIGHT_GREEN, "[CPU] Accuracy mode enabled.\r\n");
-		} else if (strcmp(argv[2], "off") == 0) {
+		} else if (strcmp(value, "off") == 0) {
 			lapic_timer_accuracy_mode = false;
 			cpu_print(PRINT_COLOR_LIGHT_GREEN, "[CPU] Accuracy mode disabled.\r\n");
 		} else {
-			cpu_print(PRINT_COLOR_LIGHT_RED, "[CPU] Unknown argument '%s'. Expected 'on' or 'off'.\r\n", argv[2]);
+			cpu_print(PRINT_COLOR_LIGHT_RED, "[CPU] Unknown argument '%s'. Expected 'on' or 'off'.\r\n", value);
 			return 1;
 		}
 	} else {

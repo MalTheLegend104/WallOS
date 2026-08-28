@@ -7,6 +7,8 @@
 #include <stdlib.h>
 #include <stdint.h>
 
+#include <terminal/wall_shell.h>
+
 enum date_format {
 	DD_MM_YYYY,
 	MM_DD_YYYY,
@@ -21,23 +23,16 @@ enum time_format {
 short current_date_format = DD_MM_YYYY;
 short current_time_format = HOURS_24;
 
-bool is_int(const char* str) {
-	if (str == NULL || *str == '\0') {
-		// Null or empty string is not a base 10 integer.
-		return false;
-	}
-
-	// Check each character of the string to make sure it's base 10.
-	while (*str != '\0') {
-		if (*str < '0' || *str > '9') {
-			return false;
-		}
-		str++;
-	}
-
-	// If all characters are valid digits, the string is a base 10 integer.
-	return true;
-}
+// Referenced from system_commands.c's registerSystemCommands().
+const ws_command_argument_t time_args[] = {
+	{ WS_ARG_TYPE_UINT32, false, "--test-accuracy",   "-ta",   "Tests the accuracy of the internal timer over <seconds>." },
+	{ WS_ARG_TYPE_FLAG,   false, "--system",          "-st",   "Prints the system uptime." },
+	{ WS_ARG_TYPE_STRING, false, "--set-date-format", "-sdf",  "Sets the date format. One of: DMY, MDY, YMD." },
+	{ WS_ARG_TYPE_FLAG,   false, "--time-format-24",  "-tf24", "Sets the displayed clock to 24h." },
+	{ WS_ARG_TYPE_FLAG,   false, "--time-format-12",  "-tf12", "Sets the displayed clock to 12h." },
+	{ WS_ARG_TYPE_FLAG,   false, "--info",            "-i",    "Lists registered timer devices and which is active." },
+};
+const size_t time_args_count = sizeof(time_args) / sizeof(time_args[0]);
 
 // Picks a "human sized" unit for Hz, and rounds the value to a whole number for that
 // This avoids us having hard to parse values in timer info
@@ -59,27 +54,21 @@ static const char* format_duration_ns(uint64_t ns, uint64_t* out_val) {
 
 int time_command(int argc, char** argv) {
 	if (argc > 1) {
-		for (int i = 1; i < argc; i++) {
-			if (strcmp(argv[i], "--test-accuracy") == 0 || strcmp(argv[i], "-ta") == 0) {
-				// No arg
-				if (i + 1 >= argc) {
-					logger(ERROR, "Expected argument after %s.\n", argv[i]);
-					return 0;
-				}
-				// Next arg isn't an int.
-				if (!is_int(argv[i + 1])) {
-					logger(ERROR, "Unexpected argument after %s: %s\n", argv[i], argv[i + 1]);
-					return 0;
-				}
-				int a = atoi(argv[i + 1]);
-				int b = 0;
-				while (b < a) {
+		ws_context_t* ctx = ws_getCurrentContext();
+
+		if (ws_parse_args(ctx, argc, argv)) {
+			if (ws_has_arg(ctx, "--test-accuracy")) {
+				uint32_t seconds = (uint32_t) ws_get_uint64(ctx, "--test-accuracy");
+				uint32_t b = 0;
+				while (b < seconds) {
 					busy_wait_ms(1000);
 					printf("System Time: %lldms\n", (long long) timer_uptime_ms());
 					b++;
 				}
 				return 0;
-			} else if (strcmp(argv[i], "-st") == 0 || strcmp(argv[i], "--system") == 0) {
+			}
+
+			if (ws_get_flag(ctx, "--system")) {
 				uint64_t time = timer_uptime_ms();
 				uint64_t totalms = time;
 
@@ -127,28 +116,33 @@ int time_command(int argc, char** argv) {
 
 				display_set_colors_default();
 				return 0;
-			} else if (strcmp(argv[i], "-sdf") == 0 || strcmp(argv[i], "--set-date-format") == 0) {
-				if (i == argc - 1) {
-					logger(ERROR, "Additional argument is required. Run `help time -sdf` to see command usage.");
-					return 0;
-				}
-				if (strcmp(argv[i + 1], "DMY") == 0 || strcmp(argv[i + 1], "dmy") == 0) {
+			}
+
+			if (ws_has_arg(ctx, "--set-date-format")) {
+				const char* fmt = ws_get_string(ctx, "--set-date-format");
+				if (strcmp(fmt, "DMY") == 0 || strcmp(fmt, "dmy") == 0) {
 					current_date_format = DD_MM_YYYY;
-				} else if (strcmp(argv[i + 1], "MDY") == 0 || strcmp(argv[i + 1], "mdy") == 0) {
+				} else if (strcmp(fmt, "MDY") == 0 || strcmp(fmt, "mdy") == 0) {
 					current_date_format = MM_DD_YYYY;
-				} else if (strcmp(argv[i + 1], "YMD") == 0 || strcmp(argv[i + 1], "ymd") == 0) {
+				} else if (strcmp(fmt, "YMD") == 0 || strcmp(fmt, "ymd") == 0) {
 					current_date_format = YYYY_MM_DD;
 				} else {
 					logger(ERROR, "Wrong argument provided. Run `help time -sdf` to see command usage.");
 				}
 				return 0;
-			} else if (strcmp(argv[i], "-tf24") == 0 || strcmp(argv[i], "--time-format-24") == 0) {
+			}
+
+			if (ws_get_flag(ctx, "--time-format-24")) {
 				current_time_format = HOURS_24;
 				return 0;
-			} else if (strcmp(argv[i], "-tf12") == 0 || strcmp(argv[i], "--time-format-12") == 0) {
+			}
+
+			if (ws_get_flag(ctx, "--time-format-12")) {
 				current_time_format = HOURS_12;
 				return 0;
-			} else if (strcmp(argv[i], "-i") == 0 || strcmp(argv[i], "--info") == 0) {
+			}
+
+			if (ws_get_flag(ctx, "--info")) {
 				printf_color(PRINT_COLOR_LIGHT_CYAN, PRINT_DEFAULT_BG, "Timers  (* = active)\n");
 
 				counter_clock_t* best_counter = counter_clock_get_best();
@@ -223,122 +217,6 @@ int time_command(int argc, char** argv) {
 	}
 
 	display_set_colors_default();
-
-	return 0;
-}
-
-#pragma GCC diagnostic ignored "-Wunused-parameter" 
-int time_help(int argc, char** argv) {
-	// General help would be a little weird here since we deal with only flags and not subcommands
-	if (argc > 1) {
-		if (strcmp(argv[1], "--system") == 0 || strcmp(argv[1], "-st") == 0) {
-			HelpEntry entry = {
-				"Time (System Time)",
-				"Displays system uptime.",
-				NULL,
-				0,
-				NULL,
-				0
-			};
-			printSpecificHelp(&entry);
-			return 0;
-		} else if (strcmp(argv[1], "--system-date-format") == 0 || strcmp(argv[1], "-sdf") == 0) {
-			const char* required[] = {
-				"<format> -> Date Time Format as specified in the optional section."
-			};
-			const char* optional[] = {
-				"YMD      -> Sets the date format to YYYY-MM-DD",
-				"MDY      -> Sets the date format to MM/DD/YYYY",
-				"DMY      -> Sets the date format to DD/MM/YYYY"
-			};
-			HelpEntry entry = {
-				"Time (Set Date Format)",
-				"Changes the system Date Format.",
-				required,
-				1,
-				optional,
-				3
-			};
-			printSpecificHelp(&entry);
-			return 0;
-		} else if (strcmp(argv[1], "--test-accuracy") == 0 || strcmp(argv[1], "-ta") == 0) {
-			const char* required[] = {
-				"<time> -> Amount of seconds to test the accuracy."
-			};
-			HelpEntry entry = {
-				"Time (Test Accuracy)",
-				"Displays the accuracy of the internal timer, over <time> seconds.",
-				required,
-				1,
-				NULL,
-				0
-			};
-			printSpecificHelp(&entry);
-			return 0;
-		} else if (strcmp(argv[1], "-tf24") == 0 || strcmp(argv[1], "--time-format-24") == 0) {
-			HelpEntry entry = {
-				"Time (Time Format)",
-				"Sets the displayed clock to 24h.",
-				NULL,
-				0,
-				NULL,
-				0
-			};
-			printSpecificHelp(&entry);
-			return 0;
-		} else if (strcmp(argv[1], "-tf12") == 0 || strcmp(argv[1], "--time-format-12") == 0) {
-			HelpEntry entry = {
-				"Time (Time Format)",
-				"Sets the displayed clock to 12h.",
-				NULL,
-				0,
-				NULL,
-				0
-			};
-			printSpecificHelp(&entry);
-			return 0;
-		} else if (strcmp(argv[1], "-i") == 0 || strcmp(argv[1], "--info") == 0) {
-			HelpEntry entry = {
-				"Time (Info)",
-				"Lists all registered counter_clock/interval_clock/wallclock devices, which one is active for each role, and their rating/frequency/resolution.",
-				NULL,
-				0,
-				NULL,
-				0
-			};
-			printSpecificHelp(&entry);
-			return 0;
-		}
-	}
-
-	// Else is general help
-	const char* optional[] = {
-		"--system,",
-		"-st           -> Prints the system uptime in milliseconds.\n",
-		"--system-date-format",
-		"-sdf <format> -> Changes the date format on the system.\n",
-		"--time-format-24,",
-		"-tf24         -> Changes the clock format to 24h.\n",
-		"--time-format-12,",
-		"-tf12         -> Changes the clock format to 12h.\n",
-		"--test-accuracy <time>,",
-		"-ta <time>    -> Test the accuracy of the system timer.\n",
-		"--info,",
-		"-i            -> Shows registered timer devices and which is active.\n",
-
-
-		"If no flags are provided it will print the real world time (UTC-0).",
-
-	};
-	HelpEntry entry = {
-		"Time",
-		"Command to interface with the time subsystem.",
-		NULL,
-		0,
-		optional,
-		13
-	};
-	printSpecificHelp(&entry);
 
 	return 0;
 }

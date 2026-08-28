@@ -238,6 +238,96 @@ extern "C" int tst_command(int argc, char** argv) {
 	return 0;
 }
 
+extern "C" {
+
+	extern const ws_command_argument_t acpi_args[];
+	extern const size_t acpi_args_count;
+
+	extern const ws_command_argument_t driver_cli_args[];
+	extern const size_t driver_cli_args_count;
+
+	extern const ws_command_argument_t cpu_info_args[];
+	extern const size_t cpu_info_args_count;
+
+	extern const ws_command_argument_t serial_cli_args[];
+	extern const size_t serial_cli_args_count;
+
+	extern const ws_command_argument_t device_cmd_args[];
+	extern const size_t device_cmd_args_count;
+
+	// extern const ws_command_argument_t virt_mem_cli_args[];
+	// extern const size_t virt_mem_cli_args_count;
+}
+
+void setup_commands() {
+
+	registerSystemCommands();
+
+	ws_command_t kalloc_command = {};
+	kalloc_command.main_func = testKalloc;
+	kalloc_command.command_name = "kalloc";
+	ws_registerCommand(kalloc_command);
+
+	ws_command_t mem_alloc_command = {};
+	mem_alloc_command.main_func = mem_alloc;
+	mem_alloc_command.command_name = "mem_alloc";
+	ws_registerCommand(mem_alloc_command);
+
+	ws_command_t acpi_ws_command = {};
+	acpi_ws_command.main_func = acpi_command;
+	acpi_ws_command.command_name = "acpi";
+	acpi_ws_command.arguments = acpi_args;
+	acpi_ws_command.arguments_count = acpi_args_count;
+	ws_registerCommand(acpi_ws_command);
+
+	ws_command_t syscall_ws_command = {};
+	syscall_ws_command.main_func = syscall_command;
+	syscall_ws_command.command_name = "syscall";
+	ws_registerCommand(syscall_ws_command);
+
+	ws_command_t bootdev_ws_command = {};
+	bootdev_ws_command.main_func = bootdev_command;
+	bootdev_ws_command.command_name = "bootdev";
+	ws_registerCommand(bootdev_ws_command);
+
+	ws_command_t serial_command = {};
+	serial_command.main_func = serial_cli_cmd;
+	serial_command.command_name = "serial";
+	serial_command.arguments = serial_cli_args;
+	serial_command.arguments_count = serial_cli_args_count;
+	ws_registerCommand(serial_command);
+
+	ws_command_t vmm_command = {};
+	vmm_command.main_func = virt_mem_cli;
+	vmm_command.command_name = "vmm";
+	vmm_command.arguments = virt_mem_cli_args;
+	vmm_command.arguments_count = virt_mem_cli_args_count;
+	ws_registerCommand(vmm_command);
+
+	ws_command_t device_command = {};
+	device_command.main_func = device_cmd;
+	device_command.command_name = "device";
+	device_command.arguments = device_cmd_args;
+	device_command.arguments_count = device_cmd_args_count;
+	device_command.aliases = dev_aliases;
+	device_command.alias_count = 1;
+	ws_registerCommand(device_command);
+
+	ws_command_t cpu_command = {};
+	cpu_command.main_func = cpu_info;
+	cpu_command.command_name = "cpu";
+	cpu_command.arguments = cpu_info_args;
+	cpu_command.arguments_count = cpu_info_args_count;
+	ws_registerCommand(cpu_command);
+
+	ws_command_t driver_command = {};
+	driver_command.main_func = driver_cli;
+	driver_command.command_name = "driver";
+	driver_command.arguments = driver_cli_args;
+	driver_command.arguments_count = driver_cli_args_count;
+	ws_registerCommand(driver_command);
+}
+
 void kernel_main(unsigned int magic, multiboot_info* mbt_info) {
 	// ------------------------------------------------------------------------------------------------
 	// Very early init
@@ -392,18 +482,8 @@ void kernel_main(unsigned int magic, multiboot_info* mbt_info) {
 
 	// After we're done checking features, we need to set up our terminal.
 	// Eventually this will be a userspace program. 
-	registerCommand((Command) { testKalloc, 0, "kalloc", 0, 0 });
-	registerCommand((Command) { mem_alloc, 0, "mem_alloc", 0, 0 });
-	registerCommand((Command) { acpi_command, 0, "acpi", 0, 0 });
-	registerCommand((Command) { syscall_command, 0, "syscall", 0, 0 });
-	registerCommand((Command) { bootdev_command, 0, "bootdev", 0, 0 });
-	registerCommand((Command) { serial_cli_cmd, 0, "serial", 0, 0 });
-	registerCommand((Command) { virt_mem_cli, 0, "vmm", 0, 0 });
-	registerCommand((Command) { device_cmd, 0, "device", dev_aliases, 1 }); // "dev" is the only alias.
-	registerCommand((Command) { cpu_info, 0, "cpu", 0, 0 });
-	registerCommand((Command) { driver_cli, 0, "driver", 0, 0 });
-	// registerCommand((Command) { tst_command, 0, "tst", 0, 0 });
-	terminalMain();
+	setup_commands();
+	ws_terminalMain();
 
 	// char* cmd[] = { "dev", "list", "-u" };
 	// device_cmd(3, cmd);

@@ -130,20 +130,23 @@ void dm_bind_all_registered(void) {
 	printf_color(PRINT_COLOR_GREEN, PRINT_DEFAULT_BG, "Binding complete. %d/%d devices bound to drivers.\r\n", bound_count, total_count);
 }
 
+#include <terminal/terminal.h>
+const ws_command_argument_t driver_cli_args[] = {
+	{ WS_ARG_TYPE_GENERIC, false, "command", NULL, "One of: list, bind-all, info." },
+	{ WS_ARG_TYPE_GENERIC, false, "name",    NULL, "Driver name (info only)." },
+};
+const size_t driver_cli_args_count = sizeof(driver_cli_args) / sizeof(driver_cli_args[0]);
+
 int driver_cli(int argc, char** argv) {
-	if (argc < 2) {
-		printf_color(PRINT_COLOR_LIGHT_CYAN, PRINT_DEFAULT_BG, "Driver commands:\n");
-		printf_color(PRINT_COLOR_WHITE, PRINT_DEFAULT_BG,
-			"  driver list          - List all registered drivers\n"
-			"  driver bind-all      - Attempt to bind all unbound devices\n"
-			"  driver info <name>   - Show matching criteria for a driver\n"
-		);
+	ws_context_t* ctx = ws_getCurrentContext();
+
+	if (!ws_parse_args(ctx, argc, argv) || !ws_has_arg(ctx, "command")) {
+		ws_executeCommand((char*) "help driver");
 		return 0;
 	}
 
-	const char* cmd = argv[1];
+	const char* cmd = ws_get_generic(ctx, "command");
 
-	// list all drivers
 	if (strcmp(cmd, "list") == 0) {
 		printf_color(PRINT_COLOR_LIGHT_CYAN, PRINT_DEFAULT_BG, "Registered Drivers:\n");
 		wallos_driver_t* drv = g_driver_list_head;
@@ -161,23 +164,22 @@ int driver_cli(int argc, char** argv) {
 		return 0;
 	}
 
-	// bind all currently unbound devices
 	if (strcmp(cmd, "bind-all") == 0) {
 		printf_color(PRINT_COLOR_YELLOW, PRINT_DEFAULT_BG, "Starting global device binding...\n");
 		dm_bind_all_registered();
 		return 0;
 	}
 
-	// get info about a specific driver
 	if (strcmp(cmd, "info") == 0) {
-		if (argc < 3) {
+		if (!ws_has_arg(ctx, "name")) {
 			printf_color(PRINT_COLOR_LIGHT_RED, PRINT_DEFAULT_BG, "[ERROR] missing driver name\n");
 			return -1;
 		}
 
+		const char* name = ws_get_generic(ctx, "name");
 		wallos_driver_t* drv = g_driver_list_head;
 		while (drv) {
-			if (drv->name && strcmp(drv->name, argv[2]) == 0) {
+			if (drv->name && strcmp(drv->name, name) == 0) {
 				printf_color(PRINT_COLOR_LIGHT_CYAN, PRINT_DEFAULT_BG, "Driver: %s\n", drv->name);
 				printf("  Match Flags: 0x%llx\n", drv->match_flags);
 				printf("  Match Mask:  0x%llx\n", drv->match_mask);
@@ -185,7 +187,6 @@ int driver_cli(int argc, char** argv) {
 					printf("  Hardware ID: %04x:%04x\n", drv->vendor_id, drv->device_id);
 				}
 
-				// Scan registry to see what devices are currently bound to this driver
 				printf("  Active Bindings:\n");
 				// TODO: This doesnt actually do anything
 				// I was too lazy to get the device registry and iterate through it again.
@@ -193,7 +194,7 @@ int driver_cli(int argc, char** argv) {
 			}
 			drv = drv->next;
 		}
-		printf_color(PRINT_COLOR_LIGHT_RED, PRINT_DEFAULT_BG, "[ERROR] driver '%s' not found\n", argv[2]);
+		printf_color(PRINT_COLOR_LIGHT_RED, PRINT_DEFAULT_BG, "[ERROR] driver '%s' not found\n", name);
 		return -1;
 	}
 

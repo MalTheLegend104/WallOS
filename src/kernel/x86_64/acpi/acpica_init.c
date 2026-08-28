@@ -7,6 +7,7 @@
 #include <acpi/acpi_init.h>
 #include <acpi/acpi_api.h>
 #include <stdbool.h>
+#include <terminal/wall_shell.h>
 
 static volatile bool power_button_pressed = false;
 static volatile bool sleep_button_pressed = false;
@@ -553,24 +554,35 @@ void list_acpi_tables(void) {
 	}
 }
 
+const ws_command_argument_t acpi_args[] = {
+	{ WS_ARG_TYPE_GENERIC, true,  "subcommand", NULL, "One of: hpet, fadt, list, walk, device, info." },
+	{ WS_ARG_TYPE_GENERIC, false, "target",     NULL, "ACPI path (for 'device') or table signature (for 'info')." },
+};
+const size_t acpi_args_count = sizeof(acpi_args) / sizeof(acpi_args[0]);
+
 int acpi_command(int argc, char** argv) {
-	if (argc > 1) {
-		if (strcmp(argv[1], "hpet") == 0)
-			print_hpet();
-		else if (strcmp(argv[1], "fadt") == 0)
-			print_fadt();
-		else if (strcmp(argv[1], "list") == 0)
-			list_acpi_tables();
-		else if (strcmp(argv[1], "walk") == 0)
-			walk_acpi_namespace();
-		else if (strcmp(argv[1], "device") == 0 && argc > 2)
-			print_acpi_device_info(argv[2]);
-		else if (strcmp(argv[1], "info") == 0 && argc > 2)
-			print_acpi_table_info(argv[2]);
-		else
-			printf("Unknown or incomplete ACPI command.\n");
+	ws_context_t* ctx = ws_getCurrentContext();
+
+	if (!ws_parse_args(ctx, argc, argv)) {
+		return 0;
+	}
+
+	const char* subcommand = ws_get_generic(ctx, "subcommand");
+
+	if (strcmp(subcommand, "hpet") == 0) {
+		print_hpet();
+	} else if (strcmp(subcommand, "fadt") == 0) {
+		print_fadt();
+	} else if (strcmp(subcommand, "list") == 0) {
+		list_acpi_tables();
+	} else if (strcmp(subcommand, "walk") == 0) {
+		walk_acpi_namespace();
+	} else if (strcmp(subcommand, "device") == 0 && ws_has_arg(ctx, "target")) {
+		print_acpi_device_info(ws_get_generic(ctx, "target"));
+	} else if (strcmp(subcommand, "info") == 0 && ws_has_arg(ctx, "target")) {
+		print_acpi_table_info(ws_get_generic(ctx, "target"));
 	} else {
-		printf("Command requires arguments, I'm too lazy to add the help entry.");
+		printf("Unknown or incomplete ACPI command.\n");
 	}
 
 	return 0;

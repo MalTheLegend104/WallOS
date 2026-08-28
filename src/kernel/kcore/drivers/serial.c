@@ -478,35 +478,42 @@ static int cmd_serial_send(const char* target, const char* msg) {
 	return 1;
 }
 
+#include <terminal/terminal.h>
+const ws_command_argument_t serial_cli_args[] = {
+	{ WS_ARG_TYPE_GENERIC, false, "command", NULL, "One of: status, init, send." },
+	{ WS_ARG_TYPE_GENERIC, false, "arg1",    NULL, "Address (init), or address/'all' (send)." },
+	{ WS_ARG_TYPE_GENERIC, false, "arg2",    NULL, "Message to send (send only)." },
+};
+const size_t serial_cli_args_count = sizeof(serial_cli_args) / sizeof(serial_cli_args[0]);
+
 int serial_cli_cmd(int argc, char** argv) {
-	if (argc < 2) {
-		printf(
-			"Usage:\n"
-			"  serial status\n"
-			"  serial init <addr>\n"
-			"  serial send <addr|all> <msg>\n"
-		);
+	ws_context_t* ctx = ws_getCurrentContext();
+
+	if (!ws_parse_args(ctx, argc, argv) || !ws_has_arg(ctx, "command")) {
+		ws_executeCommand("help serial");
 		return 1;
 	}
 
-	if (strcmp(argv[1], "status") == 0) {
+	const char* cmd = ws_get_generic(ctx, "command");
+
+	if (strcmp(cmd, "status") == 0) {
 		return cmd_serial_status();
 	}
 
-	if (strcmp(argv[1], "init") == 0) {
-		if (argc < 3) {
+	if (strcmp(cmd, "init") == 0) {
+		if (!ws_has_arg(ctx, "arg1")) {
 			printf("serial: init requires <addr>\n");
 			return 1;
 		}
-		return cmd_serial_init(argv[2]);
+		return cmd_serial_init(ws_get_generic(ctx, "arg1"));
 	}
 
-	if (strcmp(argv[1], "send") == 0) {
-		if (argc < 4) {
+	if (strcmp(cmd, "send") == 0) {
+		if (!ws_has_arg(ctx, "arg1") || !ws_has_arg(ctx, "arg2")) {
 			printf("serial: send requires <addr|all> <msg>\n");
 			return 1;
 		}
-		return cmd_serial_send(argv[2], argv[3]);
+		return cmd_serial_send(ws_get_generic(ctx, "arg1"), ws_get_generic(ctx, "arg2"));
 	}
 
 	printf("serial: unknown subcommand\n");

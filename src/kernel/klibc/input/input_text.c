@@ -143,7 +143,7 @@ char input_getc_nonblocking(void) {
 		// Anything that is non-text we just ignore for now.
 	}
 
-	return -1; // nothing text-worthy queued right now, everything that uses non-blocking assumes -1 if nothing happened
+	return -2; // nothing text-worthy queued right now, everything that uses non-blocking assumes -2 if nothing happened
 }
 
 char* input_gets(char* out, size_t out_size) {
