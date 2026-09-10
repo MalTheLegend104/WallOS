@@ -1,0 +1,48 @@
+BasedOnStyle: LLVM
+AlignArrayOfStructures: Left
+AlignConsecutiveBitFields:
+  Enabled: true
+  AcrossComments: true
+AlignConsecutiveMacros:
+  Enabled: true
+AlignConsecutiveShortCaseStatements:
+  Enabled: true
+  AcrossComments: true
+AlignEscapedNewlines: DontAlign
+AlignOperands: DontAlign
+AlignTrailingComments:
+  Kind: Leave
+AllowAllParametersOfDeclarationOnNextLine: false
+AllowShortBlocksOnASingleLine: Always
+AllowShortCaseLabelsOnASingleLine: true
+AllowShortIfStatementsOnASingleLine: AllIfsAndElse
+AllowShortLoopsOnASingleLine: true
+AllowShortNamespacesOnASingleLine: true
+BinPackArguments: false
+BinPackParameters: OnePerLine
+BreakBeforeCloseBracketFunction: true
+BreakBeforeBinaryOperators: NonAssignment
+BreakInheritanceList: AfterColon
+BreakStringLiterals: false
+ColumnLimit: 0
+CommentPragmas: "clang pragma:"
+EmptyLineBeforeAccessModifier: Always
+IncludeBlocks: Preserve
+IndentCaseLabels: true
+IndentGotoLabels: false
+IndentExternBlock: Indent
+IndentRequiresClause: false
+IndentWidth: 4
+LineEnding: LF
+MaxEmptyLinesToKeep: 4
+NamespaceIndentation: All
+PackConstructorInitializers: NextLineOnly
+PointerAlignment: Left
+ReflowComments: IndentOnly
+RemoveEmptyLinesInUnwrappedLines: true
+SpaceAfterCStyleCast: true
+SpaceAfterTemplateKeyword: false
+SpaceBeforeCpp11BracedList: true
+SpaceBeforeJsonColon: true
+TabWidth: 4
+UseTab: Always

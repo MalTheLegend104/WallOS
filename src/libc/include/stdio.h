@@ -1,9 +1,9 @@
 #ifndef _STDIO_H
 #define _STDIO_H
 #include <stdarg.h>
-#include <stdint.h>
 #include <stdbool.h>
 #include <stddef.h>
+#include <stdint.h>
 
 #include <print_type.h>
 

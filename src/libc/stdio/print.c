@@ -1,12 +1,12 @@
-#include <stdio.h>
+#include <float.h>
+#include <math.h>
 #include <stdarg.h>
 #include <stdbool.h>
-#include <string.h>
-#include <stdlib.h>
-#include <stdint.h>
 #include <stddef.h>
-#include <math.h>
-#include <float.h>
+#include <stdint.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
 
 typedef enum {
 	TYPE_REGULAR,
@@ -234,8 +234,14 @@ size_t print_signed_int(intmax_t value, base_type base, size_t precision, size_t
 	// "If both the converted value and the precision are 0 the conversion results in no characters."
 	if (value == 0 && precision == 0) return 0;
 
-	if (prepend_space && value > 0) { buf[0] = ' '; written++; }
-	if (prepend_sign && value > 0) { buf[0] = '+'; written++; }
+	if (prepend_space && value > 0) {
+		buf[0] = ' ';
+		written++;
+	}
+	if (prepend_sign && value > 0) {
+		buf[0] = '+';
+		written++;
+	}
 
 	size_t length = 0;
 	if ((prepend_space || prepend_sign) && value > 0) {
@@ -388,25 +394,25 @@ int print_float(long double value, float_type base, size_t precision, size_t fie
 		goto end;
 	}
 
-	fp_frac = modf(value, &fp_int); //Separate integer/fractional parts
+	fp_frac = modf(value, &fp_int); // Separate integer/fractional parts
 
-	while (fp_int > 0) { //Convert integer part, if any
+	while (fp_int > 0) { // Convert integer part, if any
 		intPart_reversed[charCount++] = '0' + (int) fmod(fp_int, 10);
 		fp_int = floor(fp_int / 10);
 	}
 
-	//Reverse the integer part, if any
+	// Reverse the integer part, if any
 	for (int i = 0; i < charCount; i++) conversion[i] = intPart_reversed[charCount - i - 1];
 
-	conversion[charCount++] = '.'; //Decimal point
+	conversion[charCount++] = '.'; // Decimal point
 
-	while (fp_frac > 0) { //Convert fractional part, if any
+	while (fp_frac > 0) { // Convert fractional part, if any
 		fp_frac *= 10;
 		fp_frac = modf(fp_frac, &fp_int);
 		conversion[charCount++] = '0' + (int) fp_int;
 	}
 
-	conversion[charCount] = '\0'; //String terminator
+	conversion[charCount] = '\0'; // String terminator
 	print_string(conversion, 0, false, field_width, left_justified, putc_fn, ctx);
 
 end:
@@ -471,105 +477,105 @@ int vprintf_internal(putchar_fn putc_fn, void* ctx, const char* format, va_list 
 				// signed int
 				case 'd': // fallthrough
 				case 'i': {
-						switch (current_modifier) {
-							case TYPE_SHORT_SHORT: {
-									written += print_signed_int((intmax_t) va_arg(list, int), BASE_DECIMAL, precision, field_width, padding, left_justified, prepend_space, prepend_sign, putc_fn, ctx);
-									break;
-								}
-							case TYPE_SHORT: {
-									written += print_signed_int((intmax_t) va_arg(list, int), BASE_DECIMAL, precision, field_width, padding, left_justified, prepend_space, prepend_sign, putc_fn, ctx);
-									break;
-								}
-							case TYPE_LONG: {
-									written += print_signed_int((intmax_t) va_arg(list, long), BASE_DECIMAL, precision, field_width, padding, left_justified, prepend_space, prepend_sign, putc_fn, ctx);
-									break;
-								}
-							case TYPE_LONG_LONG: {
-									written += print_signed_int((intmax_t) va_arg(list, long long), BASE_DECIMAL, precision, field_width, padding, left_justified, prepend_space, prepend_sign, putc_fn, ctx);
-									break;
-								}
-							case TYPE_INTMAX_T: {
-									written += print_signed_int(va_arg(list, intmax_t), BASE_DECIMAL, precision, field_width, padding, left_justified, prepend_space, prepend_sign, putc_fn, ctx);
-									break;
-								}
-								// I legit dont think I can even get a signed size_t to be platform independent.
-								// I'm just going to pass it through as signed and see what happens.
-							case TYPE_SIZE_T: {
-									written += print_signed_int((intmax_t) va_arg(list, size_t), BASE_DECIMAL, precision, field_width, padding, left_justified, prepend_space, prepend_sign, putc_fn, ctx);
-									break;
-								}
-							case TYPE_PTRDIFF: {
-									written += print_signed_int((intmax_t) va_arg(list, ptrdiff_t), BASE_DECIMAL, precision, field_width, padding, left_justified, prepend_space, prepend_sign, putc_fn, ctx);
-									break;
-								}
-								// We have Regular and Long Double here.
-								// We just pretend long double doesn't exist.
-							default: {
-									written += print_signed_int((intmax_t) va_arg(list, int), BASE_DECIMAL, precision, field_width, padding, left_justified, prepend_space, prepend_sign, putc_fn, ctx);
-									break;
-								}
+					switch (current_modifier) {
+						case TYPE_SHORT_SHORT: {
+							written += print_signed_int((intmax_t) va_arg(list, int), BASE_DECIMAL, precision, field_width, padding, left_justified, prepend_space, prepend_sign, putc_fn, ctx);
+							break;
 						}
-						break;
+						case TYPE_SHORT: {
+							written += print_signed_int((intmax_t) va_arg(list, int), BASE_DECIMAL, precision, field_width, padding, left_justified, prepend_space, prepend_sign, putc_fn, ctx);
+							break;
+						}
+						case TYPE_LONG: {
+							written += print_signed_int((intmax_t) va_arg(list, long), BASE_DECIMAL, precision, field_width, padding, left_justified, prepend_space, prepend_sign, putc_fn, ctx);
+							break;
+						}
+						case TYPE_LONG_LONG: {
+							written += print_signed_int((intmax_t) va_arg(list, long long), BASE_DECIMAL, precision, field_width, padding, left_justified, prepend_space, prepend_sign, putc_fn, ctx);
+							break;
+						}
+						case TYPE_INTMAX_T: {
+							written += print_signed_int(va_arg(list, intmax_t), BASE_DECIMAL, precision, field_width, padding, left_justified, prepend_space, prepend_sign, putc_fn, ctx);
+							break;
+						}
+							// I legit dont think I can even get a signed size_t to be platform independent.
+							// I'm just going to pass it through as signed and see what happens.
+						case TYPE_SIZE_T: {
+							written += print_signed_int((intmax_t) va_arg(list, size_t), BASE_DECIMAL, precision, field_width, padding, left_justified, prepend_space, prepend_sign, putc_fn, ctx);
+							break;
+						}
+						case TYPE_PTRDIFF: {
+							written += print_signed_int((intmax_t) va_arg(list, ptrdiff_t), BASE_DECIMAL, precision, field_width, padding, left_justified, prepend_space, prepend_sign, putc_fn, ctx);
+							break;
+						}
+							// We have Regular and Long Double here.
+							// We just pretend long double doesn't exist.
+						default: {
+							written += print_signed_int((intmax_t) va_arg(list, int), BASE_DECIMAL, precision, field_width, padding, left_justified, prepend_space, prepend_sign, putc_fn, ctx);
+							break;
+						}
 					}
+					break;
+				}
 				// All of these have the same unsigned base type.
 				// We just change a few values to the pass to print_unsigned_int
 				case 'u': // fallthrough
 				case 'o': // fallthrough
 				case 'x': // fallthrough
 				case 'X': {
-						char c = *current;
-						base_type base = BASE_DECIMAL;
-						bool capital = false;
+					char c = *current;
+					base_type base = BASE_DECIMAL;
+					bool capital = false;
 
-						if (c == 'X') {
-							base = BASE_HEX;
-							capital = true;
-						} else if (c == 'x') {
-							base = BASE_HEX;
-						} else if (c == 'o') {
-							base = BASE_OCTAL;
-						}
-
-						switch (current_modifier) {
-							case TYPE_SHORT_SHORT: {
-									written += print_unsigned_int(va_arg(list, unsigned int), base, precision, field_width, padding, capital, alternate_form, left_justified, putc_fn, ctx);
-									break;
-								}
-							case TYPE_SHORT: {
-									written += print_unsigned_int((uintmax_t) va_arg(list, unsigned int), base, precision, field_width, padding, capital, alternate_form, left_justified, putc_fn, ctx);
-									break;
-								}
-							case TYPE_LONG: {
-									written += print_unsigned_int((uintmax_t) va_arg(list, unsigned long), base, precision, field_width, padding, capital, alternate_form, left_justified, putc_fn, ctx);
-									break;
-								}
-							case TYPE_LONG_LONG: {
-									written += print_unsigned_int((uintmax_t) va_arg(list, unsigned long long), base, precision, field_width, padding, capital, alternate_form, left_justified, putc_fn, ctx);
-									break;
-								}
-							case TYPE_INTMAX_T: {
-									written += print_unsigned_int(va_arg(list, uintmax_t), base, precision, field_width, padding, capital, alternate_form, left_justified, putc_fn, ctx);
-									break;
-								}
-							// I legit dont think I can even get a signed size_t to be platform independent.
-							// I'm just going to pass it through as signed and see what happens.
-							case TYPE_SIZE_T: {
-									written += print_unsigned_int((uintmax_t) va_arg(list, size_t), base, precision, field_width, padding, capital, alternate_form, left_justified, putc_fn, ctx);
-									break;
-								}
-							case TYPE_PTRDIFF: {
-									written += print_unsigned_int((uintmax_t) va_arg(list, ptrdiff_t), base, precision, field_width, padding, capital, alternate_form, left_justified, putc_fn, ctx);
-									break;
-								}
-								// We have Regular and Long Double here.
-								// We just pretend long double doesn't exist.
-							default: {
-									written += print_unsigned_int((uintmax_t) va_arg(list, unsigned int), base, precision, field_width, padding, capital, alternate_form, left_justified, putc_fn, ctx);
-									break;
-								}
-						}
-						break;
+					if (c == 'X') {
+						base = BASE_HEX;
+						capital = true;
+					} else if (c == 'x') {
+						base = BASE_HEX;
+					} else if (c == 'o') {
+						base = BASE_OCTAL;
 					}
+
+					switch (current_modifier) {
+						case TYPE_SHORT_SHORT: {
+							written += print_unsigned_int(va_arg(list, unsigned int), base, precision, field_width, padding, capital, alternate_form, left_justified, putc_fn, ctx);
+							break;
+						}
+						case TYPE_SHORT: {
+							written += print_unsigned_int((uintmax_t) va_arg(list, unsigned int), base, precision, field_width, padding, capital, alternate_form, left_justified, putc_fn, ctx);
+							break;
+						}
+						case TYPE_LONG: {
+							written += print_unsigned_int((uintmax_t) va_arg(list, unsigned long), base, precision, field_width, padding, capital, alternate_form, left_justified, putc_fn, ctx);
+							break;
+						}
+						case TYPE_LONG_LONG: {
+							written += print_unsigned_int((uintmax_t) va_arg(list, unsigned long long), base, precision, field_width, padding, capital, alternate_form, left_justified, putc_fn, ctx);
+							break;
+						}
+						case TYPE_INTMAX_T: {
+							written += print_unsigned_int(va_arg(list, uintmax_t), base, precision, field_width, padding, capital, alternate_form, left_justified, putc_fn, ctx);
+							break;
+						}
+						// I legit dont think I can even get a signed size_t to be platform independent.
+						// I'm just going to pass it through as signed and see what happens.
+						case TYPE_SIZE_T: {
+							written += print_unsigned_int((uintmax_t) va_arg(list, size_t), base, precision, field_width, padding, capital, alternate_form, left_justified, putc_fn, ctx);
+							break;
+						}
+						case TYPE_PTRDIFF: {
+							written += print_unsigned_int((uintmax_t) va_arg(list, ptrdiff_t), base, precision, field_width, padding, capital, alternate_form, left_justified, putc_fn, ctx);
+							break;
+						}
+							// We have Regular and Long Double here.
+							// We just pretend long double doesn't exist.
+						default: {
+							written += print_unsigned_int((uintmax_t) va_arg(list, unsigned int), base, precision, field_width, padding, capital, alternate_form, left_justified, putc_fn, ctx);
+							break;
+						}
+					}
+					break;
+				}
 					// ------------------------------------------------------------------------------------------------
 					// Floating point
 					// ------------------------------------------------------------------------------------------------
@@ -583,83 +589,83 @@ int vprintf_internal(putchar_fn putc_fn, void* ctx, const char* format, va_list 
 				case 'A': // fallthrough
 				case 'g': // fallthrough
 				case 'G': {
-						char c = *current;
-						float_type type = FLOAT_REGULAR;
-						bool capital = false;
-						long double value;
-						if (current_modifier == TYPE_LONG_DOUBLE) {
-							value = va_arg(list, long double);
-						} else {
-							value = (long double) va_arg(list, double);
-						}
-
-						switch (c) {
-							case 'F': {
-									capital = true;
-									break;
-								}
-
-							case 'e': capital = true; // fallthrough
-							case 'E': {
-									type = FLOAT_SCIENTIFIC;
-									break;
-								}
-
-							case 'a': capital = true; // fallthrough
-							case 'A': {
-									type = FLOAT_HEX;
-									break;
-								}
-
-							case 'g': capital = true; // fallthrough
-							case 'G': {
-									type = calculate_float_shortest(value);
-								}
-							default: break;
-						}
-
-						//printf("Value: %Lf", value);
-
-						written += print_float(value, type, precision, field_width, padding, capital, alternate_form, left_justified, putc_fn, ctx);
-
-						break;
+					char c = *current;
+					float_type type = FLOAT_REGULAR;
+					bool capital = false;
+					long double value;
+					if (current_modifier == TYPE_LONG_DOUBLE) {
+						value = va_arg(list, long double);
+					} else {
+						value = (long double) va_arg(list, double);
 					}
+
+					switch (c) {
+						case 'F': {
+							capital = true;
+							break;
+						}
+
+						case 'e': capital = true; // fallthrough
+						case 'E': {
+							type = FLOAT_SCIENTIFIC;
+							break;
+						}
+
+						case 'a': capital = true; // fallthrough
+						case 'A': {
+							type = FLOAT_HEX;
+							break;
+						}
+
+						case 'g': capital = true; // fallthrough
+						case 'G': {
+							type = calculate_float_shortest(value);
+						}
+						default: break;
+					}
+
+					// printf("Value: %Lf", value);
+
+					written += print_float(value, type, precision, field_width, padding, capital, alternate_form, left_justified, putc_fn, ctx);
+
+					break;
+				}
 					// ------------------------------------------------------------------------------------------------
 					// Chars, Strings, Pointers, and Current Written
 					// ------------------------------------------------------------------------------------------------
 				case 'c': {
-						if (current_modifier == TYPE_LONG) {
-							wchar_t c = (wchar_t) va_arg(list, int);
-							wchar_t str[] = { c, '\0' };
-							written += print_wstring(str, 0, false, putc_fn, ctx);
-						} else {
-							// The standard calls for us to take an int and convert to unsigned char
-							putc_fn((unsigned char) va_arg(list, int), ctx);
-							written++;
-						}
-						break;
+					if (current_modifier == TYPE_LONG) {
+						wchar_t c = (wchar_t) va_arg(list, int);
+						wchar_t str[] = {c, '\0'};
+						written += print_wstring(str, 0, false, putc_fn, ctx);
+					} else {
+						// The standard calls for us to take an int and convert to unsigned char
+						putc_fn((unsigned char) va_arg(list, int), ctx);
+						written++;
 					}
+					break;
+				}
 				case 's': {
 					// TODO: This is technically supposed to call wcrtomb
 					// Im not doing that, probably ever.
-						if (current_modifier == TYPE_LONG) {
-							wchar_t* str = va_arg(list, wchar_t*);
-							written += print_wstring(str, precision, precision_specified, putc_fn, ctx);
-						} else {
-							// The standard calls for us to take an int and convert to unsigned char
-							char* str = va_arg(list, char*);
-							written += print_string(str, precision, precision_specified, field_width, left_justified, putc_fn, ctx);
-						}
-						break;
+					if (current_modifier == TYPE_LONG) {
+						wchar_t* str = va_arg(list, wchar_t*);
+						written += print_wstring(str, precision, precision_specified, putc_fn, ctx);
+					} else {
+						// The standard calls for us to take an int and convert to unsigned char
+						char* str = va_arg(list, char*);
+						written += print_string(str, precision, precision_specified, field_width, left_justified, putc_fn, ctx);
 					}
+					break;
+				}
 				case 'p': {
 					// Can only be regular type. We're just going to ignore modifiers.
 					// This is actually implementation defined.
 					// We're going to write the hex for it.
-						void* p = va_arg(list, void*);
-						written += print_unsigned_int((uintptr_t) p, BASE_HEX, 0, 0, 0, true, true, left_justified, putc_fn, ctx);
-						break;
-					}
+					void* p = va_arg(list, void*);
+					written += print_unsigned_int((uintptr_t) p, BASE_HEX, 0, 0, 0, true, true, left_justified, putc_fn, ctx);
+					break;
+				}
 #ifdef WALLOS_ENABLE_PRINTF_N
 				// A lot of implementations disable this for "security" reasons *cough* *cough* windows.
 				// I'm disabling it by default, but it's still supported and easy to enable.
@@ -667,137 +673,137 @@ int vprintf_internal(putchar_fn putc_fn, void* ctx, const char* format, va_list 
 					// This one a lil weird.
 					// We write the current written amount (not including flags, field width, or precision) to the provided pointer.
 					// The provided pointer is determined by the modifier
-						switch (current_modifier) {
-							case TYPE_SHORT_SHORT: {
-									signed char* dest = va_arg(list, signed char*);
-									*(dest) = (signed char) written;
-									break;
-								}
-							case TYPE_SHORT: {
-									short* dest = va_arg(list, short*);
-									*(dest) = (short) written;
-									break;
-								}
-							case TYPE_LONG: {
-									long* dest = va_arg(list, long*);
-									*(dest) = (long) written;
-									break;
-								}
-							case TYPE_LONG_LONG: {
-									long long* dest = va_arg(list, long long*);
-									*(dest) = (long long) written;
-									break;
-								}
-							case TYPE_INTMAX_T: {
-									intmax_t* dest = va_arg(list, intmax_t*);
-									*(dest) = (intmax_t) written;
-									break;
-								}
-								// The standard calls for a signed size_t???
-								// I dont think any system has a signed size_t
-							case TYPE_SIZE_T: {
-									size_t* dest = va_arg(list, size_t*);
-									*(dest) = (size_t) written;
-									break;
-								}
-							case TYPE_PTRDIFF: {
-									ptrdiff_t* dest = va_arg(list, ptrdiff_t*);
-									*(dest) = (ptrdiff_t) written;
-									break;
-								}
-								// Type Regular is here, as is Long Double.
-								// Long double should never be used for this and isn't part of the standard.
-								// We're just going to assume it's an int for this case.
-							default: {
-									int* dest = va_arg(list, int*);
-									*(dest) = (int) written;
-									break;
-								}
+					switch (current_modifier) {
+						case TYPE_SHORT_SHORT: {
+							signed char* dest = va_arg(list, signed char*);
+							*(dest) = (signed char) written;
+							break;
 						}
-						break;
+						case TYPE_SHORT: {
+							short* dest = va_arg(list, short*);
+							*(dest) = (short) written;
+							break;
+						}
+						case TYPE_LONG: {
+							long* dest = va_arg(list, long*);
+							*(dest) = (long) written;
+							break;
+						}
+						case TYPE_LONG_LONG: {
+							long long* dest = va_arg(list, long long*);
+							*(dest) = (long long) written;
+							break;
+						}
+						case TYPE_INTMAX_T: {
+							intmax_t* dest = va_arg(list, intmax_t*);
+							*(dest) = (intmax_t) written;
+							break;
+						}
+							// The standard calls for a signed size_t???
+							// I dont think any system has a signed size_t
+						case TYPE_SIZE_T: {
+							size_t* dest = va_arg(list, size_t*);
+							*(dest) = (size_t) written;
+							break;
+						}
+						case TYPE_PTRDIFF: {
+							ptrdiff_t* dest = va_arg(list, ptrdiff_t*);
+							*(dest) = (ptrdiff_t) written;
+							break;
+						}
+							// Type Regular is here, as is Long Double.
+							// Long double should never be used for this and isn't part of the standard.
+							// We're just going to assume it's an int for this case.
+						default: {
+							int* dest = va_arg(list, int*);
+							*(dest) = (int) written;
+							break;
+						}
 					}
+					break;
+				}
 #endif // WALLOS_ENABLE_PRINTF_N
 				// ------------------------------------------------------------------------------------------------
 				// Flags
 				// ------------------------------------------------------------------------------------------------
 				// Justify Left
 				case '-': {
-						left_justified = true;
-						current++;
-						check_current = true;
-						break;
-					}
+					left_justified = true;
+					current++;
+					check_current = true;
+					break;
+				}
 					// Signed Conventions
 				case '+': {
-						prepend_sign = true;
-						current++;
-						check_current = true;
-						break;
-					}
+					prepend_sign = true;
+					current++;
+					check_current = true;
+					break;
+				}
 					// I legit didn't know space was a valid format character.
 					// If no sign is going to be written, a space is inserted before the value
 				case ' ': {
-						prepend_space = true;
-						current++;
-						check_current = true;
-						break;
-					}
+					prepend_space = true;
+					current++;
+					check_current = true;
+					break;
+				}
 					// Alternate forms
 				case '#': {
-						alternate_form = true;
-						current++;
-						check_current = true;
-						break;
-					}
+					alternate_form = true;
+					current++;
+					check_current = true;
+					break;
+				}
 					// ------------------------------------------------------------------------------------------------
 					// Width/Precision
 					// ------------------------------------------------------------------------------------------------
 					// Padding
 				case '0': {
-						current++;
-						if (*current == '\0') break;
+					current++;
+					if (*current == '\0') break;
 
-						bool invalid = false;
+					bool invalid = false;
 
-						// We ignore padding if left justified
-						if (left_justified) invalid = true;
+					// We ignore padding if left justified
+					if (left_justified) invalid = true;
 
-						while (*current == '-' || (*current >= '0' && *current <= '9')) {
-							if (*current == '-') {
-								padding = 0;
-								invalid = true;
-							}
-
-							if (!invalid) {
-								if (padding_index >= 2) {
-									current++;
-									continue;
-								}
-								padding_buf[padding_index] = *current;
-								padding_buf[padding_index + 1] = '\0';
-								padding_index++;
-							}
-
-							current++;
+					while (*current == '-' || (*current >= '0' && *current <= '9')) {
+						if (*current == '-') {
+							padding = 0;
+							invalid = true;
 						}
 
 						if (!invalid) {
-							padding = (int) strtol(padding_buf, NULL, 10);
-							memset(padding_buf, 0, 3);
-							padding_index = 0;
+							if (padding_index >= 2) {
+								current++;
+								continue;
+							}
+							padding_buf[padding_index] = *current;
+							padding_buf[padding_index + 1] = '\0';
+							padding_index++;
 						}
 
-						check_current = true;
-						break;
+						current++;
 					}
+
+					if (!invalid) {
+						padding = (int) strtol(padding_buf, NULL, 10);
+						memset(padding_buf, 0, 3);
+						padding_index = 0;
+					}
+
+					check_current = true;
+					break;
+				}
 					// I have no better way of doing this.
 					// These are all field width. 0 is for padding, so that's why it's excluded.
 				case '*': {
-						field_width = va_arg(list, int);
-						check_current = true;
-						current++;
-						break;
-					}
+					field_width = va_arg(list, int);
+					check_current = true;
+					current++;
+					break;
+				}
 				case '1': // fallthrough
 				case '2': // fallthrough
 				case '3': // fallthrough
@@ -807,142 +813,142 @@ int vprintf_internal(putchar_fn putc_fn, void* ctx, const char* format, va_list 
 				case '7': // fallthrough
 				case '8': // fallthrough
 				case '9': {
-						while ((*current >= '0' && *current <= '9')) {
-							// We just ignore anything outside the range.
-							if (field_width_index >= 2) {
+					while ((*current >= '0' && *current <= '9')) {
+						// We just ignore anything outside the range.
+						if (field_width_index >= 2) {
+							current++;
+							continue;
+						}
+						field_width_buf[field_width_index] = *current;
+						field_width_buf[field_width_index + 1] = '\0';
+						field_width_index++;
+						current++;
+					}
+
+					field_width = (int) strtol(field_width_buf, NULL, 10);
+					memset(field_width_buf, 0, 3);
+					field_width_index = 0;
+
+					check_current = true;
+					break;
+				}
+					// Precision
+				case '.': {
+					current++;
+
+					if (*current == '\0') break;
+
+					// If not one of these, it's supposed to be taken as 0
+					if (*current != '*' && *current != '-' && !(*current >= '0' && *current <= '9')) {
+						precision = 0;
+						precision_specified = true;
+						current++;
+						check_current = true;
+						break;
+					}
+
+					bool param = false;
+					if (*current == '*') {
+						precision = va_arg(list, int);
+						param = true;
+					}
+
+					bool negative = false;
+					// The standard tells us to skip any negative precision.
+					while (*current == '-' || (*current >= '0' && *current <= '9')) {
+						if (*current == '-') {
+							negative = true;
+							precision = 0;
+						}
+
+						if (!negative) {
+							if (precision_buf_index >= 2) {
 								current++;
 								continue;
 							}
-							field_width_buf[field_width_index] = *current;
-							field_width_buf[field_width_index + 1] = '\0';
-							field_width_index++;
-							current++;
+							precision_buf[precision_buf_index] = *current;
+							precision_buf[precision_buf_index + 1] = '\0';
+							precision_buf_index++;
 						}
-
-						field_width = (int) strtol(field_width_buf, NULL, 10);
-						memset(field_width_buf, 0, 3);
-						field_width_index = 0;
-
-						check_current = true;
-						break;
-					}
-					// Precision
-				case '.': {
 						current++;
-
-						if (*current == '\0') break;
-
-						// If not one of these, it's supposed to be taken as 0
-						if (*current != '*' && *current != '-' && !(*current >= '0' && *current <= '9')) {
-							precision = 0;
-							precision_specified = true;
-							current++;
-							check_current = true;
-							break;
-						}
-
-						bool param = false;
-						if (*current == '*') {
-							precision = va_arg(list, int);
-							param = true;
-						}
-
-						bool negative = false;
-						// The standard tells us to skip any negative precision.
-						while (*current == '-' || (*current >= '0' && *current <= '9')) {
-							if (*current == '-') {
-								negative = true;
-								precision = 0;
-							}
-
-							if (!negative) {
-								if (precision_buf_index >= 2) {
-									current++;
-									continue;
-								}
-								precision_buf[precision_buf_index] = *current;
-								precision_buf[precision_buf_index + 1] = '\0';
-								precision_buf_index++;
-							}
-							current++;
-						}
-
-						if (!negative && !param) {
-							precision = (int) strtol(precision_buf, NULL, 10);
-							memset(precision_buf, 0, 3);
-							precision_buf_index = 0;
-						}
-
-						precision_specified = true;
-						check_current = true;
-						break;
 					}
+
+					if (!negative && !param) {
+						precision = (int) strtol(precision_buf, NULL, 10);
+						memset(precision_buf, 0, 3);
+						precision_buf_index = 0;
+					}
+
+					precision_specified = true;
+					check_current = true;
+					break;
+				}
 
 					// ------------------------------------------------------------------------------------------------
 					// Length
 					// ------------------------------------------------------------------------------------------------
 					// short
 				case 'h': {
+					current++;
+					if (*current == '\0') break;
+
+					if (*current == 'h') {
+						current_modifier = TYPE_SHORT_SHORT;
 						current++;
-						if (*current == '\0') break;
-
-						if (*current == 'h') {
-							current_modifier = TYPE_SHORT_SHORT;
-							current++;
-						} else {
-							current_modifier = TYPE_SHORT;
-						}
-
-						check_current = true;
-						break;
+					} else {
+						current_modifier = TYPE_SHORT;
 					}
+
+					check_current = true;
+					break;
+				}
 					// long
 				case 'l': {
+					current++;
+					if (*current == '\0') break;
+
+					if (*current == 'l') {
+						current_modifier = TYPE_LONG_LONG;
 						current++;
-						if (*current == '\0') break;
-
-						if (*current == 'l') {
-							current_modifier = TYPE_LONG_LONG;
-							current++;
-						} else {
-							current_modifier = TYPE_LONG;
-						}
-
-						check_current = true;
-						break;
+					} else {
+						current_modifier = TYPE_LONG;
 					}
+
+					check_current = true;
+					break;
+				}
 					// intmax_t or uintmax_t
 				case 'j': {
-						current_modifier = TYPE_INTMAX_T;
-						current++;
-						check_current = true;
-						break;
-					}
+					current_modifier = TYPE_INTMAX_T;
+					current++;
+					check_current = true;
+					break;
+				}
 					// size_t or ssize_t
 				case 'z': {
-						current_modifier = TYPE_SIZE_T;
-						current++;
-						check_current = true;
-						break;
-					}
+					current_modifier = TYPE_SIZE_T;
+					current++;
+					check_current = true;
+					break;
+				}
 					// ptrdiff_t
 				case 't': {
-						current_modifier = TYPE_PTRDIFF;
-						current++;
-						check_current = true;
-						break;
-					}
+					current_modifier = TYPE_PTRDIFF;
+					current++;
+					check_current = true;
+					break;
+				}
 				case 'L': {
-						current_modifier = TYPE_LONG_DOUBLE;
-						current++;
-						check_current = true;
-						break;
-					}
+					current_modifier = TYPE_LONG_DOUBLE;
+					current++;
+					check_current = true;
+					break;
+				}
 				default: {
-						putc_fn(*current, ctx);
-						written++;
-						break;
-					}
+					putc_fn(*current, ctx);
+					written++;
+					break;
+				}
 			}
 		} else {
 			putc_fn(*current, ctx);
@@ -986,8 +992,7 @@ int vsnprintf(char* str, size_t size, const char* format, va_list list) {
 	buffer_ctx ctx = {
 		.buf = str,
 		.size = (size > 0) ? size - 1 : 0, // reserve space for null
-		.pos = 0
-	};
+		.pos = 0};
 
 	int written = vprintf_internal(buffer_putchar, &ctx, format, list);
 
