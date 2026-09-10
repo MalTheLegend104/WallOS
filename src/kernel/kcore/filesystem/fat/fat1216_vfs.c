@@ -1,5 +1,6 @@
-#include <filesystem/fat/fat1216_vfs.h>
+#include "filesystem/wdm.h"
 #include <filesystem/fat/fat.h>
+#include <filesystem/fat/fat1216_vfs.h>
 #include <filesystem/fat/fat_internal.h>
 #include <stdlib.h>
 #include <string.h>
@@ -147,7 +148,10 @@ static VFS_Status fat1216_vfs_read_file(void* fs_ctx, VFS_FD fd, void* buf, size
 	vfs_fat1216_file_t* f = &ctx->files[fd];
 	if (!f->used) return VFS_ERR_BADF;
 
-	if (f->pos >= f->size) { *out_read = 0; return VFS_OK; }
+	if (f->pos >= f->size) {
+		*out_read = 0;
+		return VFS_OK;
+	}
 
 	size_t avail = f->size - f->pos;
 	size_t to_copy = size < avail ? size : avail;
@@ -158,7 +162,9 @@ static VFS_Status fat1216_vfs_read_file(void* fs_ctx, VFS_FD fd, void* buf, size
 }
 
 static VFS_Status fat1216_vfs_write_file(void* fs_ctx, VFS_FD fd, const void* buf, size_t size, size_t* out_written) {
-	(void) buf; (void) size; (void) out_written;
+	(void) buf;
+	(void) size;
+	(void) out_written;
 	if (!fs_ctx) return VFS_ERR_INVALID;
 	vfs_fat1216_ctx_t* ctx = (vfs_fat1216_ctx_t*) fs_ctx;
 	if (fd < 0 || fd >= VFS_FAT1216_OPEN_MAX || !ctx->files[fd].used) return VFS_ERR_BADF;
@@ -248,17 +254,34 @@ void vfs_fat1216_free(void* ctx) {
 	kfree(ctx);
 }
 
+bool vfs_fat1216_probe(WDM_DriveHandle drive) {
+	WDM_DriveInfo info;
+	WDM_GetInfo(drive, &info);
+	if (info.sector_size == 0) return false;
+	uint8_t* sector = kalloc(info.sector_size);
+	WDM_Read(drive, 0, 1, sector, WDM_FLAG_NONE);
+
+
+	bool ret = false;
+	fat_type_t type = get_fat_type(sector);
+	if (type == FAT_TYPE_FAT12 || type == FAT_TYPE_FAT16) ret = true;
+	kfree(sector);
+
+	return ret;
+}
+
 const VFS_FSOps vfs_fat1216_ops = {
-	.create_context = vfs_fat1216_alloc,
-	.destroy_context = vfs_fat1216_free,
-	.on_mount = fat1216_vfs_on_mount,
-	.on_unmount = fat1216_vfs_on_unmount,
-	.open_file = fat1216_vfs_open_file,
-	.close_file = fat1216_vfs_close_file,
-	.read_file = fat1216_vfs_read_file,
-	.write_file = fat1216_vfs_write_file,
-	.make_dir = fat1216_vfs_make_dir,
-	.remove_dir = fat1216_vfs_remove_dir,
-	.open_dir = fat1216_vfs_open_dir,
-	.read_dir = fat1216_vfs_read_dir,
+    .probe = vfs_fat1216_probe,
+    .create_context = vfs_fat1216_alloc,
+    .destroy_context = vfs_fat1216_free,
+    .on_mount = fat1216_vfs_on_mount,
+    .on_unmount = fat1216_vfs_on_unmount,
+    .open_file = fat1216_vfs_open_file,
+    .close_file = fat1216_vfs_close_file,
+    .read_file = fat1216_vfs_read_file,
+    .write_file = fat1216_vfs_write_file,
+    .make_dir = fat1216_vfs_make_dir,
+    .remove_dir = fat1216_vfs_remove_dir,
+    .open_dir = fat1216_vfs_open_dir,
+    .read_dir = fat1216_vfs_read_dir,
 };

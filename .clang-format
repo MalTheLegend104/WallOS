@@ -45,4 +45,4 @@ SpaceAfterTemplateKeyword: false
 SpaceBeforeCpp11BracedList: true
 SpaceBeforeJsonColon: true
 TabWidth: 4
-UseTab: Always
+UseTab: ForIndentation

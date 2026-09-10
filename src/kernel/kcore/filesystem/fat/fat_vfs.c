@@ -65,7 +65,7 @@ static uint32_t parent_cluster_of(vfs_fat32_ctx_t* ctx, const char* rel_path) {
  * Build a packed 32-byte dirent from a resolved entry with an updated size.
  * Preserves the original timestamps and attributes.
  */
-static void pack_updated_dirent(const fat_resolved_dirent_t* entry, uint32_t new_size, uint8_t  out_raw32[32]) {
+static void pack_updated_dirent(const fat_resolved_dirent_t* entry, uint32_t new_size, uint8_t out_raw32[32]) {
 	// Start from the raw on-disk copy stored in the resolved entry.
 	const fat_dirent_t* d = &entry->raw;
 
@@ -145,7 +145,7 @@ static VFS_Status fat32_vfs_open_file(void* fs_ctx, const char* path, VFS_OpenFl
 	vfs_fat32_ctx_t* ctx = (vfs_fat32_ctx_t*) fs_ctx;
 	const char* rel = strip_slash(path);
 
-	// Mount root is a directory, never a file. 
+	// Mount root is a directory, never a file.
 	if (rel[0] == '\0') return VFS_ERR_ISDIR;
 
 	bool writable = (flags & (VFS_O_WRONLY | VFS_O_RDWR)) != 0;
@@ -157,7 +157,7 @@ static VFS_Status fat32_vfs_open_file(void* fs_ctx, const char* path, VFS_OpenFl
 	if (slot < 0) return VFS_ERR_FDFULL;
 
 	fat_resolved_dirent_t entry;
-	fat_lookup_status_t   ls = fat32_find_file(ctx->drive, &ctx->ebr, rel, &entry);
+	fat_lookup_status_t ls = fat32_find_file(ctx->drive, &ctx->ebr, rel, &entry);
 
 	if (ls == FAT_LOOKUP_WRONG_TYPE) return VFS_ERR_ISDIR;
 
@@ -241,7 +241,10 @@ static VFS_Status fat32_vfs_read_file(void* fs_ctx, VFS_FD fd, void* buf, size_t
 	if (!f->used) return VFS_ERR_BADF;
 	if (f->flags == VFS_O_WRONLY) return VFS_ERR_BADF;
 
-	if (f->pos >= f->size) { *out_read = 0; return VFS_OK; }
+	if (f->pos >= f->size) {
+		*out_read = 0;
+		return VFS_OK;
+	}
 
 	size_t avail = f->size - f->pos;
 	size_t to_copy = size < avail ? size : avail;
@@ -355,7 +358,10 @@ static VFS_Status fat32_vfs_remove_dir(void* fs_ctx, const char* path) {
 
 	bool non_empty = false;
 	for (size_t i = 0; i < listing.count; i++) {
-		if (!fat_is_dot_entry(&listing.entries[i])) { non_empty = true; break; }
+		if (!fat_is_dot_entry(&listing.entries[i])) {
+			non_empty = true;
+			break;
+		}
 	}
 	fat_dirent_list_free(&listing);
 
@@ -431,7 +437,6 @@ static VFS_Status fat32_vfs_read_dir(void* fs_ctx, VFS_FD fd, VFS_DirEnt* out_en
 }
 
 static bool fat32_vfs_probe(WDM_DriveHandle drive) {
-
 	WDM_DriveInfo info;
 	WDM_GetInfo(drive, &info);
 	if (info.sector_size == 0) return false;
@@ -457,17 +462,17 @@ void vfs_fat32_free(void* ctx) {
 }
 
 const VFS_FSOps vfs_fat32_ops = {
-	.create_context = vfs_fat32_alloc,
-	.destroy_context = vfs_fat32_free,
-	.probe = fat32_vfs_probe,
-	.on_mount = fat32_vfs_on_mount,
-	.on_unmount = fat32_vfs_on_unmount,
-	.open_file = fat32_vfs_open_file,
-	.close_file = fat32_vfs_close_file,
-	.read_file = fat32_vfs_read_file,
-	.write_file = fat32_vfs_write_file,
-	.make_dir = fat32_vfs_make_dir,
-	.remove_dir = fat32_vfs_remove_dir,
-	.open_dir = fat32_vfs_open_dir,
-	.read_dir = fat32_vfs_read_dir,
+    .create_context = vfs_fat32_alloc,
+    .destroy_context = vfs_fat32_free,
+    .probe = fat32_vfs_probe,
+    .on_mount = fat32_vfs_on_mount,
+    .on_unmount = fat32_vfs_on_unmount,
+    .open_file = fat32_vfs_open_file,
+    .close_file = fat32_vfs_close_file,
+    .read_file = fat32_vfs_read_file,
+    .write_file = fat32_vfs_write_file,
+    .make_dir = fat32_vfs_make_dir,
+    .remove_dir = fat32_vfs_remove_dir,
+    .open_dir = fat32_vfs_open_dir,
+    .read_dir = fat32_vfs_read_dir,
 };
