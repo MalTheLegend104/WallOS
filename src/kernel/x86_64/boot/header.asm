@@ -2,6 +2,23 @@ global header_start
 section .multiboot_header
 ; This is basically the same as defining a struct in C
 ; It's kinda ugly, ignore that.
+
+; If we don't have one set, we need to use defaults
+; I *hate* 1024x768 with a passion.
+%ifndef FB_WIDTH
+    %define FB_WIDTH 1920
+    %define FB_HEIGHT 1080
+    %define FB_BPP 32
+%elifndef FB_HEIGHT
+    %define FB_WIDTH 1920
+    %define FB_HEIGHT 1080
+    %define FB_BPP 32
+%elifndef FB_BPP
+    %define FB_WIDTH 1920
+    %define FB_HEIGHT 1080
+    %define FB_BPP 32
+%endif
+
 align 8
 header_start:
 	; magic number
@@ -17,7 +34,7 @@ header_start:
 ; Framebuffer stuff
 ; Remember we're at the mercy of grub and the bios
 ; We can request (and requesting does result in VBE mode) things but the request isn't guaranteed.
-%if 0 ;we dont need this yet and im abusing nasm
+%if 1 ;we dont need this yet and im abusing nasm
 align 8
 mb2_tag_fb_start:
 	dw 5
@@ -29,9 +46,9 @@ mb2_tag_fb_start:
 	; dd 640 ; width in pixels
 	; dd 480 ; height in pixels
     ; dd 16 ; bpp
-	dd 0
-	dd 0
-	dd 0
+	dd FB_WIDTH
+	dd FB_HEIGHT
+	dd FB_BPP
 	; It's not guaranteed to give us the framebuffer we want.
 mb2_tag_fb_end:
 %endif

@@ -430,7 +430,36 @@ static VFS_Status fat32_vfs_read_dir(void* fs_ctx, VFS_FD fd, VFS_DirEnt* out_en
 	return VFS_OK;
 }
 
+static bool fat32_vfs_probe(WDM_DriveHandle drive) {
+
+	WDM_DriveInfo info;
+	WDM_GetInfo(drive, &info);
+	if (info.sector_size == 0) return false;
+	uint8_t* sector = kalloc(info.sector_size);
+	WDM_Read(drive, 0, 1, sector, WDM_FLAG_NONE);
+
+
+	bool ret = false;
+	if (get_fat_type(sector) == FAT_TYPE_FAT32) {
+		ret = true;
+	}
+	kfree(sector);
+
+	return ret;
+}
+
+void* vfs_fat32_alloc(void) {
+	return kcalloc(1, sizeof(vfs_fat32_ctx_t));
+}
+
+void vfs_fat32_free(void* ctx) {
+	kfree(ctx);
+}
+
 const VFS_FSOps vfs_fat32_ops = {
+	.create_context = vfs_fat32_alloc,
+	.destroy_context = vfs_fat32_free,
+	.probe = fat32_vfs_probe,
 	.on_mount = fat32_vfs_on_mount,
 	.on_unmount = fat32_vfs_on_unmount,
 	.open_file = fat32_vfs_open_file,
@@ -442,12 +471,3 @@ const VFS_FSOps vfs_fat32_ops = {
 	.open_dir = fat32_vfs_open_dir,
 	.read_dir = fat32_vfs_read_dir,
 };
-
-
-vfs_fat32_ctx_t* vfs_fat32_alloc(void) {
-	return (vfs_fat32_ctx_t*) kcalloc(1, sizeof(vfs_fat32_ctx_t));
-}
-
-void vfs_fat32_free(vfs_fat32_ctx_t* ctx) {
-	kfree(ctx);
-}

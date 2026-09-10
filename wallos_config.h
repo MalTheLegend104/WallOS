@@ -73,6 +73,9 @@
 // For example, if a keyboard driver pushes 100 events before the input system is drained, the last 46 will be dropped
 #define WALLOS_INPUT_QUEUE_CAPACITY 64
 
+// Max amount of drives that we can have at once.
+#define WDM_MAX_DRIVES 32
+
 // ------------------------------------------------------------------------------------------------
 // ------------------------------------------------------------------------------------------------
 // Error Checking

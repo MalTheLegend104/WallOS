@@ -29,7 +29,7 @@ extern "C" {
 
 #ifndef VFS_MOUNT_MAX
 /** Maximum number of simultaneously mounted filesystems. */
-#define VFS_MOUNT_MAX   16
+#define VFS_MOUNT_MAX   32
 #endif
 
 #ifndef VFS_FD_INVALID
@@ -105,6 +105,33 @@ extern "C" {
 	 * and are relative to the mount root (i.e. the mount point prefix has been stripped by the VFS before the call).
 	 */
 	typedef struct {
+		/**
+		 * @brief
+		 * **Optional, but highly recommended.**
+		 *
+		 * Should take in the drive handle, and use it to determine if this drive has this filesystem.
+		 *
+		 * @param drive WDM_Handle of the drive to probe
+		 * @return True if this drive does have this filesystem, false otherwise.
+		 */
+		bool (*probe)(WDM_DriveHandle drive);
+
+		/**
+		 * @brief Create the underlying context passed to all VFS_FSOps functions.
+		 * **Required**
+		 *
+		 * @return allocated structure.
+		 */
+		void* (*create_context)();
+
+		/**
+		 * @brief Destroy the underlying context passed to all VFS_FSOps functions.
+		 * **Required**
+		 *
+		 * @param The allocated structure to be destroyed.
+		 */
+		void (*destroy_context)(void* fs_ctx);
+
 		/**
 		 * @brief Called by VFS_Mount() after the mount table entry is reserved.
 		 *        **Required.**

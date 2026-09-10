@@ -157,8 +157,15 @@ extern "C" {
 #define ATA_CMD_READ_DMA_EXT     0x25
 #define ATA_CMD_WRITE_DMA_EXT    0x35
 #define ATA_CMD_FLUSH_CACHE_EXT  0xEA
+#define ATA_CMD_PACKET           0xA0  // Send an ATAPI (SCSI) packet command
+#define ATA_CMD_IDENTIFY_PACKET  0xA1  // IDENTIFY PACKET DEVICE
 
-#define ATA_DEV_LBA  (1U << 6)  // Device register: LBA mode
+#define ATA_FEATURE_DMA  (1U << 0)  // Feature reg bit 0 - use DMA for the PACKET command's data phase
+
+#define ATA_DEV_LBA  (1U << 6)  // Device register - LBA mode
+
+// ATAPI packet commands are always carried as a fixed 12-byte CDB in the command table's ACMD area, regardless of how long the actual SCSI CDB underneath is
+#define AHCI_ATAPI_CDB_LEN  12
 
 // ------------------------------------------------------------------------------------------------
 // AHCI Port State
@@ -221,6 +228,14 @@ extern "C" {
 	// I/O (synchronous, polling)
 	int ahci_read_sectors(ahci_port_t* port, uint64_t lba, uint32_t count, void* buf);
 	int ahci_write_sectors(ahci_port_t* port, uint64_t lba, uint32_t count, const void* buf);
+
+	// Mostly so ATAPI can use it, shouldn't really be used elsewhere.
+	int ahci_issue_ata(ahci_port_t* port, uint32_t slot_count, ahci_fis_h2d_t* fis, void* buf, uint32_t byte_count, int is_write);
+	int ahci_issue_atapi(ahci_port_t* port, uint32_t slot_count, const uint8_t* cdb, uint8_t cdb_len, void* buf, uint32_t byte_count, int is_write);
+
+	// ATA IDENTIFY strings are byte-swapped, space-padded ASCII. 
+	// Shared with the ATAPI layer since IDENTIFY PACKET DEVICE uses the exact same string encoding.
+	void swap_ata_string(uint16_t* words, char* out, int word_count);
 
 #ifdef __cplusplus
 }

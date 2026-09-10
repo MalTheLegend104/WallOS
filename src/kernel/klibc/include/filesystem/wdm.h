@@ -13,6 +13,10 @@
 // I wanted this as part of the spec, honestly just so I'd remember to add it eventually.
 // #define WALLOS_WDM_DMA 
 
+#ifndef WDM_MAX_DRIVES
+#define WDM_MAX_DRIVES 32
+#endif
+
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -634,6 +638,22 @@ extern "C" {
 		uint32_t         max,
 		uint32_t* total
 	);
+
+	/**
+	 * @brief Resolve a device address string to a live drive/partition handle.
+	 *
+	 * Addresses use WDM enumeration order:
+	 * "N" - N'th entry from WDM_Enumerate() (top-level drive).
+	 * "N" - M'th partition from WDM_EnumeratePartitions() for drive N.
+	 *
+	 * @param addr Address string ("0", "0:1", etc.), must not be NULL.
+	 * @param out Receives the resolved handle, must not be NULL.
+	 *
+	 * @retval WDM_OK on success
+	 * @retval WDM_ERR_INVALID for invalid arguments/address
+	 * @retval WDM_ERR_NOT_FOUND if N or M is out of range.
+	 */
+	WDM_Status WDM_ResolveAddress(const char* addr, WDM_DriveHandle* out);
 
 #ifdef __cplusplus
 }

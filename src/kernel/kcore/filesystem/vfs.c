@@ -237,6 +237,7 @@ VFS_Status VFS_Mount(const char* path, WDM_DriveHandle drive, const VFS_FSOps* o
 	// All operations are required.
 	// Yes this is ugly. Yes this is the easiest way to do this.
 	if (!ops->on_mount || !ops->on_unmount ||
+		!ops->create_context || !ops->destroy_context ||
 		!ops->open_file || !ops->close_file ||
 		!ops->read_file || !ops->write_file ||
 		!ops->make_dir || !ops->remove_dir ||

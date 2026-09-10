@@ -23,7 +23,7 @@ extern "C" {
 	 * as a FatFs volume.  Reads the blob address and size from the linker symbols
 	 * _initrd_data and _initrd_size.
 	 *
-	 * The returned handle is suitable for passing directly to mount_drive() or
+	 * The returned handle is suitable for passing directly to filesystem_mount_explicit() or
 	 * ff_register_drive().
 	 *
 	 * Example (in kmain or equivalent):

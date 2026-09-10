@@ -697,6 +697,13 @@ const apollo_font_instance* display_get_font_instance(void) {
 	return NULL;
 }
 
+int display_get_chars_per_line() {
+	if (display_mode == DISPLAY_MODE_FRAMEBUFFER) {
+		return apollo_get_chars_per_line(render_target, &font_instance);
+	}
+	return 80;
+}
+
 #ifdef __is_kernel_
 void display_panic(const char* error) {
 	if (display_mode == DISPLAY_MODE_VGA_TEXT) {

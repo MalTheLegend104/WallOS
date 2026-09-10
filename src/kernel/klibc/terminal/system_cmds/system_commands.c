@@ -80,6 +80,9 @@ int logo_command(int argc, char** argv) {
 	return 0;
 }
 
+extern void register_drive_commands(void);
+
+
 // Since we dont have malloc, aliases have to be defined outside of context.
 // If you try to define it in a function, you'll get a page fault.
 void registerSystemCommands() {
@@ -123,10 +126,11 @@ void registerSystemCommands() {
 	sysinfo_cmd.command_name = "sysinfo";
 	ws_registerCommand(sysinfo_cmd);
 
-	ws_command_t drive_cmd = { 0 };
-	drive_cmd.main_func = drive_command;
-	drive_cmd.command_name = "drive";
-	ws_registerCommand(drive_cmd);
+	// ws_command_t drive_cmd = { 0 };
+	// drive_cmd.main_func = drive_command;
+	// drive_cmd.command_name = "drive";
+	// ws_registerCommand(drive_cmd);
+	register_drive_commands();
 
 	ws_command_t shutdown_cmd = { 0 };
 	shutdown_cmd.main_func = shutdown_command;

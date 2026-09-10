@@ -203,6 +203,11 @@ extern "C" {
 	 */
 	const apollo_font_instance* display_get_font_instance(void);
 
+	/**
+	 * @brief Get the amount of characters that can fit in one line.
+	 */
+	int display_get_chars_per_line();
+
 #ifdef __is_kernel_
 /**
  * @brief Display a kernel panic screen (pink/red screen)

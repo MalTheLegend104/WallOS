@@ -10,7 +10,7 @@
  * Anything using this should *not* expect it to remain the same length.
  * The only expectation from this define is that it exist
  */
-#define WALLOS_VERSION_STR "WallOS v0.3.1"
+#define WALLOS_VERSION_STR "WallOS v0.4.0"
 
 /* Integer version of the current version of WallOS
  * This is what's expected to be used for compatibility checking.
@@ -22,8 +22,8 @@
  * Everything else is derived from these three.
  */
 #define WALLOS_VERSION_MAJOR_INT 0
-#define WALLOS_VERSION_MINOR_INT 3
-#define WALLOS_VERSION_PATCH_INT 1
+#define WALLOS_VERSION_MINOR_INT 4
+#define WALLOS_VERSION_PATCH_INT 0
 
 // ------------------------------------------------------------------------------------------------
 // ------------------------------------------------------------------------------------------------
@@ -91,3 +91,7 @@
 
 // The version that this semantic versioning scheme was introduced
 #define WALLOS_VERSION_SEMVER_INTRODUCTION_0_3_1 WALLOS_VERSION_MAKE(0,3,1)
+
+// This was updated with a major filesystem update, but there is a ton of stuff in-between the last and this one
+// I will try to be better about this in the future, I'm bad about hopping between things and not fully finishing things
+#define WALLOS_VERSION_MAJOR_UPDATES_0_4_0 WALLOS_VERSION_MAKE(0,4,0)

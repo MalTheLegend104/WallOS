@@ -1652,15 +1652,55 @@ int helpMain(int argc, char** argv) {
 	printf("All commands:\n");
 
 	ws_setConsoleColors((ws_color_t) { WS_FG_BRIGHT_GREEN, WS_BG_DEFAULT });
-	// List all available commands
+
+	// Find the longest command name.
+	int max_name_length = 0;
+	int command_count = 0;
+
 	for (int i = 0; i < current_command_spot; i++) {
-		if (commands[i].command_name) {
-			printf("  %s\n", commands[i].command_name);
-		}
+
+		if (!commands[i].command_name)
+			continue;
+
+		int length = strlen(commands[i].command_name);
+
+		if (length > max_name_length)
+			max_name_length = length;
+
+		command_count++;
 	}
+
+	// Space between columns.
+	const int column_spacing = 2;
+	const int terminal_width = display_get_chars_per_line();
+
+	// Determine how many columns fit
+	const int column_width = max_name_length + column_spacing;
+	int column_count = terminal_width / column_width;
+
+	if (column_count < 1) column_count = 1;
+
+	int printed = 0;
+
+	for (int i = 0; i < current_command_spot; i++) {
+		if (!commands[i].command_name) continue;
+
+		const bool last_column = (printed % column_count) == column_count - 1;
+		printf("%s", commands[i].command_name);
+
+		if (last_column) printf("\n");
+		else printf("%*s", column_width - strlen(commands[i].command_name), "");
+
+		printed++;
+	}
+
+	// Make sure the final row gets a newline.
+	if (printed > 0 && printed % column_count != 0) printf("\n");
+
 	printf("\n");
 	ws_setConsoleColors(ws_getDefaultColors());
 	return 0;
+
 }
 
 /* Internal history command */
@@ -2181,9 +2221,6 @@ void ws_cleanAll() {
 ws_error_t ws_terminalMain() {
 	/* We're assuming that the user has printed everything they want prior to calling main. */
 	/* We're also assuming the colors have been defined, even if they are blank. */
-#ifndef NO_BASIC_COMMANDS
-	ws_internal_registerBasicCommands();
-#endif
 
 	// // Check for stream configurations
 	// if (!ws_err_stream) ws_setStream(WS_ERROR_S, stderr);
@@ -2201,6 +2238,9 @@ ws_error_t ws_terminalMain() {
 	busy_wait_ms(1000);
 	ws_executeCommand("clear");
 	ws_executeCommand("logo");
+
+	ws_internal_registerBasicCommands();
+
 
 	/* Ideally something should've caught this before calling main, but we still need to check. */
 #ifndef DISABLE_MALLOC

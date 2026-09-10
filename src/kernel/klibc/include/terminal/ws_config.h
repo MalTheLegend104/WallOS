@@ -66,4 +66,6 @@ void display_set_colors_wrapper(int fg, int bg);
 #define CUSTOM_CURSOR_CONTROL
 #define DISABLE_MALLOC
 
+#define COMMAND_LIMIT 64
+
 #endif // WS_CONFIG_H

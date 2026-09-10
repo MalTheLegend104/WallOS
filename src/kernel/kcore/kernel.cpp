@@ -32,6 +32,8 @@
 #include <terminal/terminal.h>
 #include <terminal/commands/system_commands.h>
 
+#include <filesystem/filesystems.h>
+
 // #include <ff.h>
 
 
@@ -460,12 +462,7 @@ void kernel_main(unsigned int magic, multiboot_info* mbt_info) {
 	WDM_Init();
 	WDM_DriveHandle initrd = initrd_wdm_init(INITRD_FLAG_NONE);
 	if (!initrd) panic_s("initrd: WDM registration failed");
-	// mount_drive(0, initrd); // pdrv 0, same as before
-	// fatfs_vfs_ctx_t* ctx = fatfs_vfs_alloc_ctx(initrd, 9);
-	// VFS_Mount("/initrd", initrd, &fatfs_vfs_ops, ctx);
-	// TODO: This needs to be made to NOT be FAT12
-	// Or I need a VFS layer for FAT12/16
-	mount_drive("/initrd", initrd, 0);
+	filesystem_mount_explicit(initrd, "/initrd", FILESYSTEM_FAT12_16);
 
 	// register_usb_controller_drivers();
 	xhci_init();

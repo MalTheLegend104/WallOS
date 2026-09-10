@@ -25,7 +25,6 @@ extern "C" {
 
 	// bool mount_drive(int pdrv);
 	// bool mount_drive(int pdrv, WDM_DriveHandle handle);
-	bool mount_drive(const char* vfs_path, WDM_DriveHandle handle, int pdrv);
 	int drive_command(int argc, char** argv);
 	int drive_command_help(int argc, char** argv);
 

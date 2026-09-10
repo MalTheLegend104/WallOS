@@ -19,11 +19,6 @@
 // ------------------------------------------------------------------------------------------------
 // ------------------------------------------------------------------------------------------------
 
-/** Maximum number of concurrently registered drives. */
-#ifndef WDM_MAX_DRIVES
-#define WDM_MAX_DRIVES 32
-#endif
-
 /** Internal representation of a registered drive. */
 struct WDM_Drive {
 	bool active;
@@ -54,8 +49,7 @@ static bool             wdm_initialized = false;
 // True if name is NOT taken, false otherwise.
 static bool validate_handle_name(const char* name) {
 	for (int i = 0; i < WDM_MAX_DRIVES; i++) {
-		if (wdm_drives[i].active &&
-			strncmp(wdm_drives[i].name, name, 32) == 0)
+		if (wdm_drives[i].active && strncmp(wdm_drives[i].name, name, 32) == 0)
 			return false;
 	}
 
@@ -476,6 +470,7 @@ WDM_Status WDM_GetPartitionMetadata(WDM_DriveHandle handle, WDM_PartitionMeta* m
 #include <filesystem/partitions/wallos_gpt.h>
 #include <device/device_manager.h>
 #include <filesystem/partitions/wallos_mbr.h>
+#include <drivers/serial.h>
 
 WDM_Status WDM_ScanAndRegisterPartitions(WDM_DriveHandle wdm_parent, struct wallos_device* dev_parent) {
 	if (!wdm_parent || !dev_parent) return WDM_ERR_INVALID;
@@ -543,20 +538,47 @@ WDM_Status WDM_ScanAndRegisterPartitions(WDM_DriveHandle wdm_parent, struct wall
 	}
 	if (gpt_table.entries) kfree(gpt_table.entries);
 
-	// Fallback to MBR
+		// Fallback to MBR
 	if (WDM_Read(wdm_parent, 0, 1, sector_buf, WDM_FLAG_NONE) == WDM_OK) {
 		mbr_partition_table_t mbr_table;
 		memset(&mbr_table, 0, sizeof(mbr_table));
 		parse_mbr(&mbr_table, sector_buf, info.sector_size);
 
+		// MBR partition entries are always expressed in fixed 512-byte units, regardless of the drive's actual sector size
+		// They must be converted before being handed to WDM_AddPartition()
+		if (info.sector_size < 512 || info.sector_size % 512 != 0) {
+			kfree(sector_buf);
+			return WDM_ERR_INVALID;
+		}
+		uint32_t units_per_sector = info.sector_size / 512;
+
 		uint32_t part_idx = 0;
 		for (int i = 0; i < 4; i++) {
+			if (mbr_table.partition_entries[i].partition_type == GPT_PROTECTIVE_MBR) {
+				// This is a protective MBR. If we got here, it failed parsing in GPT for some reason.
+				// We just note this, and don't register it. We'll keep parsing the MBR just in case there is something present.
+				printf_serial("[WDM][WARN] Protective MBR passed through to MBR parsing. Something happened in GPT parsing.\n");
+				continue;
+			}
+
 			if (mbr_table.partition_entries[i].partition_type != 0 && mbr_table.partition_entries[i].sector_count > 0) {
+				uint32_t lba_start_512 = mbr_table.partition_entries[i].lba_start;
+				uint32_t sector_count_512 = mbr_table.partition_entries[i].sector_count;
+
+				// A partition boundary that doesn't land on a whole native sector can't be expressed as a native LBA/length pair
+				if (lba_start_512 % units_per_sector != 0 || sector_count_512 % units_per_sector != 0) {
+					printf_serial("[WDM][WARN] MBR partition %d isn't aligned to the drive's %u-byte sectors, skipping.\n", i, info.sector_size);
+					continue;
+				}
+
+				uint64_t lba_start = lba_start_512 / units_per_sector;
+				uint64_t sector_count = sector_count_512 / units_per_sector;
+
 				char part_name[64];
 				snprintf(part_name, sizeof(part_name), "%sp%u", dev_parent->name, part_idx);
 
 				// Pass NULL for MBR metadata
-				REGISTER_PARTITION_NODE(part_name, mbr_table.partition_entries[i].lba_start, mbr_table.partition_entries[i].sector_count, NULL);
+				REGISTER_PARTITION_NODE(part_name, lba_start, sector_count, NULL);
 				part_idx++;
 			}
 		}
@@ -592,6 +614,88 @@ WDM_Status WDM_EnumeratePartitions(WDM_DriveHandle parent, WDM_DriveHandle* hand
 		*total = count;
 	}
 
+	return WDM_OK;
+}
+
+// ------------------------------------------------------------------------------------------------
+// ------------------------------------------------------------------------------------------------
+// Device Addressing
+// ------------------------------------------------------------------------------------------------
+// ------------------------------------------------------------------------------------------------
+
+/** Find the idx'th active top-level (parent == NULL) drive, in the same order WDM_Enumerate() walks them. */
+static bool find_nth_top_level(uint32_t idx, struct WDM_Drive** out) {
+	uint32_t count = 0;
+
+	for (int i = 0; i < WDM_MAX_DRIVES; i++) {
+		if (!wdm_drives[i].active || wdm_drives[i].parent != NULL) continue;
+
+		if (count == idx) {
+			*out = &wdm_drives[i];
+			return true;
+		}
+		count++;
+	}
+
+	return false;
+}
+
+/** Find the idx'th active child of 'parent', in the same order WDM_EnumeratePartitions() walks them. */
+static bool find_nth_partition(struct WDM_Drive* parent, uint32_t idx, struct WDM_Drive** out) {
+	uint32_t count = 0;
+
+	for (int i = 0; i < WDM_MAX_DRIVES; i++) {
+		if (!wdm_drives[i].active || wdm_drives[i].parent != parent) continue;
+
+		if (count == idx) {
+			*out = &wdm_drives[i];
+			return true;
+		}
+		count++;
+	}
+
+	return false;
+}
+
+WDM_Status WDM_ResolveAddress(const char* addr, WDM_DriveHandle* out) {
+	if (!addr || !out || *addr == '\0') {
+		return WDM_ERR_INVALID;
+	}
+
+	char* end;
+
+	// Parse top-level drive index.
+	unsigned long drive_idx = strtoul(addr, &end, 10);
+
+	if (end == addr || (*end != '\0' && *end != ':') || drive_idx > UINT32_MAX) {
+		return WDM_ERR_INVALID;
+	}
+
+	struct WDM_Drive* drive;
+	if (!find_nth_top_level((uint32_t) drive_idx, &drive)) {
+		return WDM_ERR_NOT_FOUND;
+	}
+
+	// No ':' means this is a plain top-level drive address.
+	if (*end == '\0') {
+		*out = drive;
+		return WDM_OK;
+	}
+
+	// Parse partition index.
+	const char* part_start = end + 1;
+	unsigned long part_idx = strtoul(part_start, &end, 10);
+
+	if (end == part_start || *end != '\0' || part_idx > UINT32_MAX) {
+		return WDM_ERR_INVALID;
+	}
+
+	struct WDM_Drive* part;
+	if (!find_nth_partition(drive, (uint32_t) part_idx, &part)) {
+		return WDM_ERR_NOT_FOUND;
+	}
+
+	*out = part;
 	return WDM_OK;
 }
 

@@ -7,8 +7,15 @@ THIS_FILE := $(lastword $(MAKEFILE_LIST)) # useful for if the user tries to incl
 include libs/libs.mk
 include src/initrd/initrd.mk
 
+# Define our framebuffer request.
+# GRUB will almost always give us what we request, as long as the UEFI/BIOS lets us
+# Default is 1920x1080x32bpp, basically everything will support it ant looks good enough 
+FRAMEBUFFER_WIDTH  := 1920
+FRAMEBUFFER_HEIGHT := 1080
+FRAMEBUFFER_BPP    := 32
+
 # This is for qemu:
-ARGS ?= -m 5G -M hpet=on -machine q35 -cpu max -smp 4 -serial stdio
+ARGS ?= -vga std -m 5G -M hpet=on -machine q35 -cpu max -smp 4 -serial stdio
 
 # This adds one of each type of USB host controllers
 # OHCI, UHCI, EHCI, and XHCI
@@ -21,10 +28,10 @@ ARGS += \
 #   -device pci-ohci,id=ohci \
 
 ARGS += -device ahci,id=ahci0 \
-  -drive file=hda.img,if=none,id=d1 \
-  -device ide-hd,drive=d1,bus=ahci0.0 \
-  -drive file=hda2.img,if=none,id=d2 \
-  -device ide-hd,drive=d2,bus=ahci0.1
+  -drive file=disk.img,if=none,id=d1 \
+  -device ide-hd,drive=d1,bus=ahci0.0 
+#   -drive file=hda2.img,if=none,id=d2 \
+#   -device ide-hd,drive=d2,bus=ahci0.1
 
 # This filters the outputs from -d int (very poorly), to at least attempt to remove the timer interrupts
 # -d int -dfilter 0x0..0x1f,0x21..0xff 2>&1 | sed '/v=20/,/EFER=/d'
@@ -81,8 +88,21 @@ FORCED_INCLUDES = -include $(CURDIR)/wallos_debug_macros.h -include $(CURDIR)/wa
 DEBUG_SYMBOLS   :=
 C_FLAGS 		:= -ffreestanding -std=gnu99 -Wall -Wextra -Wno-format -nostdlib -lgcc -mno-red-zone -O2 -mcmodel=kernel $(DEBUG_SYMBOLS) $(FORCED_INCLUDES)
 CPP_FLAGS 		:= -ffreestanding -std=c++11 -fno-rtti -Wall -Wextra -Wno-format -nostdlib -lgcc -mno-red-zone -O2 -mcmodel=kernel $(DEBUG_SYMBOLS) $(FORCED_INCLUDES)
-NASM_FLAGS 		:= $(DEBUG_SYMBOLS)
+NASM_FLAGS 		:= $(DEBUG_SYMBOLS) 
 LINKER_FLAGS 	:=
+
+# Framebuffer settings
+# We want to make sure they are all set, and don't want the defines unless they are
+ifneq ($(FRAMEBUFFER_WIDTH),)
+ifneq ($(FRAMEBUFFER_HEIGHT),)
+ifneq ($(FRAMEBUFFER_BPP),)
+NASM_FLAGS += \
+	-DFB_WIDTH=$(FRAMEBUFFER_WIDTH) \
+	-DFB_HEIGHT=$(FRAMEBUFFER_HEIGHT) \
+	-DFB_BPP=$(FRAMEBUFFER_BPP)
+endif
+endif
+endif
 
 LIBC_INCLUDE	:= src/libc/include
 KLIBC_INCLUDE 	:= src/kernel/klibc/include

@@ -559,6 +559,13 @@ gpt_error_t parse_gpt(WDM_DriveHandle drive, uint8_t* buf, const size_t size, gp
 	res = parse_gpt_header(&(gpt->header), buf, size);
 	if (res < 0) return res;
 
+	// Make sure it's a GPT
+	if (memcmp(buf, "EFI PART", 8) != 0) return GPT_INVALID_SIGNATURE;
+	// Validate the header size
+	if ((gpt->header.header_size < 92 || gpt->header.header_size > 512) && !(flags & GPT_ALLOW_MALFORMED_TABLE)) return GPT_BAD_HEADER;
+	// Protect against reading out of bounds of our allocated buffer 
+	if (gpt->header.header_size > size) return GPT_BAD_HEADER;
+
 	if (!(flags & GPT_SKIP_CRC_CHECKS)) {
 		// We compute and check the CRC32 here because it's simpler than the main parse function.
 		write32_gpt((uint8_t*) (buf + 0x10), 0);

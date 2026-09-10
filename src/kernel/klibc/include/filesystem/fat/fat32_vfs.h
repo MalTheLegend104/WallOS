@@ -45,12 +45,12 @@ extern "C" {
      * @brief Heap-allocate and zero-init a fresh driver context.
      * @return Pointer on success, NULL on OOM.
      */
-    vfs_fat32_ctx_t* vfs_fat32_alloc(void);
+    void* vfs_fat32_alloc(void);
 
     /**
      * @brief Free a driver context that is no longer mounted.
      */
-    void vfs_fat32_free(vfs_fat32_ctx_t* ctx);
+    void vfs_fat32_free(void* ctx);
 
     // meant to be bound as the v_ops when binding the drive to the VFS
     extern const VFS_FSOps vfs_fat32_ops;

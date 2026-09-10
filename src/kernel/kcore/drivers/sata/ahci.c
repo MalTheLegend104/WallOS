@@ -11,6 +11,7 @@
 #include <drivers/serial.h>
 #include <drivers/pci.h>
 #include <drivers/sata/ahci.h>
+#include <drivers/sata/atapi.h>
 
 #include <memory/virtual_mem.h>
 #include <memory/kernel_alloc.h>
@@ -279,6 +280,73 @@ int ahci_issue_ata(ahci_port_t* port, uint32_t slot_count, ahci_fis_h2d_t* fis, 
 	return wait_for_slot(port, slot, 5000 /* 5s timeout */);
 }
 
+/* Issue an ATA PACKET (0xA0) command carrying a SCSI CDB, with one optional data buffer */
+int ahci_issue_atapi(ahci_port_t* port, uint32_t slot_count, const uint8_t* cdb, uint8_t cdb_len, void* buf, uint32_t byte_count, int is_write) {
+	if (!port || !cdb) return -1;
+
+	int slot = find_free_slot(port, slot_count);
+	if (slot < 0) {
+		printf_serial("[AHCI][ATAPI] port %u no free command slots\r\n", port->port_idx);
+		return -1;
+	}
+
+	ahci_port_mem_t* mem = port->mem;
+
+	ahci_fis_h2d_t fis;
+	memset(&fis, 0, sizeof(fis));
+	fis.fis_type = AHCI_FIS_TYPE_H2D;
+	fis.pmport_c = AHCI_FIS_H2D_C_BIT;
+	fis.command = ATA_CMD_PACKET;
+	// Tell the device to use DMA for the packet's data phase
+	// I forgot this and was very confused for a while...
+	fis.featurel = (buf && byte_count) ? ATA_FEATURE_DMA : 0;
+	fis.device = 0;
+
+	// Command Header
+	ahci_cmd_header_t* hdr = &mem->cmd_list[slot];
+	memset(hdr, 0, sizeof(*hdr));
+	hdr->flags = (uint16_t) ((sizeof(ahci_fis_h2d_t) / 4) & AHCI_CMD_HDR_FLAG_CFL_MASK);
+	hdr->flags |= AHCI_CMD_HDR_FLAG_ATAPI;
+	hdr->flags |= is_write ? AHCI_CMD_HDR_FLAG_WRITE : 0;
+	hdr->prdtl = (buf && byte_count) ? 1 : 0;
+	hdr->prdbc = 0;
+
+	// CTBA was set during rebase, we reuse the single shared command table
+	uintptr_t ct_phys = virt_to_phys((uintptr_t) mem->cmd_table);
+	hdr->ctba = (uint32_t) (ct_phys & 0xFFFFFFFF);
+	hdr->ctbau = (uint32_t) (ct_phys >> 32);
+
+	// CFIS + ACMD (the 12-byte CDB, zero-padded)
+	uint8_t* ct = mem->cmd_table;
+	memset(ct, 0, AHCI_CMDT_TOTAL_SIZE(AHCI_MAX_PRD));
+	memcpy(ct + AHCI_CMDT_CFIS_OFF, &fis, sizeof(fis));
+
+	uint8_t acmd[AHCI_ATAPI_CDB_LEN];
+	memset(acmd, 0, sizeof(acmd));
+	uint8_t copy_len = (cdb_len > AHCI_ATAPI_CDB_LEN) ? AHCI_ATAPI_CDB_LEN : cdb_len;
+	memcpy(acmd, cdb, copy_len);
+	memcpy(ct + AHCI_CMDT_ACMD_OFF, acmd, sizeof(acmd));
+
+	// PRDT
+	if (buf && byte_count) {
+		ahci_prd_t* prd = (ahci_prd_t*) (ct + AHCI_CMDT_PRDT_OFF);
+		uintptr_t   dba = virt_to_phys((uintptr_t) buf);
+		prd->dba = (uint32_t) (dba & 0xFFFFFFFF);
+		prd->dbau = (uint32_t) (dba >> 32);
+		prd->reserved = 0;
+		prd->dbc = (byte_count - 1) & 0x3FFFFF; // dbc is (N-1)
+	}
+
+	// Clear any stale errors
+	port_write(port, AHCI_PXSERR, 0xFFFFFFFF);
+	port_write(port, AHCI_PXIS, 0xFFFFFFFF);
+
+	// Issue command
+	port_write(port, AHCI_PXCI, 1U << slot);
+
+	return wait_for_slot(port, slot, 5000 /* 5s timeout */);
+}
+
 // ------------------------------------------------------------------------------------------------
 // ------------------------------------------------------------------------------------------------
 // IDENTIFY
@@ -446,6 +514,27 @@ int ahci_probe(wallos_device_t* dev) {
 	return 0; // Accept this device
 }
 
+static void ahci_register_child_device(wallos_device_t* dev, ahci_port_t* port, uint32_t i, WDM_DriveHandle wdm_handle, const char* name) {
+	device_interface_flags_t child_flags = DEV_INT_AHCI | DEV_INT_MMIO;
+	wallos_device_t* child = create_device(child_flags, name);
+	if (!child) {
+		printf_serial("[AHCI][ERROR] port %u: failed to create child device\r\n", i);
+		return;
+	}
+
+	printf_serial("[AHCI] Registering child device on port %u: %s\r\n", i, name);
+
+	child->parent = dev;
+	child->driver_data = port;
+	child->next_sibling = dev->first_child;
+	dev->first_child = child;
+	register_device(child);
+
+	// This takes the load of having to deal with partitions off of us.
+	WDM_Status stat = WDM_ScanAndRegisterPartitions(wdm_handle, child);
+	if (stat != 0) printf_serial("[AHCI][WARN] stat = %d\r\n", stat);
+}
+
 void ahci_attach(wallos_device_t* dev) {
 	if (!dev) return;
 
@@ -605,24 +694,34 @@ void ahci_attach(wallos_device_t* dev) {
 				"sata30","sata31"
 			};
 
-			device_interface_flags_t child_flags = DEV_INT_AHCI | DEV_INT_MMIO;
-			wallos_device_t* child = create_device(child_flags, names[i]);
-			if (child) {
-				printf_serial("[AHCI] Registering child device on port %u: %s\r\n", i, names[i]);
+			ahci_register_child_device(dev, port, i, wdm_handle, names[i]);
+		}
 
-				child->parent = dev;
-				child->driver_data = port;
-				child->next_sibling = dev->first_child;
-				dev->first_child = child;
-				register_device(child);
+		if (type == AHCI_DEV_SATAPI) {
+			printf_serial("[AHCI] Issuing IDENTIFY PACKET DEVICE on port %u... ", i);
+			int res = atapi_identify(port, ctrl->slot_count);
+			if (res != 0) { printf_serial("Failed identify.\r\n"); continue; }
+			printf_serial("complete.\r\n", i);
 
-				// This takes the load of having to deal with partitions off of us. 
-				// In theory, this takes care of everything we need to take care of, including registering the device.
-				WDM_Status stat = WDM_ScanAndRegisterPartitions(wdm_handle, child);
-				if (stat != 0) printf_serial("[AHCI][WARN] stat = %d\r\n", stat);
-			} else {
-				printf_serial("[AHCI][ERROR] port %u: failed to create child device\r\n", i);
+			WDM_DriveHandle wdm_handle = atapi_wdm_register_port(port, ctrl->slot_count);
+			if (!wdm_handle) {
+				printf_serial("[AHCI][WARN] port %u: WDM registration failed, " "drive will not be accessible\r\n", i);
 			}
+			// Store the handle in the port so ahci_detach can unregister it
+			port->wdm_handle = wdm_handle;
+
+			printf_color(PRINT_COLOR_LIGHT_CYAN, PRINT_DEFAULT_BG, "\tModel: %s (Sectors: %llu, Size: %llu)\n", port->model, port->sector_count, port->sector_count * port->sector_size);
+
+			const char* names_atapi[] = {
+				"atapi0","atapi1","atapi2","atapi3","atapi4","atapi5",
+				"atapi6","atapi7","atapi8","atapi9","atapi10","atapi11",
+				"atapi12","atapi13","atapi14","atapi15","atapi16","atapi17",
+				"atapi18","atapi19","atapi20","atapi21","atapi22","atapi23",
+				"atapi24","atapi25","atapi26","atapi27","atapi28","atapi29",
+				"atapi30","atapi31"
+			};
+
+			ahci_register_child_device(dev, port, i, wdm_handle, names_atapi[i]);
 		}
 	}
 

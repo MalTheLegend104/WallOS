@@ -230,25 +230,27 @@ void gpt_partition_entry_construct(gpt_partition_entry_t* entry, gpt_partition_t
 	gpt_write_partition_name(entry->partition_name, name);
 }
 
-void gpt_construct(gpt_partition_table_t* gpt, uint64_t disk_sectors, uint32_t num_entries, gpt_constructor_flags_t flags) {
+void gpt_construct(gpt_partition_table_t* gpt, uint64_t disk_sectors, uint32_t sector_size, uint32_t num_entries, gpt_constructor_flags_t flags) {
 	if (!gpt) return;
+	if (sector_size < GPT_SECTOR_SIZE) return;
 
 	memset(gpt, 0, sizeof(*gpt));
 
 	// Protective MBR
 	mbr_construct(&gpt->protective_mbr, MBR_CONSTRUCT_GPT);
 
-	// Fix the sector count that mbr_construct leaves blank
-	uint32_t protective_sector_count = (disk_sectors - 1 > 0xFFFFFFFFULL) ? 0xFFFFFFFFu : (uint32_t) (disk_sectors - 1);
+	// The Protective MBR's sector_count is always expressed in fixed 512-byte units per spec regardless of the drive's actual sector size
+	uint64_t disk_sectors_512 = disk_sectors * ((uint64_t) sector_size / GPT_SECTOR_SIZE);
+	uint32_t protective_sector_count = (disk_sectors_512 - 1 > 0xFFFFFFFFULL) ? 0xFFFFFFFFu : (uint32_t) (disk_sectors_512 - 1);
 	gpt->protective_mbr.first_entry.sector_count = protective_sector_count;
 
 	// The protective entry always lands in the MBR's first slot from mbr_construct().
 	gpt->gpt_partition_entry = 0;
 
-	// Partition entry array sizing
+	// Partition entry array sizing, in the drive's own native sectors
 	uint32_t entry_size = GPT_ON_DISK_ENTRY_SIZE;
 	uint64_t array_bytes = (uint64_t) num_entries * entry_size;
-	uint64_t array_sectors = (array_bytes + (GPT_SECTOR_SIZE - 1)) / GPT_SECTOR_SIZE;
+	uint64_t array_sectors = (array_bytes + (sector_size - 1)) / sector_size;
 	if (array_sectors == 0) array_sectors = 1; // Usually a zero-entry table reserves at least one sector
 
 	// Header
@@ -295,8 +297,9 @@ void gpt_construct(gpt_partition_table_t* gpt, uint64_t disk_sectors, uint32_t n
 	}
 }
 
-gpt_error_t gpt_create_backup(const gpt_partition_table_t* primary, gpt_partition_table_t* backup, gpt_backup_flags_t flags) {
+gpt_error_t gpt_create_backup(const gpt_partition_table_t* primary, gpt_partition_table_t* backup, uint32_t sector_size, gpt_backup_flags_t flags) {
 	if (!primary || !backup) return GPT_BAD_PARAM;
+	if (sector_size == 0) return GPT_BAD_PARAM;
 
 	memset(backup, 0, sizeof(*backup));
 
@@ -324,9 +327,10 @@ gpt_error_t gpt_create_backup(const gpt_partition_table_t* primary, gpt_partitio
 	bh->alt_header_lba = ph->header_lba;
 
 	// The backup's partition entry array sits immediately before the backup header itself
+	// This must be sized in the drive's native sectors, not the fixed 512-byte MBR unit.
 	uint32_t entry_size = ph->partition_entry_size ? ph->partition_entry_size : GPT_ON_DISK_ENTRY_SIZE;
 	uint64_t array_bytes = (uint64_t) ph->num_partition_entries * entry_size;
-	uint64_t array_sectors = (array_bytes + (GPT_SECTOR_SIZE - 1)) / GPT_SECTOR_SIZE;
+	uint64_t array_sectors = (array_bytes + (sector_size - 1)) / sector_size;
 	if (array_sectors == 0) array_sectors = 1; // We reserve at least one sector
 
 	bh->start_partition_entries_lba = bh->header_lba - array_sectors;

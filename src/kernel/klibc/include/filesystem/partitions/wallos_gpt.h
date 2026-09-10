@@ -306,11 +306,12 @@ extern "C" {
 	 * @param disk_sectors Total size of the target disk, in GPT_SECTOR_SIZE-byte sectors.
 	 *                     Must be large enough to fit the primary header, backup header, and both partition entry arrays,
 	 *                     or the resulting first_usable_lba/last_usable_lba range will be degenerate.
+	 * @param sector_size The drive's actual logical block size in bytes (e.g. WDM_DriveInfo.sector_size). All GPT header/entry LBA fields are expressed in units of this size.
 	 * @param num_entries Number of partition entries the table should have room for (commonly 128).
 	 *                    Stored in header.num_partition_entries and used to size the partition entry array region.
 	 * @param flags Bitwise-OR of gpt_constructor_flags_t options. Pass GPT_CONSTRUCT_STANDARD for default (primary header, entries left unallocated) behavior.
 	 */
-	void gpt_construct(gpt_partition_table_t* gpt, uint64_t disk_sectors, uint32_t num_entries, gpt_constructor_flags_t flags);
+	void gpt_construct(gpt_partition_table_t* gpt, uint64_t disk_sectors, uint32_t sector_size, uint32_t num_entries, gpt_constructor_flags_t flags);
 
 	/**
 	 * @brief Populate a GPT partition entry with sane defaults.
@@ -427,13 +428,14 @@ extern "C" {
 	 * @param primary Already-constructed primary GPT table to copy from. Must not be NULL.
 	 * @param backup Table to populate as the backup. Must not be NULL. Any existing contents are overwritten (memset to 0 first).
 	 *               This function DOES NOT free an existing backup->entries before overwriting the pointer, so free it yourself first if you're reusing a table.
+	 * @param sector_size The drive's actual logical block size in bytes, same value passed to gpt_construct() for @p primary. Used to re-derive how many sectors the partition entry array occupies.
 	 * @param flags Bitwise-OR of gpt_backup_flags_t options. Pass GPT_BACKUP_STANDARD to only copy the header.
 	 *
 	 * @retval GPT_BAD_PARAM primary or backup is NULL.
 	 * @retval GPT_OUT_OF_MEMORY GPT_BACKUP_ALLOCATE_ENTRIES was set and the calloc() for backup->entries failed.
 	 * @retval GPT_NO_ERROR backup was populated successfully.
 	 */
-	gpt_error_t gpt_create_backup(const gpt_partition_table_t* primary, gpt_partition_table_t* backup, gpt_backup_flags_t flags);
+	gpt_error_t gpt_create_backup(const gpt_partition_table_t* primary, gpt_partition_table_t* backup, uint32_t sector_size, gpt_backup_flags_t flags);
 
 	/**
 	 * @brief Option flags controlling how gpt_finalize() prepares a table for writing.
