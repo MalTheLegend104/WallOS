@@ -1,5 +1,5 @@
-#include <drivers/driver_manager.h>
 #include <device/device_manager.h>
+#include <drivers/driver_manager.h>
 
 #include <drivers/serial.h>
 
@@ -96,8 +96,6 @@ dm_error_t dm_unbind_device(struct wallos_device* dev) {
 void dm_bind_all_registered(void) {
 	printf_serial("[DEVMGR] Starting global driver binding...\r\n");
 
-	printf_color(PRINT_COLOR_GREEN, PRINT_DEFAULT_BG, "Starting global driver binding...\n");
-
 	size_t bound_count = 0;
 	size_t total_count = 0;
 
@@ -132,8 +130,8 @@ void dm_bind_all_registered(void) {
 
 #include <terminal/terminal.h>
 const ws_command_argument_t driver_cli_args[] = {
-	{ WS_ARG_TYPE_GENERIC, false, "command", NULL, "One of: list, bind-all, info." },
-	{ WS_ARG_TYPE_GENERIC, false, "name",    NULL, "Driver name (info only)." },
+	{WS_ARG_TYPE_GENERIC, false, "command", NULL, "One of: list, bind-all, info."},
+	{WS_ARG_TYPE_GENERIC, false, "name", NULL, "Driver name (info only)."},
 };
 const size_t driver_cli_args_count = sizeof(driver_cli_args) / sizeof(driver_cli_args[0]);
 
@@ -157,8 +155,7 @@ int driver_cli(int argc, char** argv) {
 
 		while (drv) {
 			printf_color(PRINT_COLOR_WHITE, PRINT_DEFAULT_BG, "  %-15s ", drv->name ? drv->name : "unnamed");
-			printf_color(PRINT_COLOR_DARK_GREY, PRINT_DEFAULT_BG, "[Match: 0x%llx/0x%llx]\n",
-				drv->match_flags, drv->match_mask);
+			printf_color(PRINT_COLOR_DARK_GREY, PRINT_DEFAULT_BG, "[Match: 0x%llx/0x%llx]\n", drv->match_flags, drv->match_mask);
 			drv = drv->next;
 		}
 		return 0;

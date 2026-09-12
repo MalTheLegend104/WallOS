@@ -41,7 +41,7 @@ uint8_t wallos_key_to_cp437(wallos_key_t key, uint32_t modifiers) {
 		case WALLOS_KEY_Y: return uppercase ? 'Y' : 'y';
 		case WALLOS_KEY_Z: return uppercase ? 'Z' : 'z';
 
-		// Number row 
+		// Number row
 		// caps lock has no effect here, only shift
 		case WALLOS_KEY_NUM0: return shift ? ')' : '0';
 		case WALLOS_KEY_NUM1: return shift ? '!' : '1';
@@ -78,16 +78,16 @@ uint8_t wallos_key_to_cp437(wallos_key_t key, uint32_t modifiers) {
 
 		// Keypad
 		// shift/caps don't affect these
-		case WALLOS_KEY_NUMPAD_0: return '0';
-		case WALLOS_KEY_NUMPAD_1: return '1';
-		case WALLOS_KEY_NUMPAD_2: return '2';
-		case WALLOS_KEY_NUMPAD_3: return '3';
-		case WALLOS_KEY_NUMPAD_4: return '4';
-		case WALLOS_KEY_NUMPAD_5: return '5';
-		case WALLOS_KEY_NUMPAD_6: return '6';
-		case WALLOS_KEY_NUMPAD_7: return '7';
-		case WALLOS_KEY_NUMPAD_8: return '8';
-		case WALLOS_KEY_NUMPAD_9: return '9';
+		case WALLOS_KEY_NUMPAD_0:        return '0';
+		case WALLOS_KEY_NUMPAD_1:        return '1';
+		case WALLOS_KEY_NUMPAD_2:        return '2';
+		case WALLOS_KEY_NUMPAD_3:        return '3';
+		case WALLOS_KEY_NUMPAD_4:        return '4';
+		case WALLOS_KEY_NUMPAD_5:        return '5';
+		case WALLOS_KEY_NUMPAD_6:        return '6';
+		case WALLOS_KEY_NUMPAD_7:        return '7';
+		case WALLOS_KEY_NUMPAD_8:        return '8';
+		case WALLOS_KEY_NUMPAD_9:        return '9';
 		case WALLOS_KEY_NUMPAD_DIVIDE:   return '/';
 		case WALLOS_KEY_NUMPAD_MULTIPLY: return '*';
 		case WALLOS_KEY_NUMPAD_MINUS:    return '-';
@@ -169,7 +169,7 @@ char* input_gets(char* out, size_t out_size) {
 		if (len + 1 < out_size) { // always leave room for the null terminator
 			out[len++] = c;
 		}
-		// Buffer's full 
+		// Buffer's full
 		// We keep consuming input (so backspace/enter still work) but drop further printable chars instead of overflowing.
 	}
 

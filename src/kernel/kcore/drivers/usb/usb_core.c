@@ -1,10 +1,8 @@
-#include <drivers/usb/usb_core.h>
-
-#include <memory/kernel_alloc.h>
-
 #include <stdio.h>
-#include <stdlib.h>
 #include <string.h>
+
+#include <drivers/usb/usb_core.h>
+#include <memory/kernel_alloc.h>
 
 /* We keep a list of registered HCDs for convience.
  * This will probably get a lot more use whenever we end up actually implementing class drivers
@@ -138,8 +136,13 @@ int usb_control_msg(usb_device_t* dev, uint8_t request_type, uint8_t request, ui
 	return (int) transfer.actual_length;
 }
 
+#include <drivers/usb/hosts/xhci.h>
 #include <drivers/usb/usb_class_drivers.h>
 
 void usb_init(void) {
+	// HCD inits
+	xhci_init();
 
+	// Class Inits
+	hid_init();
 }

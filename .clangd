@@ -1,0 +1,7 @@
+Style:
+  AngledHeaders: [".*"]
+
+Completion:
+  AllScopes: true
+  HeaderInsertion: IWYU
+  ArgumentLists: None

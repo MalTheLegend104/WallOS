@@ -1,5 +1,5 @@
 BasedOnStyle: LLVM
-AlignArrayOfStructures: Left
+AlignArrayOfStructures: None
 AlignConsecutiveBitFields:
   Enabled: true
   AcrossComments: true
@@ -20,12 +20,15 @@ AllowShortLoopsOnASingleLine: true
 AllowShortNamespacesOnASingleLine: true
 BinPackArguments: false
 BinPackParameters: OnePerLine
+BracedInitializerIndentWidth: 4
+BreakBeforeCloseBracketBracedList: true
 BreakBeforeCloseBracketFunction: true
 BreakBeforeBinaryOperators: NonAssignment
 BreakInheritanceList: AfterColon
 BreakStringLiterals: false
 ColumnLimit: 0
 CommentPragmas: "clang pragma:"
+ContinuationIndentWidth: 4
 EmptyLineBeforeAccessModifier: Always
 IncludeBlocks: Preserve
 IndentCaseLabels: true
@@ -45,4 +48,4 @@ SpaceAfterTemplateKeyword: false
 SpaceBeforeCpp11BracedList: true
 SpaceBeforeJsonColon: true
 TabWidth: 4
-UseTab: ForIndentation
+UseTab: ForContinuationAndIndentation

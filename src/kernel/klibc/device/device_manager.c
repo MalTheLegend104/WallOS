@@ -1,8 +1,8 @@
-#include <memory/kernel_alloc.h>
 #include <device/device_manager.h>
-#include <string.h>
-#include <stdio.h>
 #include <drivers/serial.h>
+#include <memory/kernel_alloc.h>
+#include <stdio.h>
+#include <string.h>
 
 #include <stdbool.h>
 
@@ -237,7 +237,7 @@ void register_device(wallos_device_t* dev) {
 
 // ------------------------------------------------------------------------------------------------
 // ------------------------------------------------------------------------------------------------
-// Device Path 
+// Device Path
 // ------------------------------------------------------------------------------------------------
 // ------------------------------------------------------------------------------------------------
 
@@ -286,8 +286,8 @@ void print_device_list_recursive(wallos_device_t* dev, dev_list_filter_t filter)
 
 
 int get_device_color(device_interface_t interfaces) {
-	if (interfaces == DEV_INT_INVALID)       return PRINT_COLOR_RED;
-	if (interfaces & DEV_INT_UNKNOWN)        return PRINT_COLOR_YELLOW;
+	if (interfaces == DEV_INT_INVALID) return PRINT_COLOR_RED;
+	if (interfaces & DEV_INT_UNKNOWN) return PRINT_COLOR_YELLOW;
 	if (interfaces & DEV_INT_INTERFACE_ONLY) return PRINT_COLOR_LIGHT_GREEN;
 	return PRINT_COLOR_WHITE;
 }
@@ -379,10 +379,12 @@ void print_dev_brief(wallos_device_t* dev) {
 	printf_color(PRINT_COLOR_WHITE, PRINT_DEFAULT_BG, "%s ", name);
 	printf_color(PRINT_COLOR_LIGHT_GREY, PRINT_DEFAULT_BG, "(0x%llx)\n", (uint64_t) dev->interfaces);
 
-	printf_serial("[DEVMGR] dev=%p name='%s' vid:did=%04x:%04x flags=0x%llx parent=%p first_child=%p next_sibling=%p\r\n",
+	printf_serial(
+		"[DEVMGR] dev=%p name='%s' vid:did=%04x:%04x flags=0x%llx parent=%p first_child=%p next_sibling=%p\r\n",
 		dev,
 		name,
-		dev->vendor_id, dev->device_id,
+		dev->vendor_id,
+		dev->device_id,
 		(uint64_t) dev->interfaces,
 		dev->parent,
 		dev->first_child,
@@ -393,11 +395,11 @@ void print_dev_brief(wallos_device_t* dev) {
 #include <terminal/terminal.h>
 
 const ws_command_argument_t device_cmd_args[] = {
-	{ WS_ARG_TYPE_GENERIC, false, "command",   NULL,  "One of: list, tree, path, info, refresh." },
-	{ WS_ARG_TYPE_GENERIC, false, "name",      NULL,  "Device name (root for list/tree, required for path/info/refresh)." },
-	{ WS_ARG_TYPE_FLAG,    false, "--unbound", "-u",  "List only unbound devices." },
-	{ WS_ARG_TYPE_FLAG,    false, "--bound",   "-b",  "List only bound devices." },
-	{ WS_ARG_TYPE_UINT32,  false, "--depth",   "-d",  "Maximum depth to display for 'tree'." },
+	{WS_ARG_TYPE_GENERIC, false, "command", NULL, "One of: list, tree, path, info, refresh."},
+	{WS_ARG_TYPE_GENERIC, false, "name", NULL, "Device name (root for list/tree, required for path/info/refresh)."},
+	{WS_ARG_TYPE_FLAG, false, "--unbound", "-u", "List only unbound devices."},
+	{WS_ARG_TYPE_FLAG, false, "--bound", "-b", "List only bound devices."},
+	{WS_ARG_TYPE_UINT32, false, "--depth", "-d", "Maximum depth to display for 'tree'."},
 };
 const size_t device_cmd_args_count = sizeof(device_cmd_args) / sizeof(device_cmd_args[0]);
 
@@ -405,7 +407,7 @@ int device_cmd(int argc, char** argv) {
 	ws_context_t* ctx = ws_getCurrentContext();
 
 	if (!ws_parse_args(ctx, argc, argv) || !ws_has_arg(ctx, "command")) {
-		ws_executeCommand("help dev");
+
 		return 0;
 	}
 

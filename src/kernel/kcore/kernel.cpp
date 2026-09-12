@@ -1,36 +1,38 @@
-#include <stdlib.h>
+#include <drivers/usb/usb_core.h>
+#include <print_type.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
-#include <panic.h>
 #include <multiboot.h>
+#include <panic.h>
 
 #include <acpi/acpi_init.h>
 
 #include <drivers/keyboard.h>
-#include <drivers/serial.h>
-#include <drivers/sata/pio.h>
 #include <drivers/pci.h>
+#include <drivers/sata/pio.h>
+#include <drivers/serial.h>
 
-#include <klibc/kprint.h>
 #include <klibc/cpuid_calls.h>
-#include <klibc/logger.h>
-#include <klibc/features.hpp>
-#include <klibc/multiboot.h>
 #include <klibc/display.h>
+#include <klibc/features.hpp>
+#include <klibc/kprint.h>
+#include <klibc/logger.h>
+#include <klibc/multiboot.h>
 
+#include <memory/kernel_alloc.h>
 #include <memory/physical_mem.hpp>
 #include <memory/virtual_mem.h>
-#include <memory/kernel_alloc.h>
 
-#include <system/idt.h>
 #include <system/cpuid.h>
+#include <system/idt.h>
 #include <system/timer.h>
 
 #include <x86_64/timing.h>
 
-#include <terminal/terminal.h>
 #include <terminal/commands/system_commands.h>
+#include <terminal/terminal.h>
 
 #include <filesystem/filesystems.h>
 
@@ -52,7 +54,7 @@ extern "C" {
 	void __cxa_pure_virtual() {}; // needed for pure virtual functions
 }
 
-#pragma GCC diagnostic ignored "-Wunused-parameter" 
+#pragma GCC diagnostic ignored "-Wunused-parameter"
 int bootdev_command(int argc, char** argv) {
 	const auto a = getBootDev();
 	printf_color(PRINT_COLOR_LIGHT_CYAN, PRINT_DEFAULT_BG, "BIOS Drive Number: 0x%x\n", a->biosdev);
@@ -67,7 +69,7 @@ int bootdev_command(int argc, char** argv) {
 		case 0x00: printf("Boot device assumed to be floppy. How did you get here...?\n"); break;
 		case 0x80: printf("Boot device assumed to be hard drive.\n"); break;
 		case 0xE0: printf("Boot device assumed to be CD-ROM (or similar).\n"); break;
-		default: printf("Boot device unknown. How did you get here...? (seriously please let me know)\n");
+		default:   printf("Boot device unknown. How did you get here...? (seriously please let me know)\n");
 	}
 	display_set_colors_default();
 	return 0;
@@ -107,7 +109,7 @@ int testKalloc(int argc, char** argv) {
 
 #include <syscall/syscall.h>
 
-#pragma GCC diagnostic ignored "-Wunused-parameter" 
+#pragma GCC diagnostic ignored "-Wunused-parameter"
 int syscall_command(int argc, char** argv) {
 	uint64_t syscall_number = UINT64_MAX;
 	// We default to the 64 bit max, anything outside of 0-255 isn't valid.
@@ -120,15 +122,15 @@ int syscall_command(int argc, char** argv) {
 		arg1 = atoi(argv[2]);
 	}
 	uint64_t ret;
-	asm volatile(
+	__asm__ volatile(
 		"movq %1, %%rax\n\t"
 		"movq %2, %%rdi\n\t"
 		"int $0x42\n\t"
 		"movq %%rax, %0\n\t"
-		: "=r" (ret)
-		: "r" (syscall_number), "r" (arg1)
+		: "=r"(ret)
+		: "r"(syscall_number), "r"(arg1)
 		: "rax", "rdi"
-		);
+	);
 	return ret;
 }
 
@@ -219,16 +221,16 @@ void keyboard_debug() {
 	printf_serial("======================\r\n");
 }
 
+#include <acpi/acpi_api.h>
 #include <device/device_manager.h>
 #include <drivers/driver_manager.h>
 #include <drivers/sata/ahci.h>
-#include <filesystem/wdm.h>
+#include <drivers/usb/hosts/xhci.h>
 #include <filesystem/initrd.h>
 #include <filesystem/vfs.h>
+#include <filesystem/wdm.h>
 #include <klibc/internal_calls.h>
 #include <klibc/kernel_rng.h>
-#include <drivers/usb/hosts/xhci.h>
-#include <acpi/acpi_api.h>
 
 extern "C" int tst_command(int argc, char** argv) {
 	// this is just going to be a "permanent" command to let me quickly test things.
@@ -389,7 +391,7 @@ void kernel_main(unsigned int magic, multiboot_info* mbt_info) {
 	// printf_serial("    Module Type: %d\r\n", module_tag->type);
 	// printf_serial("    Module Size: %d bytes\r\n", module_tag->size);
 	// printf_serial("    Module Physical Size: %d bytes\r\n", module_tag->mod_end - module_tag->mod_start);
-	//Memory::reserveMemory(module_tag->mod_start, module_tag->mod_end - module_tag->mod_start);
+	// Memory::reserveMemory(module_tag->mod_start, module_tag->mod_end - module_tag->mod_start);
 
 	// I need to move this to be a multiboot module...
 	// I mean this works fine and initrd is limited to 2MB so...
@@ -408,9 +410,11 @@ void kernel_main(unsigned int magic, multiboot_info* mbt_info) {
 	// Everything that needs an IRQ should be done after the PIT as it messes with the mask
 	// If it requires allocations, add it after `initKernelAllocator()`
 	io_delay_init(); // uses outb(0x80, 0) to try to add a small delay. it's best effort if we don't have a good resolution timer
+	// I thought I fixed that this will destroy the PIT state if called after pit_init?
+	// apparently didn't (or lost the commit) and dont feel like fixing it
+	timer_no_interrupts_init(); // sets up TSC timing for ACPI on x86_64
 	pit_init(1000);
 	rtc_cmos_init();
-	timer_no_interrupts_init(); // sets up TSC timing for ACPI on x86_64
 
 	i8042_flush();
 	keyboard_init();
@@ -465,8 +469,14 @@ void kernel_main(unsigned int magic, multiboot_info* mbt_info) {
 	filesystem_mount_explicit(initrd, "/initrd", FILESYSTEM_FAT12_16);
 
 	// register_usb_controller_drivers();
-	xhci_init();
+	usb_init();
 
+	printf_color(PRINT_COLOR_GREEN, PRINT_DEFAULT_BG, "Starting global driver binding...\n");
+	dm_bind_all_registered();
+	// Doing this twice is a cheap way of forcing it to bind all newly discovered devices in the last pass
+	// Technically all drivers are supposed to tell the dm to bind all new devices, but I've found that sometimes it just doesnt work to call dm_bind_dev on a newly created device
+	// Rather than figuring out the root cause, we just do it twice
+	printf_color(PRINT_COLOR_GREEN, PRINT_DEFAULT_BG, "Global driver binding pass two...\n");
 	dm_bind_all_registered();
 
 	// ------------------------------------------------------------------------------------------------
@@ -478,7 +488,7 @@ void kernel_main(unsigned int magic, multiboot_info* mbt_info) {
 	printf_color(PRINT_COLOR_PINK, PRINT_DEFAULT_BG, "Ended kernel init... Press `ESC` to hand control to WallShell.\r\n");
 
 	// After we're done checking features, we need to set up our terminal.
-	// Eventually this will be a userspace program. 
+	// Eventually this will be a userspace program.
 	setup_commands();
 	ws_terminalMain();
 
@@ -491,11 +501,13 @@ void kernel_main(unsigned int magic, multiboot_info* mbt_info) {
 	// // char* cmd2[] = { "time", "-i" };
 	// // time_command(2, cmd2);
 
-	// while (true) 
+	printf_color(PRINT_COLOR_YELLOW, PRINT_DEFAULT_BG, "You've returned from the main kernel terminal.\nThe only thing that will happen now is waiting for power events or timer callbacks.\n");
+
+	// while (true)
 	while (true) {
 		acpi_poll_events();
 		// the only interrupts should be ACPI, serial, or timer at 1000hz
-		// We could busy wait or pause, but it really wouldn't matter. 
+		// We could busy wait or pause, but it really wouldn't matter.
 		WALLOS_HLT();
 	}
 }

@@ -1,13 +1,14 @@
-#include <drivers/usb/usb_core.h>
 #include <device/device_manager.h>
 #include <drivers/driver_manager.h>
+#include <drivers/usb/usb_core.h>
 #include <drivers/usb/usb_descriptors.h>
 
 #include <memory/kernel_alloc.h>
 
+#include <stdbool.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <stdio.h>
 
 #include <drivers/serial.h>
 
@@ -26,8 +27,10 @@ typedef struct {
 	uint8_t interface_class;
 	uint8_t interface_subclass;
 	uint8_t interface_protocol;
-	size_t ep_start; // index into dev->endpoints
+	size_t ep_start;
 	size_t ep_count;
+	uint8_t* class_descriptors;
+	size_t class_descriptors_length;
 } usb_interface_desc_t;
 
 static usb_device_node_t* usb_dev_list = NULL;
@@ -80,6 +83,113 @@ static int usb_interface_list_add(usb_interface_t* iface) {
 usb_interface_t* usb_interface_from_device(wallos_device_t* wdev) {
 	for (usb_interface_node_t* n = usb_interfaces; n; n = n->next) {
 		if (n->iface->device == wdev) return n->iface;
+	}
+	return NULL;
+}
+
+/**
+ * @brief Checks whether a wallos_device_t* is actually known to USB core.
+ *
+ * Returns true if wdev is either a device's port node or one of its interface nodes.
+ */
+bool usb_is_valid_device(wallos_device_t* wdev) {
+	if (!wdev) return false;
+
+	for (usb_device_node_t* n = usb_dev_list; n; n = n->next) {
+		if (n->dev->device == wdev) return true;
+	}
+
+	for (usb_interface_node_t* n = usb_interfaces; n; n = n->next) {
+		if (n->iface->device == wdev) return true;
+	}
+
+	return false;
+}
+
+/**
+ * @brief Resolves the usb_device_t* backing a wallos_device_t*.
+ * Works whether wdev is a device's port node or one of its interface nodes.
+ * Returns NULL if wdev is not known to USB core.
+ */
+usb_device_t* usb_device_from_wallos_device(wallos_device_t* wdev) {
+	if (!wdev) return NULL;
+
+	// port-level node
+	// dev->device == wdev
+	for (usb_device_node_t* n = usb_dev_list; n; n = n->next) {
+		if (n->dev->device == wdev) return n->dev;
+	}
+
+	// interface-level node
+	// iface->device == wdev, iface->usb_dev is the owner
+	for (usb_interface_node_t* n = usb_interfaces; n; n = n->next) {
+		if (n->iface->device == wdev) return n->iface->usb_dev;
+	}
+
+	return NULL;
+}
+
+/**
+ * @brief Finds the first endpoint on iface matching the given type and direction.+
+ *
+ * Meant to be used for "find the bulk IN endpoint." for example
+ *
+ * Returns NULL if none match.
+ */
+usb_endpoint_t* usb_find_endpoint(usb_interface_t* iface, usb_endpoint_type_t type, usb_direction_t dir) {
+	if (!iface) return NULL;
+
+	for (size_t i = 0; i < iface->endpoint_count; i++) {
+		usb_endpoint_t* ep = &iface->endpoints[i];
+		if (ep->type == type && ep->direction == dir) return ep;
+	}
+
+	return NULL;
+}
+
+/**
+ * @brief Finds the interface with the given interface number on a specific device.
+ * Returns NULL if dev has no such interface (or dev is NULL).
+ */
+usb_interface_t* usb_device_find_interface(usb_device_t* dev, uint8_t interface_number) {
+	if (!dev) return NULL;
+
+	for (usb_interface_node_t* n = usb_interfaces; n; n = n->next) {
+		if (n->iface->usb_dev == dev && n->iface->interface_number == interface_number) {
+			return n->iface;
+		}
+	}
+
+	return NULL;
+}
+
+/**
+ * @brief Counts how many interfaces belong to a specific device.
+ */
+size_t usb_device_interface_count(usb_device_t* dev) {
+	if (!dev) return 0;
+
+	size_t count = 0;
+	for (usb_interface_node_t* n = usb_interfaces; n; n = n->next) {
+		if (n->iface->usb_dev == dev) count++;
+	}
+	return count;
+}
+
+/**
+ * @brief Gets the index'th interface belonging to dev (0-based).
+ * Order is not guaranteed to match interface_number order.
+ * Returns NULL if index is out of range or dev is NULL.
+ */
+usb_interface_t* usb_device_get_interface(usb_device_t* dev, size_t index) {
+	if (!dev) return NULL;
+
+	size_t i = 0;
+	for (usb_interface_node_t* n = usb_interfaces; n; n = n->next) {
+		if (n->iface->usb_dev == dev) {
+			if (i == index) return n->iface;
+			i++;
+		}
 	}
 	return NULL;
 }
@@ -183,7 +293,8 @@ static int usb_read_device_info(usb_device_t* dev, usb_device_descriptor_t* desc
 		return -1;
 	}
 
-	printf_serial("\tDevice: VID=%04x PID=%04x class=%02x subclass=%02x proto=%02x maxpkt0=%u configs=%u\r\n",
+	printf_serial(
+		"\tDevice: VID=%04x PID=%04x class=%02x subclass=%02x proto=%02x maxpkt0=%u configs=%u\r\n",
 		desc_out->idVendor,
 		desc_out->idProduct,
 		desc_out->bDeviceClass,
@@ -194,13 +305,7 @@ static int usb_read_device_info(usb_device_t* dev, usb_device_descriptor_t* desc
 	);
 
 	// the full printf_serial above has a bit more debug info that didn't fit nicely on a single line on 1024x786
-	printf_color(PRINT_COLOR_LIGHT_BLUE, PRINT_DEFAULT_BG, "\tDevice: VID=%04x PID=%04x class=%02x subclass=%02x proto=%02x\n",
-		desc_out->idVendor,
-		desc_out->idProduct,
-		desc_out->bDeviceClass,
-		desc_out->bDeviceSubClass,
-		desc_out->bDeviceProtocol
-	);
+	printf_color(PRINT_COLOR_LIGHT_BLUE, PRINT_DEFAULT_BG, "\tDevice: VID=%04x PID=%04x class=%02x subclass=%02x proto=%02x\n", desc_out->idVendor, desc_out->idProduct, desc_out->bDeviceClass, desc_out->bDeviceSubClass, desc_out->bDeviceProtocol);
 
 	printf_color(PRINT_COLOR_LIGHT_BLUE, PRINT_DEFAULT_BG, "\tDevice: %s %s\n", get_usb_vendor_name(desc_out->idVendor), get_usb_device_name(desc_out->idVendor, desc_out->idProduct));
 
@@ -209,7 +314,7 @@ static int usb_read_device_info(usb_device_t* dev, usb_device_descriptor_t* desc
 		// SS/SS+ encodes MPS0 as an exponent. it's 2^9 rather than exactly 512
 		actual_mps0 = 1u << desc_out->bMaxPacketSize0;
 	} else {
-		// LS/FS/HS encode it as a literal byte count 
+		// LS/FS/HS encode it as a literal byte count
 		actual_mps0 = desc_out->bMaxPacketSize0;
 	}
 
@@ -296,6 +401,8 @@ static int usb_read_config_and_open_endpoints(usb_device_t* dev, usb_interface_d
 	off = cfg_header.bLength;
 	in_active_interface = false;
 	usb_interface_desc_t* cur_iface = NULL;
+	uint16_t class_desc_start = 0;
+	bool class_desc_captured = true; // true until an active interface opens a pending region
 
 	while (off + 2 <= total_len) {
 		uint8_t blen = buf[off];
@@ -303,6 +410,16 @@ static int usb_read_config_and_open_endpoints(usb_device_t* dev, usb_interface_d
 		if (blen < 2 || off + blen > total_len) break;
 
 		if (btype == USB_DESC_TYPE_INTERFACE) {
+			// finalize the previous interface's class-descriptor region if it never hit an endpoint (like a control-only interface)
+			if (cur_iface && !class_desc_captured && off > class_desc_start) {
+				size_t len = off - class_desc_start;
+				cur_iface->class_descriptors = (uint8_t*) kcalloc(1, len);
+				if (cur_iface->class_descriptors) {
+					memcpy(cur_iface->class_descriptors, &buf[class_desc_start], len);
+					cur_iface->class_descriptors_length = len;
+				}
+			}
+
 			usb_interface_descriptor_t* iface = (usb_interface_descriptor_t*) &buf[off];
 			in_active_interface = (iface->bAlternateSetting == 0);
 
@@ -314,10 +431,27 @@ static int usb_read_config_and_open_endpoints(usb_device_t* dev, usb_interface_d
 				cur_iface->interface_protocol = iface->bInterfaceProtocol;
 				cur_iface->ep_start = ep_idx;
 				cur_iface->ep_count = 0;
+				cur_iface->class_descriptors = NULL;
+				cur_iface->class_descriptors_length = 0;
+
+				class_desc_start = off + blen; // region begins right after this descriptor
+				class_desc_captured = false;
 			} else {
 				cur_iface = NULL;
 			}
 		} else if (btype == USB_DESC_TYPE_ENDPOINT && in_active_interface && cur_iface) {
+			if (!class_desc_captured) {
+				size_t len = off - class_desc_start;
+				if (len > 0) {
+					cur_iface->class_descriptors = (uint8_t*) kcalloc(1, len);
+					if (cur_iface->class_descriptors) {
+						memcpy(cur_iface->class_descriptors, &buf[class_desc_start], len);
+						cur_iface->class_descriptors_length = len;
+					}
+				}
+				class_desc_captured = true;
+			}
+
 			usb_endpoint_descriptor_t* epd = (usb_endpoint_descriptor_t*) &buf[off];
 
 			usb_endpoint_t* ep = &new_endpoints[ep_idx++];
@@ -337,6 +471,16 @@ static int usb_read_config_and_open_endpoints(usb_device_t* dev, usb_interface_d
 			cur_iface->ep_count++;
 		}
 		off += blen;
+	}
+
+	// last interface may never have hit an endpoint (control only or the tail)
+	if (cur_iface && !class_desc_captured && off > class_desc_start) {
+		size_t len = off - class_desc_start;
+		cur_iface->class_descriptors = (uint8_t*) kcalloc(1, len);
+		if (cur_iface->class_descriptors) {
+			memcpy(cur_iface->class_descriptors, &buf[class_desc_start], len);
+			cur_iface->class_descriptors_length = len;
+		}
 	}
 
 	kfree(dev->endpoints); // the EP0-only array device_init allocated
@@ -388,6 +532,10 @@ static int usb_enumerate_device(usb_hcd_t* hcd, uint8_t port, usb_speed_t speed)
 		return -1;
 	}
 
+	// These are technically saved in the wallos_dev_t but class drivers should only work with the usb_device_t
+	dev->device_class = desc.bDeviceClass;
+	dev->device_subclass = desc.bDeviceSubClass;
+	dev->device_protocol = desc.bDeviceProtocol;
 
 	usb_interface_desc_t* ifaces = NULL;
 	size_t iface_count = 0;
@@ -421,7 +569,6 @@ static int usb_enumerate_device(usb_hcd_t* hcd, uint8_t port, usb_speed_t speed)
 	dev->device = port_dev;
 	register_device(port_dev);
 
-
 	/* Per-interface child nodes */
 	usb_name_counter_t counters[8];
 	size_t counter_count = 0;
@@ -448,6 +595,8 @@ static int usb_enumerate_device(usb_hcd_t* hcd, uint8_t port, usb_speed_t speed)
 		iface->interface_protocol = id->interface_protocol;
 		iface->endpoints = &dev->endpoints[id->ep_start];
 		iface->endpoint_count = id->ep_count;
+		iface->class_descriptors = id->class_descriptors;
+		iface->class_descriptors_length = id->class_descriptors_length;
 
 		iface_dev->name = usb_build_interface_name(counters, &counter_count, 8, id->interface_class, id->interface_subclass, id->interface_protocol);
 		iface_dev->interfaces = DEV_INT_USB | usb_class_to_interface_flag(id->interface_class);
@@ -461,11 +610,16 @@ static int usb_enumerate_device(usb_hcd_t* hcd, uint8_t port, usb_speed_t speed)
 		iface->device = iface_dev;
 		register_device(iface_dev);
 
+		printf_serial("[BINDING DEVICE RETURN] %d\r\n", dm_bind_device(iface_dev));
+
 		if (usb_interface_list_add(iface) != 0) {
 			printf_serial("[USB][WARN] Failed to track interface %u internally.\r\n", id->interface_number);
 		}
 	}
 
+	// TODO:
+	// If iface/iface_dev allocation fails, and the loop continues past a given interface, that interface's class_descriptors buffer is never freed
+	// If we are failing allocations, something went wrong that's likely a bigger problem than us not cleaning it up
 	kfree(ifaces);
 
 	if (usb_device_list_add(dev) != 0) {

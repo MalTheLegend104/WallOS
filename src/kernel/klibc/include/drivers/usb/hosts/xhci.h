@@ -1,9 +1,9 @@
 #ifndef WALLOS_XHCI_H
 #define WALLOS_XHCI_H
 
-#include <stdint.h>
 #include <stdbool.h>
 #include <stddef.h>
+#include <stdint.h>
 
 #include <drivers/usb/usb_core.h>
 
@@ -14,19 +14,20 @@
 extern "C" {
 #endif
 
-// Number of interrupters we currently support. 
+// Number of interrupters we currently support.
 // Change this (and ensure hc->interrupters is big enough) to support more.
 #define XHCI_INTERRUPTER_COUNT 1
 
-// Segments per interrupter's Event Ring Segment Table. 
+// Segments per interrupter's Event Ring Segment Table.
 // I dont see us needing more than one but want to make sure we can if we need to
 #define XHCI_ERST_SEGMENTS_PER_INTERRUPTER 1
 
-// TRBs per event ring segment. 
+// TRBs per event ring segment.
 // Spec (6.5) requires each segment be between 16 and 4096 TRBs.
 #define XHCI_EVENT_RING_TRBS_PER_SEGMENT 256 // 256 * 16 bytes = one 4KiB page
 
-#define XHCI_COMMAND_TRB_ADDRESS_DEVICE 11
+#define XHCI_COMMAND_TRB_ADDRESS_DEVICE     11
+#define XHCI_COMMAND_TRB_CONFIGURE_ENDPOINT 12
 
 #define XHCI_TRANSFER_RING_TRB_COUNT 64 // one 1KiB alloc; plenty for EP0 control transfers
 
@@ -142,16 +143,16 @@ extern "C" {
 	} hccparams1_t;
 
 	typedef struct {
-		bool vtc; // Virtualization Based Trusted I/O 
-		bool gsc; // Get/Set Extended Property 
-		bool etc_tsc; // Extended TBC TRB Status 
-		bool etc; // Extended TBC 
-		bool cic; // Configuration Information 
-		bool lec; // Large ESIT Payload 
-		bool ctc; // Compliance Transition 
-		bool fsc; // Force Save Context 
-		bool cmc; // Configure Endpoint Command Max Exit Latency Too Large 
-		bool u3c; // U3 Entry 
+		bool vtc;     // Virtualization Based Trusted I/O
+		bool gsc;     // Get/Set Extended Property
+		bool etc_tsc; // Extended TBC TRB Status
+		bool etc;     // Extended TBC
+		bool cic;     // Configuration Information
+		bool lec;     // Large ESIT Payload
+		bool ctc;     // Compliance Transition
+		bool fsc;     // Force Save Context
+		bool cmc;     // Configure Endpoint Command Max Exit Latency Too Large
+		bool u3c;     // U3 Entry
 	} hccparams2_t;
 
 	typedef enum {
@@ -170,35 +171,35 @@ extern "C" {
 
 	typedef struct {
 		/* DWORD 0: USBLEGSUP */
-		uint8_t  cap_id;                        // Bits 7:0   - Capability ID (Expected: 1)
-		uint8_t  next_cap_ptr;                  // Bits 15:8  - Next Capability Pointer
-		bool     hc_bios_owned;                 // Bit  16    - HC BIOS Owned Semaphore
-		bool     hc_os_owned;                   // Bit  24    - HC OS Owned Semaphore
+		uint8_t cap_id;                     // Bits 7:0   - Capability ID (Expected: 1)
+		uint8_t next_cap_ptr;               // Bits 15:8  - Next Capability Pointer
+		bool hc_bios_owned;                 // Bit  16    - HC BIOS Owned Semaphore
+		bool hc_os_owned;                   // Bit  24    - HC OS Owned Semaphore
 
 		/* DWORD 1: USBLEGCTLSTS (USB Legacy Support Control/Status) */
 		/* Enables */
-		bool     usb_smi_enable;                // Bit  0     - USB SMI Enable
-		bool     smi_on_host_sys_err_enable;    // Bit  1     - SMI on Host System Error Enable
-		bool     smi_on_os_ownership_enable;    // Bit  2     - SMI on OS Ownership Enable
-		bool     smi_on_pci_command_enable;     // Bit  3     - SMI on PCI Command Enable
-		bool     smi_on_bar_enable;             // Bit  4     - SMI on BAR Enable
-		bool     smi_on_event_int_enable;       // Bit  13    - SMI on Event Interrupt Enable
+		bool usb_smi_enable;                // Bit  0     - USB SMI Enable
+		bool smi_on_host_sys_err_enable;    // Bit  1     - SMI on Host System Error Enable
+		bool smi_on_os_ownership_enable;    // Bit  2     - SMI on OS Ownership Enable
+		bool smi_on_pci_command_enable;     // Bit  3     - SMI on PCI Command Enable
+		bool smi_on_bar_enable;             // Bit  4     - SMI on BAR Enable
+		bool smi_on_event_int_enable;       // Bit  13    - SMI on Event Interrupt Enable
 
 		/* Statuses */
-		bool     smi_on_host_sys_err;           // Bit  16    - SMI on Host System Error
-		bool     smi_on_os_ownership_change;    // Bit  17    - SMI on OS Ownership Change
-		bool     smi_on_pci_command;            // Bit  18    - SMI on PCI Command
-		bool     smi_on_bar;                    // Bit  19    - SMI on BAR
-		bool     smi_on_event_int;              // Bit  29    - SMI on Event Interrupt
+		bool smi_on_host_sys_err;           // Bit  16    - SMI on Host System Error
+		bool smi_on_os_ownership_change;    // Bit  17    - SMI on OS Ownership Change
+		bool smi_on_pci_command;            // Bit  18    - SMI on PCI Command
+		bool smi_on_bar;                    // Bit  19    - SMI on BAR
+		bool smi_on_event_int;              // Bit  29    - SMI on Event Interrupt
 	} xhci_xec_legacy_support_t;
 
 	typedef struct {
-		uint8_t  psiv;                     // Bits 3:0   - Protocol Speed ID Value
-		uint8_t  psie;                     // Bits 5:4   - Protocol Speed ID Exponent (0=Bps, 1=Kbps, 2=Mbps, 3=Gbps)
-		bool     pfd;                      // Bit  6     - PSI Full Duplex
+		uint8_t psiv;                     // Bits 3:0   - Protocol Speed ID Value
+		uint8_t psie;                     // Bits 5:4   - Protocol Speed ID Exponent (0=Bps, 1=Kbps, 2=Mbps, 3=Gbps)
+		bool pfd;                         // Bit  6     - PSI Full Duplex
 		// bits 9-13 are RsvdP
-		uint8_t  lp;                       // Bits 15:14 - Link Protocol (0=Sys, 1=Gen1, 2=Gen2)
-		uint16_t proto_speed_id_mantissa;  // Bits 31:16 - Speed Mantissa
+		uint8_t lp;                       // Bits 15:14 - Link Protocol (0=Sys, 1=Gen1, 2=Gen2)
+		uint16_t proto_speed_id_mantissa; // Bits 31:16 - Speed Mantissa
 	} xhci_xec_supported_proto_psi_t;
 
 	typedef struct {
@@ -322,6 +323,11 @@ extern "C" {
 
 		xhci_ring_t ep0_ring;
 		uint16_t ep0_max_packet_size;
+
+		// Highest DCI configured on this device so far.
+		// Used as the Slot Context's Context Entries value for the next Configure Endpoint command.
+		// Starts at 1 (EP0) once the device is addressed.
+		uint8_t highest_dci;
 	} xhci_device_t;
 
 	typedef struct {
@@ -356,19 +362,33 @@ extern "C" {
 
 	void xhci_init();
 
-#define XHCI_COMMAND_TRB_ENABLE_SLOT 9
+#define XHCI_COMMAND_TRB_ENABLE_SLOT  9
 #define XHCI_COMMAND_TRB_DISABLE_SLOT 10
 
-#define XHCI_TRB_TYPE_SETUP_STAGE     2
-#define XHCI_TRB_TYPE_DATA_STAGE      3
-#define XHCI_TRB_TYPE_STATUS_STAGE    4
-#define XHCI_TRB_TYPE_LINK 6
-#define XHCI_TRB_TYPE_RESET_ENDPOINT           14
-#define XHCI_TRB_TYPE_SET_TR_DEQUEUE_POINTER   16
-#define XHCI_TRB_TYPE_TRANSFER_EVENT  32
-#define XHCI_TRB_TYPE_CMD_COMPLETION 33
+#define XHCI_TRB_TYPE_NORMAL       1
+#define XHCI_TRB_TYPE_SETUP_STAGE  2
+#define XHCI_TRB_TYPE_DATA_STAGE   3
+#define XHCI_TRB_TYPE_STATUS_STAGE 4
+#define XHCI_TRB_TYPE_LINK         6
 
-#ifdef __cplusplus	
+	// Endpoint Context DWORD1 "Endpoint Type" encodings (xHCI Table 6-10).
+	// Control endpoints are bidirectional and use one context
+	// Other transfer types use separate contexts for IN and OUT
+
+#define XHCI_EP_TYPE_ISOCH_OUT               1
+#define XHCI_EP_TYPE_BULK_OUT                2
+#define XHCI_EP_TYPE_INTERRUPT_OUT           3
+#define XHCI_EP_TYPE_CONTROL                 4
+#define XHCI_EP_TYPE_ISOCH_IN                5
+#define XHCI_EP_TYPE_BULK_IN                 6
+#define XHCI_EP_TYPE_INTERRUPT_IN            7
+#define XHCI_TRB_TYPE_RESET_ENDPOINT         14
+#define XHCI_TRB_TYPE_STOP_ENDPOINT          15
+#define XHCI_TRB_TYPE_SET_TR_DEQUEUE_POINTER 16
+#define XHCI_TRB_TYPE_TRANSFER_EVENT         32
+#define XHCI_TRB_TYPE_CMD_COMPLETION         33
+
+#ifdef __cplusplus
 #undef _Static_assert
 }
 #endif

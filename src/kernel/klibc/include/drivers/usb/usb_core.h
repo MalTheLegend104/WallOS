@@ -73,9 +73,9 @@ extern "C" {
 	}
 
 
-		/* Normalized port status return.
-		 * Returned by get_port_status() in usb_hcd_ops_t.
-		 */
+	/* Normalized port status return.
+	 * Returned by get_port_status() in usb_hcd_ops_t.
+	 */
 	typedef struct {
 		bool connected; /* True if a device is currently attached to this port */
 		bool enabled;   /* True if the port is enabled (out of reset, forwarding packets) */
@@ -115,8 +115,8 @@ extern "C" {
 	} usb_transfer_status_t;
 
 	typedef struct {
-		uint8_t  bmRequestType;
-		uint8_t  bRequest;
+		uint8_t bmRequestType;
+		uint8_t bRequest;
 		uint16_t wValue;
 		uint16_t wIndex;
 		uint16_t wLength;
@@ -161,6 +161,10 @@ extern "C" {
 		uint8_t address;
 		uint8_t port;
 
+		uint8_t device_class;
+		uint8_t device_subclass;
+		uint8_t device_protocol;
+
 		usb_hcd_t* hcd;
 		void* hcd_data;
 
@@ -180,14 +184,19 @@ extern "C" {
 	};
 
 	typedef struct {
-		usb_device_t* usb_dev; // parent USB device (the "port")
+		usb_device_t* usb_dev;
 		uint8_t interface_number;
 		uint8_t interface_class;
 		uint8_t interface_subclass;
 		uint8_t interface_protocol;
-		usb_endpoint_t* endpoints; // subset of usb_dev->endpoints belonging to this interface
+		usb_endpoint_t* endpoints;
 		size_t endpoint_count;
-		wallos_device_t* device; // the registered node for this interface
+		wallos_device_t* device;
+
+		// Raw class-specific descriptors between this interface descriptor and its first endpoint (HID or CDC functional descriptors).
+		// Owned by this interface. NULL/0 if none.
+		const uint8_t* class_descriptors;
+		size_t class_descriptors_length;
 	} usb_interface_t;
 
 	struct usb_hcd_ops {
@@ -195,7 +204,7 @@ extern "C" {
 		int (*stop)(usb_hcd_t* hcd);
 		int (*reset)(usb_hcd_t* hcd);
 
-		size_t(*get_port_count)(usb_hcd_t* hcd);
+		size_t (*get_port_count)(usb_hcd_t* hcd);
 		int (*get_port_status)(usb_hcd_t* hcd, uint8_t port, usb_port_status_t* status);
 		int (*reset_port)(usb_hcd_t* hcd, uint8_t port);
 		int (*enable_port)(usb_hcd_t* hcd, uint8_t port);
@@ -223,6 +232,14 @@ extern "C" {
 	usb_interface_t* usb_interface_from_device(wallos_device_t* wdev);
 
 	void usb_init(void);
+
+	usb_device_t* usb_device_from_wallos_device(wallos_device_t* wdev);
+	bool usb_is_valid_device(wallos_device_t* wdev);
+	void usb_device_get_class(usb_device_t* dev, uint8_t* class_out, uint8_t* subclass_out, uint8_t* protocol_out);
+	usb_endpoint_t* usb_find_endpoint(usb_interface_t* iface, usb_endpoint_type_t type, usb_direction_t dir);
+	usb_interface_t* usb_device_find_interface(usb_device_t* dev, uint8_t interface_number);
+	size_t usb_device_interface_count(usb_device_t* dev);
+	usb_interface_t* usb_device_get_interface(usb_device_t* dev, size_t index);
 
 	int usb_hcd_register(usb_hcd_t* hcd);
 	void usb_hcd_unregister(usb_hcd_t* hcd);

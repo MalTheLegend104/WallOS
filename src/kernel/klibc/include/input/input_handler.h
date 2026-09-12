@@ -1,8 +1,8 @@
 #ifndef WALLOS_INPUT_HANDLER_H
 #define WALLOS_INPUT_HANDLER_H
 
-#include <stdint.h>
 #include <stdbool.h>
+#include <stdint.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -10,18 +10,18 @@ extern "C" {
 
 // TODO: The rest of this should probably dynamically generate input device IDs.
 // Im too lazy for this now, and there will only ever be 1 PS/2 and 1 serial input device, so these can be static
-#define PS2_KEYBOARD_DEVICE_ID 0
+#define PS2_KEYBOARD_DEVICE_ID    0
 #define SERIAL_KEYBOARD_DEVICE_ID 1
 
 
-// we are going to try to make interfaces for most generic interface devices
-// - mouse
-// - touch (likely a part of mouse)
-// - keyboard (including serial)
-// - controllers
-// There are some other weird HID devices, but those should all likely have vendor_id:device_id binding anyway.
+	// we are going to try to make interfaces for most generic interface devices
+	// - mouse
+	// - touch (likely a part of mouse)
+	// - keyboard (including serial)
+	// - controllers
+	// There are some other weird HID devices, but those should all likely have vendor_id:device_id binding anyway.
 
-// Device types to identify the source of the event
+	// Device types to identify the source of the event
 	typedef enum {
 		WALLOS_INPUT_DEVICE_KEYBOARD = 0,
 		WALLOS_INPUT_DEVICE_MOUSE,
@@ -209,7 +209,8 @@ extern "C" {
 		WALLOS_MOD_SHIFT = (1 << 0),
 		WALLOS_MOD_CTRL = (1 << 1),
 		WALLOS_MOD_ALT = (1 << 2),
-		WALLOS_MOD_CAPS = (1 << 3)
+		WALLOS_MOD_CAPS = (1 << 3),
+		WALLOS_MOD_META = (1 << 4)
 	} wallos_modifier_flags_t;
 
 	// Mouse Buttons
@@ -259,8 +260,8 @@ extern "C" {
 
 		union {
 			wallos_keyboard_event_t keyboard;
-			wallos_mouse_event_t    mouse;
-			wallos_touch_event_t    touch;
+			wallos_mouse_event_t mouse;
+			wallos_touch_event_t touch;
 			wallos_controller_event_t controller;
 		} data;
 	} wallos_input_event_t;

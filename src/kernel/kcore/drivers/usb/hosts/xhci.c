@@ -2,14 +2,14 @@
 #include <stdio.h>
 #include <string.h>
 
-#include <endian_bits.h>
-#include <cpu_io.h>
 #include <arch.h>
+#include <cpu_io.h>
+#include <endian_bits.h>
 
 #include <system/timer.h>
 
-#include <memory/virtual_mem.h>
 #include <memory/kernel_alloc.h>
+#include <memory/virtual_mem.h>
 
 #include <device/device_manager.h>
 
@@ -258,7 +258,7 @@ static bool xhci_send_command_and_wait(xhci_controller_t* hc, const trb_t* cmd_t
 		uint8_t trb_type = FIELD_GET(GENMASK(15, 10), event_trb->control);
 
 		if (trb_type != XHCI_TRB_TYPE_CMD_COMPLETION) {
-			printf_serial("[xHCI][INFO] Consuming side-event type: %u while waiting for command completion.\r\n", trb_type);
+			// printf_serial("[xHCI][INFO] Consuming side-event type: %u while waiting for command completion.\r\n", trb_type);
 			xhci_interrupter_advance_dequeue(ir);
 			xhci_interrupter_update_erdp(hc, 0);
 			continue;
@@ -313,7 +313,7 @@ void xhci_enable_slot(xhci_controller_t* hc, uint8_t port, uint8_t* slot_id_out)
 
 	// We have the slot type we need. All we need to do is write the TRB.
 	// Enable slot only uses DWORD3 for the TRB, everything else is reserved so we will write all zeros.
-	trb_t cmd = { 0 };
+	trb_t cmd = {0};
 	FIELD_WRITE(cmd.control, GENMASK(20, 16), slot_type);
 	FIELD_WRITE(cmd.control, GENMASK(15, 10), XHCI_COMMAND_TRB_ENABLE_SLOT);
 	// cycle bit is handled for us by xhci_ring_enqueue via xhci_send_command_and_wait
@@ -336,7 +336,7 @@ void xhci_enable_slot(xhci_controller_t* hc, uint8_t port, uint8_t* slot_id_out)
 bool xhci_disable_slot(xhci_controller_t* hc, uint8_t slot_id) {
 	if (!hc || !slot_id) return false;
 
-	trb_t cmd = { 0 };
+	trb_t cmd = {0};
 	FIELD_WRITE(cmd.control, GENMASK(15, 10), XHCI_COMMAND_TRB_DISABLE_SLOT);
 	FIELD_WRITE(cmd.control, GENMASK(31, 24), slot_id);
 
@@ -495,13 +495,15 @@ static void xhci_print_supported_protocol(const xhci_xec_supported_proto_t* prot
 
 	for (uint8_t i = 0; i < proto->psi_count; i++) {
 		const xhci_xec_supported_proto_psi_t* psi = &proto->psi_array[i];
-		printf_serial("[xHCI]   PSI[%u]: PSIV=%u, PSIE=%u, PFD=%u, LP=%u, Mantissa=%u\r\n",
+		printf_serial(
+			"[xHCI]   PSI[%u]: PSIV=%u, PSIE=%u, PFD=%u, LP=%u, Mantissa=%u\r\n",
 			i,
 			psi->psiv,
 			psi->psie,
 			psi->pfd,
 			psi->lp,
-			psi->proto_speed_id_mantissa);
+			psi->proto_speed_id_mantissa
+		);
 	}
 }
 
@@ -581,16 +583,16 @@ static void xhci_print_legacy_support(const xhci_xec_legacy_support_t* legsup) {
 
 static xhci_xec_capability_id_t get_id_from_value(uint8_t value) {
 	switch (value) {
-		case 1:    return XEC_USB_LEGACY;
-		case 2:    return XEC_SUPPORTED_PROTO;
-		case 3:    return XEC_EXT_POWER_MANAGEMENT;
-		case 4:    return XEC_IO_VIRT;
-		case 5:    return XEC_MESSAGE_INTERRUPT;
-		case 6:    return XEC_LOCAL_MEMORY;
-		case 10:   return XEC_USB_DEBUG;
-		case 17:   return XEC_EXT_MESSAGE_INTERRUPT;
+		case 1:           return XEC_USB_LEGACY;
+		case 2:           return XEC_SUPPORTED_PROTO;
+		case 3:           return XEC_EXT_POWER_MANAGEMENT;
+		case 4:           return XEC_IO_VIRT;
+		case 5:           return XEC_MESSAGE_INTERRUPT;
+		case 6:           return XEC_LOCAL_MEMORY;
+		case 10:          return XEC_USB_DEBUG;
+		case 17:          return XEC_EXT_MESSAGE_INTERRUPT;
 		case 192 ... 255: return XEC_VENDOR_DEFINED; // unfortunately need this to use the GCC ... range extension to make this readable
-		default: return XEC_RESERVED;
+		default:          return XEC_RESERVED;
 	}
 }
 
@@ -738,13 +740,13 @@ static usb_speed_t xhci_get_port_speed_from_psi(xhci_controller_t* hc, uint8_t p
 			// I have zero clue how USB4 devices will show up here, and no devices to test it with.
 			// I assume that USB4 devices will just use the actual PSI arrays.
 			switch (psi) {
-				case 1: return USB_FULL_SPEED;
-				case 2: return USB_LOW_SPEED;
-				case 3: return USB_HIGH_SPEED;
-				case 4: return USB_SPEED_5GBPS;  // "SuperSpeed Gen 1x1"
-				case 5: return USB_SPEED_10GBPS; // "SS+ Gen 2x1"
-				case 6: return USB_SPEED_5GBPS;  // "SS+ Gen 1x2"
-				case 7: return USB_SPEED_10GBPS; // "SS+ Gen 2x2"
+				case 1:  return USB_FULL_SPEED;
+				case 2:  return USB_LOW_SPEED;
+				case 3:  return USB_HIGH_SPEED;
+				case 4:  return USB_SPEED_5GBPS;  // "SuperSpeed Gen 1x1"
+				case 5:  return USB_SPEED_10GBPS; // "SS+ Gen 2x1"
+				case 6:  return USB_SPEED_5GBPS;  // "SS+ Gen 1x2"
+				case 7:  return USB_SPEED_10GBPS; // "SS+ Gen 2x2"
 				default: return USB_SPEED_UNKNOWN;
 			}
 		}
@@ -757,15 +759,15 @@ static usb_speed_t xhci_get_port_speed_from_psi(xhci_controller_t* hc, uint8_t p
 			uint64_t speed_bps = entry->proto_speed_id_mantissa;
 
 			switch (entry->psie) {
-				case 0: //bps
+				case 0: // bps
 					break; // already in bps
-				case 1: //kbps
+				case 1: // kbps
 					speed_bps *= 1000;
 					break;
-				case 2: //mbps
+				case 2: // mbps
 					speed_bps = speed_bps * 1000 * 1000;
 					break;
-				case 3: //gbps
+				case 3: // gbps
 					speed_bps = speed_bps * 1000 * 1000 * 1000;
 					break;
 				default: return USB_SPEED_UNKNOWN; // shouldn't be possible
@@ -878,6 +880,60 @@ static bool xhci_wait_transfer_event(xhci_controller_t* hc, uintptr_t setup_trb_
 	}
 }
 
+// Waits for the Transfer Event referencing a single TRB. Used for one-stage transfers (e.g. the
+// Normal TRB of an interrupt or bulk transfer), where - unlike a control transfer - there's no
+// multi-stage state machine to track: the first Transfer Event that references our TRB is
+// authoritative, whether it succeeded or not.
+static bool xhci_wait_single_trb_event(xhci_controller_t* hc, uintptr_t trb_phys, trb_t* completion_out, size_t timeout_ms) {
+	xhci_interrupter_t* ir = &hc->interrupters[0];
+	// Polled in ~10us steps
+	// Time out 0 is "wait forever", shouldn't really be used
+	size_t remaining_us = timeout_ms * 1000;
+	const size_t poll_step_us = 10;
+
+	while (true) {
+		trb_t* event_trb = (trb_t*) ((uintptr_t) ir->segments[ir->dequeue_segment].trbs + (ir->dequeue * sizeof(trb_t)));
+		bool event_cycle = FIELD_GET(BIT(0), event_trb->control) != 0;
+
+		if (event_cycle != ir->cycle) {
+			cpu_relax();
+
+			if (timeout_ms != 0) {
+				xhci_delay_us(poll_step_us);
+				if (remaining_us <= poll_step_us) {
+					// printf_serial("[xHCI][WARN] Timed out waiting for transfer event.\r\n");
+					return false;
+				}
+				remaining_us -= poll_step_us;
+			}
+			continue;
+		}
+		xhci_memory_fence();
+
+		uint8_t trb_type = FIELD_GET(GENMASK(15, 10), event_trb->control);
+
+		if (trb_type != XHCI_TRB_TYPE_TRANSFER_EVENT) {
+			printf_serial("[xHCI][INFO] Consuming side-event type: %u while waiting for transfer completion.\r\n", trb_type);
+			xhci_interrupter_advance_dequeue(ir);
+			xhci_interrupter_update_erdp(hc, 0);
+			continue;
+		}
+
+		uintptr_t p = event_trb->parameter;
+		if (p != trb_phys) {
+			printf_serial("[xHCI][WARN] Transfer event for unrelated TRB (got %llx)\r\n", (unsigned long long) p);
+			xhci_interrupter_advance_dequeue(ir);
+			xhci_interrupter_update_erdp(hc, 0);
+			continue;
+		}
+
+		if (completion_out) *completion_out = *event_trb;
+		xhci_interrupter_advance_dequeue(ir);
+		xhci_interrupter_update_erdp(hc, 0);
+		return true;
+	}
+}
+
 // ------------------------------------------------------------------------------------------------
 // ------------------------------------------------------------------------------------------------
 // Port operations (for usb_hcd interface)
@@ -925,11 +981,11 @@ int xhci_get_port_status(usb_hcd_t* hcd, uint8_t port, usb_port_status_t* status
 }
 
 #define PORTSC_RW_MASK \
-    (GENMASK(8, 5)  |  /* PLS */ \
-     BIT(9)         |  /* PP */  \
-     GENMASK(15, 14) | /* PIC */ \
-     BIT(16)        |  /* LWS */ \
-     GENMASK(27, 25))  /* WCE/WDE/WOE */
+	(GENMASK(8, 5) |  /* PLS */ \
+	 BIT(9) |  /* PP */ \
+	 GENMASK(15, 14) | /* PIC */ \
+	 BIT(16) |  /* LWS */ \
+	 GENMASK(27, 25))  /* WCE/WDE/WOE */
 
 int xhci_reset_port(usb_hcd_t* hcd, uint8_t port) {
 	if (!hcd) return -1;
@@ -947,16 +1003,19 @@ int xhci_reset_port(usb_hcd_t* hcd, uint8_t port) {
 	FIELD_WRITE(portsc, GENMASK(4, 4), 1); // slot 4 is the Port Reset flag
 	mmio_write32((volatile void*) &hc->ports[port].portsc, portsc & (PORTSC_RW_MASK | GENMASK(4, 4)));
 
-	xhci_delay_us(10); // very generous delay to let the controller handle this
+	// TDRSTR (USB 2.0 spec 7.1.7.5) says the controller should complete reset signaling within ~50ms, but I have a controller that definitely takes longer (or my timing sucks)
+	// Poll at a fixed 1ms interval up to timeout_time_us
+	const uint32_t poll_interval_us = 1000;   // 1ms
+	const uint32_t timeout_time_us = 250000; // 250ms total, padded for non-compliant HCs
+	uint32_t elapsed_us = 0;
 
-	int timeout = 10; // 10ms
 	while (FIELD_GET(GENMASK(4, 4), mmio_read32((volatile void*) &hc->ports[port].portsc)) != 0) {
-		xhci_delay_us(timeout * 1000);
-		timeout--;
-		if (timeout <= 0) break;
+		xhci_delay_us(poll_interval_us);
+		elapsed_us += poll_interval_us;
+		if (elapsed_us >= timeout_time_us) break;
 	}
 
-	if (timeout <= 0) {
+	if (elapsed_us >= timeout_time_us) {
 		printf_serial("[xHCI][WARN] Port %u reset timed out\r\n", port);
 		printf_color(PRINT_COLOR_YELLOW, PRINT_DEFAULT_BG, "[xHCI][WARN] Port %u reset timed out\r\n", port);
 		return -1;
@@ -982,7 +1041,7 @@ int xhci_reset_port(usb_hcd_t* hcd, uint8_t port) {
 
 	uint8_t ccs = FIELD_GET(GENMASK(0, 0), portsc);
 	uint8_t ped = FIELD_GET(GENMASK(1, 1), portsc);
-	uint8_t pr = FIELD_GET(GENMASK(4, 4), portsc); // in theory should be zero. if it's 1, we're in a lot of trouble and will probably leave the port alone. 
+	uint8_t pr = FIELD_GET(GENMASK(4, 4), portsc); // in theory should be zero. if it's 1, we're in a lot of trouble and will probably leave the port alone.
 	uint8_t pls = FIELD_GET(GENMASK(8, 5), portsc);
 	uint8_t prc = FIELD_GET(GENMASK(21, 21), portsc);
 
@@ -1011,13 +1070,20 @@ int xhci_reset_port(usb_hcd_t* hcd, uint8_t port) {
 		printf_color(PRINT_COLOR_YELLOW, PRINT_DEFAULT_BG, "[xHCI][WARN] Failed to reset port %u. (PRC)\r\n", port);
 		return -6;
 	}
-// we kinda ignore the "not sucessfully completed" conditions, but if they don't satisfy the completion sequence then is there really a point in checking? 
+	// we kinda ignore the "not sucessfully completed" conditions, but if they don't satisfy the completion sequence then is there really a point in checking?
 
-// we will "attempt" to enable this again later. USB core doesn't explicitly require us to re-enable the port on port reset
+	// we will "attempt" to enable this again later. USB core doesn't explicitly require us to re-enable the port on port reset
 	if (ped != 1) {
 		printf_serial("[xHCI][WARN] Port %u is not enabled after reset...\r\n", port);
 		printf_color(PRINT_COLOR_YELLOW, PRINT_DEFAULT_BG, "[xHCI][WARN] Port is not enabled after reset...\r\n");
 	}
+
+	// TRSTRCY (USB 2.0 spec 7.1.7.5 / 9.2.6.2): reset recovery time.
+	// Devices are only required to accept a SetAddress() 10ms after reset completes.
+	// Linux pads this to 50ms total (10ms spec minimum + 40ms for non-compliant devices)
+	// I've already seen that one of my keyboards is non-compliant, so we just follow linux here
+	xhci_delay_us(50000);
+
 	printf_serial("[xHCI] Port %u successfully reset.\r\n", port);
 	return 0;
 }
@@ -1030,7 +1096,7 @@ int xhci_enable_port(usb_hcd_t* hcd, uint8_t port) {
 
 	// on xhci, the HC should in theory automatically try to get the port to an enabled state on reboot.
 	// we will check here if it's not enabled. if it's not enabled (and there's something connected), we will attempt to figure out why.
-	// We will attempt another port reset as a best effort attempt at fixing it. 
+	// We will attempt another port reset as a best effort attempt at fixing it.
 	volatile void* portsc_reg = (volatile void*) &hc->ports[port].portsc;
 
 	uint32_t portsc = mmio_read32(portsc_reg);
@@ -1059,7 +1125,7 @@ int xhci_enable_port(usb_hcd_t* hcd, uint8_t port) {
 		return -4;
 	}
 
-	// Connected but not enabled. 
+	// Connected but not enabled.
 	// Likely has something weird in the PLS, probably meaning something went wrong during link
 	if (pls != 0) {
 		printf_serial("[xHCI][WARN] Port %u is connected but not in U0 (PLS=%u)\r\n", port, pls);
@@ -1165,27 +1231,28 @@ int xhci_device_init(usb_hcd_t* hcd, usb_device_t* dev) {
 	// During init, context entries should be 1 (endpoint 0)
 	// We will change this later during discovery if we need other endpoints
 	FIELD_WRITE(sc->dword0, GENMASK(31, 27), 1);       // Context Entries = 1
+	xdev->highest_dci = 1;                             // EP0 is the only configured endpoint so far
 	// Spec version 1.2 states that port speed is deprecated, easy to set regardless
-	FIELD_WRITE(sc->dword0, GENMASK(23, 20), psiv);    // Speed 
+	FIELD_WRITE(sc->dword0, GENMASK(23, 20), psiv);    // Speed
 
 	FIELD_WRITE(sc->dword1, GENMASK(23, 16), dev->port + 1); // Root Hub Port Number
 	// 32:24 are for hub
 	// dword2 is basically all hub stuff
 
-	// EP0's max packet size is a genuine guess until we've read the real device descriptor. 
+	// EP0's max packet size is a genuine guess until we've read the real device descriptor.
 	// 8 is always legal regardless of actual speed/value, so we're using it as the default value
 	// HS & USB3 (and 4) devices have different default values depending on speed (albeit, 8 is still legal)
 	usb_speed_t speed = xhci_get_port_speed_from_psi(hc, dev->port, psiv);
 	uint16_t max_packet;
 	switch (speed) {
-		case USB_HIGH_SPEED: max_packet = 64; break;
+		case USB_HIGH_SPEED:    max_packet = 64; break;
 		case USB_SPEED_5GBPS:
 		case USB_SPEED_10GBPS:
 		case USB_SPEED_20GBPS:
 		case USB_SPEED_40GBPS:
 		case USB_SPEED_80GBPS:
 		case USB_SPEED_120GBPS: max_packet = 512; break;
-		default: max_packet = 8; break;
+		default:                max_packet = 8; break;
 	}
 	xdev->ep0_max_packet_size = max_packet;
 
@@ -1216,7 +1283,7 @@ int xhci_device_init(usb_hcd_t* hcd, usb_device_t* dev) {
 	hc->dcbaa[slot_id] = (uint64_t) xdev->dev_ctx_phys;
 
 	/* Address Device command */
-	trb_t cmd = { 0 };
+	trb_t cmd = {0};
 	cmd.parameter = xdev->input_ctx_phys;
 	FIELD_WRITE(cmd.control, GENMASK(15, 10), XHCI_COMMAND_TRB_ADDRESS_DEVICE);
 	FIELD_WRITE(cmd.control, GENMASK(31, 24), slot_id);
@@ -1254,7 +1321,7 @@ int xhci_device_init(usb_hcd_t* hcd, usb_device_t* dev) {
 		kfree(xep0);
 		goto fail_cleanup;
 	}
-	dev->endpoints[0] = (usb_endpoint_t){
+	dev->endpoints[0] = (usb_endpoint_t) {
 		.address = 0,
 		.number = 0,
 		.direction = USB_DIR_OUT,
@@ -1295,17 +1362,220 @@ int xhci_device_destroy(usb_hcd_t* hcd, usb_device_t* dev) {
 // ------------------------------------------------------------------------------------------------
 // ------------------------------------------------------------------------------------------------
 
+// xhci_execute_transfer() / endpoint_open() / endpoint_close() return codes. Negative values are failures, 0 is success.
+// We should probably make this standard across HCDs
+#define XHCI_TX_ERR_INVALID_PARAMS      -1  /* Null hcd, transfer, endpoint, or device */
+#define XHCI_TX_ERR_UNSUPPORTED_EP_TYPE -2  /* Endpoint type not supported for this operation */
+#define XHCI_TX_ERR_MISSING_SETUP       -3  /* Control transfer missing setup packet */
+#define XHCI_TX_ERR_MISSING_HCD_DATA    -4  /* Controller/device/endpoint hcd_data is null */
+#define XHCI_TX_ERR_BOUNCE_ALLOC_FAILED -5  /* DMA bounce buffer allocation failed */
+#define XHCI_TX_ERR_TIMEOUT             -6  /* Transfer/command timed out or hardware wait failed */
+#define XHCI_TX_ERR_RECOVERY_FAILED     -7  /* Transfer and endpoint recovery both failed */
+#define XHCI_TX_ERR_ALLOC_FAILED        -8  /* Endpoint ring/software-state allocation failed */
+
+// Encodes xHCI completion codes (spec table 6.30) (not including success) into: -(100 + comp_code)
+// For example: STALL ERROR (comp_code=6) returns -106
+// This means anything with a -100 or less code is an xHCI error
+#define XHCI_TX_ERR_COMPLETION_BASE         (-100)
+#define XHCI_TX_COMPLETION_CODE_FROM_RC(rc) (-(rc) - 100)
+
+// Device Context Index (xHCI 4.5.1)
+// DCI = (Endpoint Number * 2) + Direction.
+// Control endpoints are bidirectional and conventionally use Direction = 1
+// EP0 is handled separately during device_init and never goes through this path
+static inline uint8_t xhci_endpoint_dci(const usb_endpoint_t* ep) {
+	return (uint8_t) ((ep->number * 2) + (ep->direction == USB_DIR_IN ? 1 : 0));
+}
+
+
+// Converts a USB endpoint descriptor's raw bInterval value into the xHCI Endpoint Context "Interval" field.
+// xHCI 6.2.3.6, Table 6-12.
+//
+// USB endpoints use bInterval to describe how often an interrupt transfer should occur.
+// xHCI stores the same scheduling interval as a base-2 exponent, where the Interval value represents a power-of-two number of 125-us "microframes".
+//
+// - High Speed (HS) and SuperSpeed+ (SS+) interrupt endpoints:
+//       - bInterval is already a base-2 exponent [1,16], representing 2^(bInterval-1) microframes
+//       - xHCI stores the exponent minus one, so: Interval = bInterval - 1 [0,15]
+//
+// - Low Speed (LS) and Full Speed (FS) interrupt endpoints:
+//       - bInterval is a number of 1-ms frames [1,255], rather than an exponent.
+//       - Convert frames to microframes (x8), then round to the nearest power of two and store its exponent.
+//       - xHCI requires the resulting exponent to be in the range [3,10] for these endpoints.
+static uint8_t xhci_calc_interrupt_interval(usb_speed_t speed, uint8_t bInterval) {
+	if (speed != USB_LOW_SPEED && speed != USB_FULL_SPEED) {
+		uint8_t b = bInterval;
+		if (b < 1) b = 1;
+		if (b > 16) b = 16;
+		return (uint8_t) (b - 1);
+	}
+
+	uint32_t microframes = (uint32_t) bInterval * 8;
+	if (microframes < 1) microframes = 1;
+
+	uint8_t exponent = 0;
+	while ((1u << (exponent + 1)) <= microframes) exponent++;
+
+	if (exponent < 3) exponent = 3;
+	if (exponent > 10) exponent = 10;
+	return exponent;
+}
+
 int xhci_endpoint_open(usb_hcd_t* hcd, usb_endpoint_t* ep) {
-	(void) hcd;
-	(void) ep;
-	// TODO: This
+	if (!hcd || !ep || !ep->device) return XHCI_TX_ERR_INVALID_PARAMS;
+
+	// Only interrupt endpoints are wired up right now (for HID in particular).
+	// Bulk and isochronous have their own problems (stream contexts, ESIT payload sizing) that I didn't want to deal with.
+	if (ep->type != USB_ENDPOINT_TYPE_INTERRUPT) {
+		printf_serial("[xHCI][ERROR] Only interrupt endpoints supported right now.\r\n");
+		return XHCI_TX_ERR_UNSUPPORTED_EP_TYPE;
+	}
+
+	if (ep->number < 1 || ep->number > 15) {
+		printf_serial("[xHCI][ERROR] Invalid endpoint number %u.\r\n", ep->number);
+		return XHCI_TX_ERR_INVALID_PARAMS;
+	}
+
+	xhci_controller_t* hc = (xhci_controller_t*) hcd->hcd_data;
+	usb_device_t* dev = (usb_device_t*) ep->device; // we need to cast away the const. we're accessing our own hcd_data on it
+	xhci_device_t* xdev = (xhci_device_t*) dev->hcd_data;
+	if (!hc || !xdev) return XHCI_TX_ERR_MISSING_HCD_DATA;
+
+	uint8_t dci = xhci_endpoint_dci(ep);
+
+	xhci_ring_t ring = {0};
+	if (!xhci_ring_init(&ring, XHCI_TRANSFER_RING_TRB_COUNT)) {
+		printf_serial("[xHCI][ERROR] Failed to allocate transfer ring.\r\n");
+		return XHCI_TX_ERR_ALLOC_FAILED;
+	}
+
+	xhci_endpoint_t* xep = (xhci_endpoint_t*) kcalloc(1, sizeof(xhci_endpoint_t));
+	if (!xep) {
+		printf_serial("[xHCI][ERROR] Failed to allocate xhci_endpoint_t.\r\n");
+		kfree_dma(ring.trbs);
+		return XHCI_TX_ERR_ALLOC_FAILED;
+	}
+	xep->ring = ring;
+	xep->dci = dci;
+	xep->max_packet_size = ep->max_packet_size;
+
+	/* Input Context
+	 * This buffer is reused across every command targeting this device (xdev->input_ctx_base), so we only clear the entries being updated \
+	 */
+	xhci_input_context_t* ic = (xhci_input_context_t*) (xdev->input_ctx_base + 0 * xdev->ctx_size);
+	xhci_slot_context_t* sc = (xhci_slot_context_t*) (xdev->input_ctx_base + 1 * xdev->ctx_size);
+	xhci_ep_context_t* epctx = (xhci_ep_context_t*) (xdev->input_ctx_base + (dci + 1) * xdev->ctx_size);
+
+	memset(ic, 0, xdev->ctx_size);
+	memset(epctx, 0, xdev->ctx_size);
+
+	FIELD_WRITE(ic->add_context0, BIT(0), 1);   // A0: Slot Context is always updated alongside an endpoint add
+	FIELD_WRITE(ic->add_context0, BIT(dci), 1); // A<dci>: this endpoint
+
+
+	/* Slot Context
+	 * Context Entries must cover the highest DCI configured on this device.
+	 * Other fields (route string, speed, root hub port, etc.) were initialized by device_init(), so leave them unchanged.
+	 */
+	if (dci > xdev->highest_dci) xdev->highest_dci = dci;
+	FIELD_WRITE(sc->dword0, GENMASK(31, 27), xdev->highest_dci);
+
+	/* Endpoint Context */
+	bool dir_in = (ep->direction == USB_DIR_IN);
+	FIELD_WRITE(epctx->dword1, GENMASK(5, 3), dir_in ? XHCI_EP_TYPE_INTERRUPT_IN : XHCI_EP_TYPE_INTERRUPT_OUT);
+	FIELD_WRITE(epctx->dword1, GENMASK(2, 1), 3); // CErr = 3, allow up to 3 consecutive transfer errors before stopping. same as EP0
+	FIELD_WRITE(epctx->dword1, GENMASK(31, 16), ep->max_packet_size);
+
+	uint8_t interval = xhci_calc_interrupt_interval(dev->speed, ep->interval);
+	FIELD_WRITE(epctx->dword0, GENMASK(23, 16), interval);
+
+	epctx->tr_dequeue_ptr = (xep->ring.trbs_phys & ~0xFULL) | 1; // DCS = 1, matches ring->cycle
+	FIELD_WRITE(epctx->avg_trb_length, GENMASK(15, 0), ep->max_packet_size); // heuristic, same idea as EP0's avg length
+
+	/* Configure Endpoint Command */
+	trb_t cmd = {0};
+	cmd.parameter = xdev->input_ctx_phys;
+	FIELD_WRITE(cmd.control, GENMASK(15, 10), XHCI_COMMAND_TRB_CONFIGURE_ENDPOINT);
+	FIELD_WRITE(cmd.control, GENMASK(31, 24), xdev->slot_id);
+	// DC (bit 9, Deconfigure) stays 0, we're adding an endpoint
+	// setting DC=1 would deconfigure the slot's existing endpoints instead
+	// don't ask why I felt this comment was necessary...
+
+	trb_t completion;
+	if (!xhci_send_command_and_wait(hc, &cmd, &completion)) {
+		printf_serial("[xHCI][ERROR] endpoint_open: Configure Endpoint command failed to complete (slot=%u dci=%u).\r\n", xdev->slot_id, dci);
+		kfree(xep);
+		kfree_dma(ring.trbs);
+		return XHCI_TX_ERR_TIMEOUT;
+	}
+
+	uint8_t comp_code = FIELD_GET(GENMASK(31, 24), completion.status);
+	if (comp_code != 1) {
+		printf_serial("[xHCI][ERROR] endpoint_open: Configure Endpoint completed with error code %u (slot=%u dci=%u).\r\n", comp_code, xdev->slot_id, dci);
+		kfree(xep);
+		kfree_dma(ring.trbs);
+		return XHCI_TX_ERR_COMPLETION_BASE - (int) comp_code;
+	}
+
+	ep->hcd_data = xep;
+	printf_serial("[xHCI] Interrupt endpoint opened: slot=%u dci=%u max_packet=%u interval_field=%u\r\n", xdev->slot_id, dci, ep->max_packet_size, interval);
 	return 0;
 }
 
 int xhci_endpoint_close(usb_hcd_t* hcd, usb_endpoint_t* ep) {
-	(void) hcd;
-	(void) ep;
-	// TODO: This
+	if (!hcd || !ep || !ep->device) return XHCI_TX_ERR_INVALID_PARAMS;
+
+	xhci_endpoint_t* xep = (xhci_endpoint_t*) ep->hcd_data;
+	if (!xep) return 0; // never opened, nothing to do
+
+	xhci_controller_t* hc = (xhci_controller_t*) hcd->hcd_data;
+	usb_device_t* dev = (usb_device_t*) ep->device; // cast away const, this driver owns the pointer
+	xhci_device_t* xdev = (xhci_device_t*) dev->hcd_data;
+	if (!hc || !xdev) return XHCI_TX_ERR_MISSING_HCD_DATA;
+
+	uint8_t dci = xep->dci;
+
+	xhci_input_context_t* ic = (xhci_input_context_t*) (xdev->input_ctx_base + 0 * xdev->ctx_size);
+	xhci_slot_context_t* sc = (xhci_slot_context_t*) (xdev->input_ctx_base + 1 * xdev->ctx_size);
+
+	memset(ic, 0, xdev->ctx_size);
+	FIELD_WRITE(ic->add_context0, BIT(0), 1);    // A0: Slot Context is always updated alongside a drop
+	FIELD_WRITE(ic->drop_context0, BIT(dci), 1); // D<dci>: drop this endpoint
+
+	// NOTE: This tracks only the highest DCI we've ever configured, not which DCIs are still active.
+	// When removing the highest-numbered endpoint, we assume dci-1 is still the highest active DCI and shrink Context Entries accordingly.
+	// This is correct when endpoints are opened/closed in order (a keyboard with one interrupt IN endpoint), but not if endpoints are closed out of order and leave gaps.
+	// I *should* keep track of all DCIs per device, but REALLY didn't want to deal with that right now
+	if (dci == xdev->highest_dci && dci > 1) {
+		FIELD_WRITE(sc->dword0, GENMASK(31, 27), dci - 1);
+	} else {
+		FIELD_WRITE(sc->dword0, GENMASK(31, 27), xdev->highest_dci);
+	}
+
+	trb_t cmd = {0};
+	cmd.parameter = xdev->input_ctx_phys;
+	FIELD_WRITE(cmd.control, GENMASK(15, 10), XHCI_COMMAND_TRB_CONFIGURE_ENDPOINT);
+	FIELD_WRITE(cmd.control, GENMASK(31, 24), xdev->slot_id);
+
+	trb_t completion;
+	if (!xhci_send_command_and_wait(hc, &cmd, &completion)) {
+		printf_serial("[xHCI][ERROR] endpoint_close: Configure Endpoint (drop) command failed to complete (slot=%u dci=%u).\r\n", xdev->slot_id, dci);
+		return XHCI_TX_ERR_TIMEOUT;
+	}
+
+	uint8_t comp_code = FIELD_GET(GENMASK(31, 24), completion.status);
+	if (comp_code != 1) {
+		printf_serial("[xHCI][ERROR] endpoint_close: Configure Endpoint (drop) completed with error code %u (slot=%u dci=%u).\r\n", comp_code, xdev->slot_id, dci);
+		return XHCI_TX_ERR_COMPLETION_BASE - (int) comp_code;
+	}
+
+	if (dci == xdev->highest_dci && dci > 1) xdev->highest_dci = dci - 1;
+
+	ep->hcd_data = NULL;
+	kfree_dma(xep->ring.trbs);
+	kfree(xep);
+
+	printf_serial("[xHCI] Interrupt endpoint closed: slot=%u dci=%u\r\n", xdev->slot_id, dci);
 	return 0;
 }
 
@@ -1320,7 +1590,7 @@ static bool xhci_recover_halted_endpoint(xhci_controller_t* hc, xhci_device_t* x
 	if (!hc || !xdev || !xep) return false;
 
 	/* Reset Endpoint */
-	trb_t reset_cmd = { 0 };
+	trb_t reset_cmd = {0};
 	FIELD_WRITE(reset_cmd.control, GENMASK(15, 10), XHCI_TRB_TYPE_RESET_ENDPOINT);
 	FIELD_WRITE(reset_cmd.control, GENMASK(20, 16), xep->dci);
 	FIELD_WRITE(reset_cmd.control, GENMASK(31, 24), xdev->slot_id);
@@ -1338,11 +1608,11 @@ static bool xhci_recover_halted_endpoint(xhci_controller_t* hc, xhci_device_t* x
 		return false;
 	}
 
-	// Set TR Dequeue Pointer 
+	// Set TR Dequeue Pointer
 	// Sync the HC dequeue pointer with our current enqueue position and cycle state, skipping the failed transfer sequence
 	uintptr_t new_dequeue_phys = xep->ring.trbs_phys + (xep->ring.enqueue * sizeof(trb_t));
 
-	trb_t set_tr_cmd = { 0 };
+	trb_t set_tr_cmd = {0};
 	set_tr_cmd.parameter = (new_dequeue_phys & ~0xFULL) | (xep->ring.cycle ? 1 : 0); // bit0 = DCS
 	FIELD_WRITE(set_tr_cmd.control, GENMASK(15, 10), XHCI_TRB_TYPE_SET_TR_DEQUEUE_POINTER);
 	FIELD_WRITE(set_tr_cmd.control, GENMASK(20, 16), xep->dci);
@@ -1363,6 +1633,61 @@ static bool xhci_recover_halted_endpoint(xhci_controller_t* hc, xhci_device_t* x
 	return true;
 }
 
+// Cancels a TRB that is still outstanding after a software timeout.
+// Unlike in xhci_recover_halted_endpoint(), which is for when we have a transfer error and the HC halts the endpoint, a timeout isn't a failure.
+// The endpoint is still Running and the xHC is still waiting for the device to respond.
+//
+// `Stop Endpoint` cancels the outstanding work without resetting the endpoint.
+// Without Stop Endpoint, the timed-out TRB remains active.
+// When the device responds, the xHC completes that stale TRB before advancing to the newly queued one, so the new transfer never gets a response.
+static bool xhci_cancel_pending_transfer(xhci_controller_t* hc, xhci_device_t* xdev, xhci_endpoint_t* xep) {
+	if (!hc || !xdev || !xep) return false;
+
+	/* Stop Endpoint */
+	trb_t stop_cmd = {0};
+	FIELD_WRITE(stop_cmd.control, GENMASK(15, 10), XHCI_TRB_TYPE_STOP_ENDPOINT);
+	FIELD_WRITE(stop_cmd.control, GENMASK(20, 16), xep->dci);
+	FIELD_WRITE(stop_cmd.control, GENMASK(31, 24), xdev->slot_id);
+	// SP (bit 23, Suspend) left 0
+	// we're cancelling outright, not suspending for power management
+
+	trb_t completion;
+	if (!xhci_send_command_and_wait(hc, &stop_cmd, &completion)) {
+		printf_serial("[xHCI][ERROR] Stop Endpoint command failed to complete (slot=%u dci=%u).\r\n", xdev->slot_id, xep->dci);
+		return false;
+	}
+
+	uint8_t comp_code = FIELD_GET(GENMASK(31, 24), completion.status);
+	if (comp_code != 1) {
+		printf_serial("[xHCI][ERROR] Stop Endpoint completed with error code %u (slot=%u dci=%u).\r\n", comp_code, xdev->slot_id, xep->dci);
+		return false;
+	}
+
+	// Set TR Dequeue Pointer
+	// Sync the HC dequeue pointer with our current enqueue position and cycle state, skipping past the TRB(s) we just gave up waiting on.
+	uintptr_t new_dequeue_phys = xep->ring.trbs_phys + (xep->ring.enqueue * sizeof(trb_t));
+
+	trb_t set_tr_cmd = {0};
+	set_tr_cmd.parameter = (new_dequeue_phys & ~0xFULL) | (xep->ring.cycle ? 1 : 0); // bit0 = DCS
+	FIELD_WRITE(set_tr_cmd.control, GENMASK(15, 10), XHCI_TRB_TYPE_SET_TR_DEQUEUE_POINTER);
+	FIELD_WRITE(set_tr_cmd.control, GENMASK(20, 16), xep->dci);
+	FIELD_WRITE(set_tr_cmd.control, GENMASK(31, 24), xdev->slot_id);
+
+	if (!xhci_send_command_and_wait(hc, &set_tr_cmd, &completion)) {
+		printf_serial("[xHCI][ERROR] Set TR Dequeue Pointer command failed to complete (slot=%u dci=%u).\r\n", xdev->slot_id, xep->dci);
+		return false;
+	}
+
+	comp_code = FIELD_GET(GENMASK(31, 24), completion.status);
+	if (comp_code != 1) {
+		printf_serial("[xHCI][ERROR] Set TR Dequeue Pointer completed with error code %u (slot=%u dci=%u).\r\n", comp_code, xdev->slot_id, xep->dci);
+		return false;
+	}
+
+	// printf_serial("[xHCI] Cancelled timed-out transfer (slot=%u dci=%u).\r\n", xdev->slot_id, xep->dci);
+	return true;
+}
+
 // ------------------------------------------------------------------------------------------------
 // ------------------------------------------------------------------------------------------------
 // Transfer execution
@@ -1370,13 +1695,12 @@ static bool xhci_recover_halted_endpoint(xhci_controller_t* hc, xhci_device_t* x
 // ------------------------------------------------------------------------------------------------
 
 static void xhci_dump_transfer_timeout_diagnostics(xhci_controller_t* hc, xhci_device_t* xdev, xhci_endpoint_t* xep, usb_device_t* dev) {
-	printf("[xHCI][DIAG] transfer timeout diagnostics (slot=%u dci=%u port=%u)\r\n", xdev->slot_id, xep->dci, dev ? dev->port : 0xFF);
+	printf_serial("[xHCI][DIAG] transfer timeout diagnostics (slot=%u dci=%u port=%u)\r\n", xdev->slot_id, xep->dci, dev ? dev->port : 0xFF);
 
 	/* Controller-level fault check */
 	uint32_t usbsts = mmio_read32(&hc->op->usbsts);
-	printf("[xHCI][DIAG] USBSTS=0x%08x  HCH=%u HSE=%u EINT=%u PCD=%u HCE=%u\r\n",
-		usbsts,
-		FIELD_GET(BIT(0), usbsts),   // HCHalted
+	printf_serial(
+		"[xHCI][DIAG] USBSTS=0x%08x  HCH=%u HSE=%u EINT=%u PCD=%u HCE=%u\r\n", usbsts, FIELD_GET(BIT(0), usbsts),   // HCHalted
 		FIELD_GET(BIT(2), usbsts),   // Host System Error
 		FIELD_GET(BIT(3), usbsts),   // Event Interrupt pending
 		FIELD_GET(BIT(4), usbsts),   // Port Change Detect
@@ -1396,50 +1720,25 @@ static void xhci_dump_transfer_timeout_diagnostics(xhci_controller_t* hc, xhci_d
 	uint8_t* ep_ctx_raw = xdev->dev_ctx_base + (xep->dci * xdev->ctx_size);
 	uint32_t ep_dword0 = *(uint32_t*) ep_ctx_raw;
 	uint8_t ep_state = FIELD_GET(GENMASK(2, 0), ep_dword0);
-	static const char* ep_state_names[] = { "Disabled", "Running", "Halted", "Stopped", "Error", "?", "?", "?" };
-	printf("[xHCI][DIAG] EP Context state = %u (%s)\r\n", ep_state, ep_state_names[ep_state & 0x7]);
+	static const char* ep_state_names[] = {"Disabled", "Running", "Halted", "Stopped", "Error", "?", "?", "?"};
+	printf_serial("[xHCI][DIAG] EP Context state = %u (%s)\r\n", ep_state, ep_state_names[ep_state & 0x7]);
 
 	/* Event ring bookkeeping */
 	xhci_interrupter_t* ir = &hc->interrupters[0];
 	uint64_t erdp = xhci_read_register(&hc->runtime->ir[0].erdp, hc->ac64);
 	uintptr_t our_dequeue_phys = ir->segments[ir->dequeue_segment].trbs_phys + (ir->dequeue * sizeof(trb_t));
-	printf("[xHCI][DIAG] SW dequeue phys=0x%llx  HW ERDP=0x%llx  SW cycle=%u\r\n", (unsigned long long) our_dequeue_phys, (unsigned long long) (erdp & ~0xFULL), ir->cycle);
+	printf_serial("[xHCI][DIAG] SW dequeue phys=0x%llx  HW ERDP=0x%llx  SW cycle=%u\r\n", (unsigned long long) our_dequeue_phys, (unsigned long long) (erdp & ~0xFULL), ir->cycle);
 
 	/* What's actually sitting at our dequeue pointer right now, regardless of whether the cycle bit matched?  */
 	trb_t* raw = (trb_t*) ((uintptr_t) ir->segments[ir->dequeue_segment].trbs + (ir->dequeue * sizeof(trb_t)));
-	printf("[xHCI][DIAG] raw event slot: param=0x%llx status=0x%08x control=0x%08x (cycle bit=%u)\r\n", (unsigned long long) raw->parameter, raw->status, raw->control, FIELD_GET(BIT(0), raw->control));
+	printf_serial("[xHCI][DIAG] raw event slot: param=0x%llx status=0x%08x control=0x%08x (cycle bit=%u)\r\n", (unsigned long long) raw->parameter, raw->status, raw->control, FIELD_GET(BIT(0), raw->control));
 }
 
-// xhci_execute_transfer() return codes. Negative values are failures, 0 is success.
-#define XHCI_TX_ERR_INVALID_PARAMS      -1  /* Null hcd, transfer, endpoint, or device */
-#define XHCI_TX_ERR_UNSUPPORTED_EP_TYPE -2  /* Non-control endpoint */
-#define XHCI_TX_ERR_MISSING_SETUP       -3  /* Control transfer missing setup packet */
-#define XHCI_TX_ERR_MISSING_HCD_DATA    -4  /* Controller/device/endpoint hcd_data is null */
-#define XHCI_TX_ERR_BOUNCE_ALLOC_FAILED -5  /* DMA bounce buffer allocation failed */
-#define XHCI_TX_ERR_TIMEOUT             -6  /* Transfer timed out or hardware wait failed */
-#define XHCI_TX_ERR_RECOVERY_FAILED     -7  /* Transfer and endpoint recovery both failed */
-
-// Encodes xHCI completion codes (spec table 6.30) (not including success) into: -(100 + comp_code)
-// For example: STALL ERROR (comp_code=6) returns -106
-#define XHCI_TX_ERR_COMPLETION_BASE      (-100)
-#define XHCI_TX_COMPLETION_CODE_FROM_RC(rc)  (-(rc) - 100)
-
-int xhci_execute_transfer(usb_hcd_t* hcd, usb_transfer_t* transfer) {
-	if (!hcd || !transfer || !transfer->endpoint || !transfer->device) return XHCI_TX_ERR_INVALID_PARAMS;
-
-	if (transfer->endpoint->type != USB_ENDPOINT_TYPE_CONTROL) {
-		printf_serial("[xHCI][ERROR] execute_transfer: only control endpoints supported right now.\r\n");
-		return XHCI_TX_ERR_UNSUPPORTED_EP_TYPE;
-	}
+static int xhci_execute_control_transfer(xhci_controller_t* hc, xhci_device_t* xdev, xhci_endpoint_t* xep, usb_transfer_t* transfer) {
 	if (!transfer->setup) {
-		printf_serial("[xHCI][ERROR] execute_transfer: control transfer missing setup packet.\r\n");
+		printf_serial("[xHCI][ERROR] Control transfer missing setup packet.\r\n");
 		return XHCI_TX_ERR_MISSING_SETUP;
 	}
-
-	xhci_controller_t* hc = (xhci_controller_t*) hcd->hcd_data;
-	xhci_device_t* xdev = (xhci_device_t*) transfer->device->hcd_data;
-	xhci_endpoint_t* xep = (xhci_endpoint_t*) transfer->endpoint->hcd_data;
-	if (!hc || !xdev || !xep) return XHCI_TX_ERR_MISSING_HCD_DATA;
 
 	bool has_data = transfer->length > 0;
 	bool data_dir_in = (transfer->setup->bmRequestType & 0x80) != 0;
@@ -1450,7 +1749,7 @@ int xhci_execute_transfer(usb_hcd_t* hcd, usb_transfer_t* transfer) {
 	if (has_data) {
 		bounce = kalloc_dma(transfer->length, DMA_ZONE_ANY, PDE_FLAGS_UC_2MB, &bounce_phys);
 		if (!bounce) {
-			printf_serial("[xHCI][ERROR] execute_transfer: failed to allocate bounce buffer.\r\n");
+			printf_serial("[xHCI][ERROR] Failed to allocate bounce buffer.\r\n");
 			return XHCI_TX_ERR_BOUNCE_ALLOC_FAILED;
 		}
 		if (!data_dir_in) {
@@ -1462,7 +1761,7 @@ int xhci_execute_transfer(usb_hcd_t* hcd, usb_transfer_t* transfer) {
 	size_t setup_index = xep->ring.enqueue;
 	uintptr_t setup_trb_phys = xep->ring.trbs_phys + (setup_index * sizeof(trb_t));
 
-	trb_t setup_trb = { 0 };
+	trb_t setup_trb = {0};
 	memcpy(&setup_trb.parameter, transfer->setup, sizeof(usb_setup_packet_t));
 	FIELD_WRITE(setup_trb.status, GENMASK(16, 0), sizeof(usb_setup_packet_t));
 	FIELD_WRITE(setup_trb.control, GENMASK(15, 10), XHCI_TRB_TYPE_SETUP_STAGE);
@@ -1478,7 +1777,7 @@ int xhci_execute_transfer(usb_hcd_t* hcd, usb_transfer_t* transfer) {
 		size_t data_index = xep->ring.enqueue;
 		data_trb_phys = xep->ring.trbs_phys + (data_index * sizeof(trb_t));
 
-		trb_t data_trb = { 0 };
+		trb_t data_trb = {0};
 		data_trb.parameter = bounce_phys;
 		FIELD_WRITE(data_trb.status, GENMASK(16, 0), (uint32_t) transfer->length);
 		FIELD_WRITE(data_trb.control, GENMASK(15, 10), XHCI_TRB_TYPE_DATA_STAGE);
@@ -1490,7 +1789,7 @@ int xhci_execute_transfer(usb_hcd_t* hcd, usb_transfer_t* transfer) {
 	size_t status_index = xep->ring.enqueue;
 	uintptr_t status_trb_phys = xep->ring.trbs_phys + (status_index * sizeof(trb_t));
 
-	trb_t status_trb = { 0 };
+	trb_t status_trb = {0};
 	bool status_dir_in = has_data ? !data_dir_in : true;
 	FIELD_WRITE(status_trb.control, GENMASK(15, 10), XHCI_TRB_TYPE_STATUS_STAGE);
 	FIELD_WRITE(status_trb.control, BIT(16), status_dir_in ? 1 : 0);
@@ -1502,9 +1801,12 @@ int xhci_execute_transfer(usb_hcd_t* hcd, usb_transfer_t* transfer) {
 	trb_t completion;
 	if (!xhci_wait_transfer_event(hc, setup_trb_phys, data_trb_phys, status_trb_phys, &completion, transfer->timeout_ms)) {
 		transfer->status = USB_TRANSFER_ERROR_HARDWARE;
-		xhci_dump_transfer_timeout_diagnostics(hc, xdev, xep, transfer->device);
+		// xhci_dump_transfer_timeout_diagnostics(hc, xdev, xep, transfer->device);
+		if (!xhci_cancel_pending_transfer(hc, xdev, xep)) {
+			printf_serial("[xHCI][ERROR] Failed to cancel timed-out control transfer (slot=%u dci=%u). Endpoint ring is now in an unknown state.\r\n", xdev->slot_id, xep->dci);
+		}
 		if (bounce) kfree_dma(bounce);
-		printf_serial("[xHCI][ERROR] execute_transfer: timed out waiting for transfer event.\r\n");
+		printf_serial("[xHCI][ERROR] Timed out waiting for transfer event.\r\n");
 		return XHCI_TX_ERR_TIMEOUT;
 	}
 
@@ -1538,6 +1840,104 @@ int xhci_execute_transfer(usb_hcd_t* hcd, usb_transfer_t* transfer) {
 
 	// Endpoint recovered successfully, but the transfer itself still failed
 	return XHCI_TX_ERR_COMPLETION_BASE - (int) comp_code;
+}
+
+// Interrupt transfers are a single Normal TRB
+// This means no setup/status stages, direction comes from the endpoint itself
+static int xhci_execute_interrupt_transfer(xhci_controller_t* hc, xhci_device_t* xdev, xhci_endpoint_t* xep, usb_transfer_t* transfer) {
+	bool data_dir_in = (transfer->endpoint->direction == USB_DIR_IN);
+	bool has_data = transfer->length > 0;
+
+	/* Bounce buffer, if any */
+	void* bounce = NULL;
+	uintptr_t bounce_phys = 0;
+	if (has_data) {
+		bounce = kalloc_dma(transfer->length, DMA_ZONE_ANY, PDE_FLAGS_UC_2MB, &bounce_phys);
+		if (!bounce) {
+			printf_serial("[xHCI][ERROR] Failed to allocate bounce buffer.\r\n");
+			return XHCI_TX_ERR_BOUNCE_ALLOC_FAILED;
+		}
+		if (!data_dir_in) {
+			memcpy(bounce, transfer->buffer, transfer->length);
+		}
+	}
+
+	/* Normal TRB */
+	size_t trb_index = xep->ring.enqueue;
+	uintptr_t trb_phys = xep->ring.trbs_phys + (trb_index * sizeof(trb_t));
+
+	trb_t normal_trb = {0};
+	normal_trb.parameter = bounce_phys;
+	FIELD_WRITE(normal_trb.status, GENMASK(16, 0), (uint32_t) transfer->length);
+	FIELD_WRITE(normal_trb.control, GENMASK(15, 10), XHCI_TRB_TYPE_NORMAL);
+	FIELD_WRITE(normal_trb.control, BIT(5), 1); // IOC - we need the event to know when this completed
+	FIELD_WRITE(normal_trb.control, BIT(2), 1); // ISP - also get an event on a short packet, not just a full one
+	xhci_ring_enqueue(&xep->ring, &normal_trb);
+
+	xhci_ring_doorbell(hc, xdev->slot_id, xep->dci);
+
+	trb_t completion;
+	if (!xhci_wait_single_trb_event(hc, trb_phys, &completion, transfer->timeout_ms)) {
+		transfer->status = USB_TRANSFER_ERROR_HARDWARE;
+		// xhci_dump_transfer_timeout_diagnostics(hc, xdev, xep, transfer->device);
+		if (!xhci_cancel_pending_transfer(hc, xdev, xep)) {
+			printf_serial("[xHCI][ERROR] Failed to cancel timed-out interrupt transfer (slot=%u dci=%u). Endpoint ring is now in an unknown state.\r\n", xdev->slot_id, xep->dci);
+		}
+		if (bounce) kfree_dma(bounce);
+		// a lot of events from devices are not going to be changing states, it's going to timeout. this print got annoying VERY quick
+		// printf_serial("[xHCI][WARN] Timed out waiting for interrupt transfer event.\r\n");
+		return XHCI_TX_ERR_TIMEOUT;
+	}
+
+	uint8_t comp_code = FIELD_GET(GENMASK(31, 24), completion.status);
+	uint32_t residual = FIELD_GET(GENMASK(23, 0), completion.status);
+
+	transfer->status = xhci_completion_code_to_status(comp_code);
+
+	if (transfer->status == USB_TRANSFER_COMPLETED) {
+		transfer->actual_length = has_data ? (transfer->length - residual) : 0;
+		if (has_data && data_dir_in) {
+			memcpy(transfer->buffer, bounce, transfer->actual_length);
+		}
+		if (bounce) kfree_dma(bounce);
+		return 0;
+	}
+
+	transfer->actual_length = 0;
+	printf_serial("[xHCI][ERROR] Interrupt transfer failed, completion code: %u\r\n", comp_code);
+
+	// Endpoint is very likely Halted now
+	if (!xhci_recover_halted_endpoint(hc, xdev, xep)) {
+		printf_serial("[xHCI][ERROR] Failed to recover endpoint after transfer error (slot=%u dci=%u). Endpoint is likely unusable.\r\n", xdev->slot_id, xep->dci);
+		printf_color(PRINT_COLOR_LIGHT_RED, PRINT_DEFAULT_BG, "[xHCI][ERROR] Failed to recover endpoint after transfer error (slot=%u dci=%u). Endpoint is likely unusable.\r\n", xdev->slot_id, xep->dci);
+		if (bounce) kfree_dma(bounce);
+		return XHCI_TX_ERR_RECOVERY_FAILED;
+	}
+
+	if (bounce) kfree_dma(bounce);
+
+	// Endpoint recovered successfully, but the transfer itself still failed
+	return XHCI_TX_ERR_COMPLETION_BASE - (int) comp_code;
+}
+
+int xhci_execute_transfer(usb_hcd_t* hcd, usb_transfer_t* transfer) {
+	if (!hcd || !transfer || !transfer->endpoint || !transfer->device) return XHCI_TX_ERR_INVALID_PARAMS;
+
+	usb_endpoint_type_t ep_type = transfer->endpoint->type;
+	if (ep_type != USB_ENDPOINT_TYPE_CONTROL && ep_type != USB_ENDPOINT_TYPE_INTERRUPT) {
+		printf_serial("[xHCI][ERROR] Only control and interrupt endpoints supported right now.\r\n");
+		return XHCI_TX_ERR_UNSUPPORTED_EP_TYPE;
+	}
+
+	xhci_controller_t* hc = (xhci_controller_t*) hcd->hcd_data;
+	xhci_device_t* xdev = (xhci_device_t*) transfer->device->hcd_data;
+	xhci_endpoint_t* xep = (xhci_endpoint_t*) transfer->endpoint->hcd_data;
+	if (!hc || !xdev || !xep) return XHCI_TX_ERR_MISSING_HCD_DATA;
+
+	if (ep_type == USB_ENDPOINT_TYPE_CONTROL) {
+		return xhci_execute_control_transfer(hc, xdev, xep, transfer);
+	}
+	return xhci_execute_interrupt_transfer(hc, xdev, xep, transfer);
 }
 
 // ------------------------------------------------------------------------------------------------
@@ -1586,7 +1986,7 @@ void xhci_init_regs(xhci_controller_t* hc, uintptr_t base) {
 	hc->cap = (volatile xhci_cap_regs_t*) base;
 }
 
-#define XHCI_MMIO_FLAGS  (BIT_PRESENT | BIT_WRITE | BIT_PCD | BIT_SIZE)
+#define XHCI_MMIO_FLAGS (BIT_PRESENT | BIT_WRITE | BIT_PCD | BIT_SIZE)
 void xhci_attach(wallos_device_t* dev) {
 	if (!dev) return;
 
@@ -1666,7 +2066,7 @@ void xhci_attach(wallos_device_t* dev) {
 	uint16_t max_scratchpad_bufs = /*hi bits*/ FIELD_GET(GENMASK(25, 21), hcsparams2) << 5 | /*low bits*/ FIELD_GET(GENMASK(31, 27), hcsparams2);
 	bool spr = FIELD_GET(GENMASK(26, 26), hcsparams2); // This is set to 1 if we are supposed to restore the scratchpad buffer during warm reset. we will 100% ignore this.
 	uint8_t erst_max = FIELD_GET(GENMASK(7, 4), hcsparams2) + 1; // this value is raw + 1 according to the spec
-	uint16_t ist = FIELD_GET(GENMASK(3, 0), hcsparams2) * 250; // this value is in ns 
+	uint16_t ist = FIELD_GET(GENMASK(3, 0), hcsparams2) * 250; // this value is in ns
 	printf_serial("[xHCI] %u max scratchpad bufs, Scratchpad Restore (%s), %u ERST Max, IST %uns\r\n", max_scratchpad_bufs, spr ? "TRUE" : "FALSE", erst_max, ist);
 
 	/* HCSPARAMS3 */
@@ -1744,33 +2144,32 @@ void xhci_attach(wallos_device_t* dev) {
 		while (list != NULL) {
 			switch (list->capability) {
 				case XEC_USB_LEGACY: {
-						xhci_xec_legacy_support_t* legacy_support = (xhci_xec_legacy_support_t*) kcalloc(1, sizeof(xhci_xec_legacy_support_t));
-						if (!legacy_support) {
-							return; // TODO: should probably cleanup shit
-						}
-						list->specific_data = legacy_support;
-						xhci_bios_handoff((uintptr_t) list->addr, legacy_support); // bios handoff deals with populating legacy_support
-						xhci_print_legacy_support(legacy_support);
-						break;
+					xhci_xec_legacy_support_t* legacy_support = (xhci_xec_legacy_support_t*) kcalloc(1, sizeof(xhci_xec_legacy_support_t));
+					if (!legacy_support) {
+						return; // TODO: should probably cleanup shit
 					}
+					list->specific_data = legacy_support;
+					xhci_bios_handoff((uintptr_t) list->addr, legacy_support); // bios handoff deals with populating legacy_support
+					xhci_print_legacy_support(legacy_support);
+					break;
+				}
 				case XEC_SUPPORTED_PROTO: {
-						xhci_xec_supported_proto_t* supported_proto = (xhci_xec_supported_proto_t*) kcalloc(1, sizeof(xhci_xec_supported_proto_t));
-						list->specific_data = (void*) supported_proto;
-						xhci_parse_supported_protocol((uintptr_t) list->addr, supported_proto);
-						xhci_print_supported_protocol(supported_proto);
-						break;
-					}
+					xhci_xec_supported_proto_t* supported_proto = (xhci_xec_supported_proto_t*) kcalloc(1, sizeof(xhci_xec_supported_proto_t));
+					list->specific_data = (void*) supported_proto;
+					xhci_parse_supported_protocol((uintptr_t) list->addr, supported_proto);
+					xhci_print_supported_protocol(supported_proto);
+					break;
+				}
 				case XEC_EXT_POWER_MANAGEMENT:
 				case XEC_IO_VIRT:
 				case XEC_MESSAGE_INTERRUPT:
 				case XEC_LOCAL_MEMORY:
 				case XEC_USB_DEBUG:
 				case XEC_EXT_MESSAGE_INTERRUPT:
-				default: break;
+				default:                        break;
 			}
 			list = list->next_node;
 		}
-
 	}
 
 	xhci_print_port_protocols(hc);
@@ -1936,7 +2335,7 @@ void xhci_attach(wallos_device_t* dev) {
 
 	// Just pause for like 10ms to let the controller actually full come up.
 	// I've found we need this delay on real hardware, otherwise the controller will report incorrect portsc values
-	// I assume it just needs a bit to settle internal states, 10ms is basically nothing perceptible anyway. 
+	// I assume it just needs a bit to settle internal states, 10ms is basically nothing perceptible anyway.
 	xhci_delay_us(10 * 1000);
 
 	usb_hcd_t* hcd = (usb_hcd_t*) kcalloc(1, sizeof(usb_hcd_t));
@@ -1950,7 +2349,6 @@ void xhci_attach(wallos_device_t* dev) {
 
 void xhci_detach(wallos_device_t* dev) {
 	(void) dev;
-
 }
 
 // ------------------------------------------------------------------------------------------------
