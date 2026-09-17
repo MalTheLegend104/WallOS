@@ -64,9 +64,8 @@
 // If this comment is still here, know that scheduler_cpu.c relies on this in a bad way.
 #define WALLOS_SYSTEM_MAX_CPU 64
 
-// This should probably be a compiler flag rather than defined here.
 // This tells the OS that we have 64 bit write/read rather than needing to split it up into 32bit write/read
-#define WALLOS_ARCH_64
+#define WALLOS_HAS_64_BIT_MMIO
 
 // Depth of each per-device-type event queue
 // This means this number is the max amount of events for each device type
@@ -88,4 +87,3 @@
 #elif defined(WALLOS_USE_ACPICA) && defined(WALLOS_USE_UACPI)
 #error "Must have only one ACPI subsystem enabled, not both."
 #endif
-

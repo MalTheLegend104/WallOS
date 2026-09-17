@@ -1,18 +1,19 @@
+#include <math.h>
+#include <stdarg.h>
 #include <stddef.h>
 #include <stdio.h>
 #include <stdlib.h>
-#include <stdarg.h>
 #include <string.h>
-#include <math.h>
 
 #include <stdbool.h>
 
+#include <cpu_io.h>
 #include <drivers/serial.h>
 #include <klibc/kprint.h>
-#include <cpu_io.h>
 
-#include <system/idt.h>
 #include <input/input_handler.h>
+#include <system/idt.h>
+#include <terminal/wall_shell.h>
 
 // Structure to track which ports actually exist
 typedef struct {
@@ -37,19 +38,28 @@ static inline void io_wait(void) {
 }
 
 int init_serial(uint16_t base_port) {
-	outb(REG_IER(base_port), 0x00);		io_wait(); // Disable interrupts
-	outb(REG_LCR(base_port), 0x80);		io_wait(); // Enable DLAB (set baud rate divisor)
+	outb(REG_IER(base_port), 0x00);
+	io_wait(); // Disable interrupts
+	outb(REG_LCR(base_port), 0x80);
+	io_wait(); // Enable DLAB (set baud rate divisor)
 
-	outb(REG_DATA(base_port), 0x01);	io_wait(); // Divisor 1 = 115200 baud
-	outb(REG_IER(base_port), 0x00);		io_wait(); // hi byte
+	outb(REG_DATA(base_port), 0x01);
+	io_wait(); // Divisor 1 = 115200 baud
+	outb(REG_IER(base_port), 0x00);
+	io_wait(); // hi byte
 
-	outb(REG_LCR(base_port), 0x03);		io_wait(); // 8 bits, no parity, one stop bit, DLAB off
-	outb(REG_IIR_FCR(base_port), 0xC7);	io_wait(); // Enable FIFO, clear them, 14-byte threshold
-	outb(REG_MCR(base_port), 0x0B);		io_wait(); // IRQs enabled, RTS/DSR set
+	outb(REG_LCR(base_port), 0x03);
+	io_wait(); // 8 bits, no parity, one stop bit, DLAB off
+	outb(REG_IIR_FCR(base_port), 0xC7);
+	io_wait(); // Enable FIFO, clear them, 14-byte threshold
+	outb(REG_MCR(base_port), 0x0B);
+	io_wait(); // IRQs enabled, RTS/DSR set
 
 	// Loopback test
-	outb(REG_MCR(base_port), 0x1E);		io_wait(); // Set in loopback mode
-	outb(REG_DATA(base_port), 0xAE);	io_wait(); // Send test byte
+	outb(REG_MCR(base_port), 0x1E);
+	io_wait(); // Set in loopback mode
+	outb(REG_DATA(base_port), 0xAE);
+	io_wait(); // Send test byte
 
 	// Poll with retries to give slow/virtual UARTs time to loop the byte back.
 	bool success = false;
@@ -64,7 +74,8 @@ int init_serial(uint16_t base_port) {
 	}
 
 	// Always exit loopback mode, even on failure — leaving it set would be catastrophic.
-	outb(REG_MCR(base_port), 0x0F);    io_wait();
+	outb(REG_MCR(base_port), 0x0F);
+	io_wait();
 
 	return success ? 0 : 1;
 }
@@ -75,10 +86,12 @@ bool detect_uart(uint16_t port) {
 	uint8_t original = inb(port + 7);
 
 	// Test with two values to avoid false positives from garbage data.
-	outb(port + 7, 0x55); io_wait();
+	outb(port + 7, 0x55);
+	io_wait();
 	if (inb(port + 7) != 0x55) return false;
 
-	outb(port + 7, 0xAA); io_wait();
+	outb(port + 7, 0xAA);
+	io_wait();
 	if (inb(port + 7) != 0xAA) return false;
 
 	// Restore the original value.
@@ -172,8 +185,9 @@ wallos_key_t ascii_to_wallos_key(uint8_t c, uint32_t* modifiers) {
 	switch (c) {
 		case 0x08: return WALLOS_KEY_BACKSPACE;      // Ctrl+H - most terminals send this for Backspace
 		case 0x09: return WALLOS_KEY_TAB;             // Ctrl+I
-		case 0x0A: case 0x0D: return WALLOS_KEY_ENTER; // Ctrl+J / Ctrl+M (LF / CR)
-		default: break;
+		case 0x0A:
+		case 0x0D: return WALLOS_KEY_ENTER; // Ctrl+J / Ctrl+M (LF / CR)
+		default:   break;
 	}
 
 	// Remaining C0 control range - report as the base letter with the ctrl modifier set,
@@ -191,30 +205,51 @@ wallos_key_t ascii_to_wallos_key(uint8_t c, uint32_t* modifiers) {
 	}
 
 	switch (c) {
-		case '0': return WALLOS_KEY_NUM0; case ')': *modifiers |= WALLOS_MOD_SHIFT; return WALLOS_KEY_NUM0;
-		case '1': return WALLOS_KEY_NUM1; case '!': *modifiers |= WALLOS_MOD_SHIFT; return WALLOS_KEY_NUM1;
-		case '2': return WALLOS_KEY_NUM2; case '@': *modifiers |= WALLOS_MOD_SHIFT; return WALLOS_KEY_NUM2;
-		case '3': return WALLOS_KEY_NUM3; case '#': *modifiers |= WALLOS_MOD_SHIFT; return WALLOS_KEY_NUM3;
-		case '4': return WALLOS_KEY_NUM4; case '$': *modifiers |= WALLOS_MOD_SHIFT; return WALLOS_KEY_NUM4;
-		case '5': return WALLOS_KEY_NUM5; case '%': *modifiers |= WALLOS_MOD_SHIFT; return WALLOS_KEY_NUM5;
-		case '6': return WALLOS_KEY_NUM6; case '^': *modifiers |= WALLOS_MOD_SHIFT; return WALLOS_KEY_NUM6;
-		case '7': return WALLOS_KEY_NUM7; case '&': *modifiers |= WALLOS_MOD_SHIFT; return WALLOS_KEY_NUM7;
-		case '8': return WALLOS_KEY_NUM8; case '*': *modifiers |= WALLOS_MOD_SHIFT; return WALLOS_KEY_NUM8;
-		case '9': return WALLOS_KEY_NUM9; case '(': *modifiers |= WALLOS_MOD_SHIFT; return WALLOS_KEY_NUM9;
+		case '0': return WALLOS_KEY_NUM0;
+		case ')': *modifiers |= WALLOS_MOD_SHIFT; return WALLOS_KEY_NUM0;
+		case '1': return WALLOS_KEY_NUM1;
+		case '!': *modifiers |= WALLOS_MOD_SHIFT; return WALLOS_KEY_NUM1;
+		case '2': return WALLOS_KEY_NUM2;
+		case '@': *modifiers |= WALLOS_MOD_SHIFT; return WALLOS_KEY_NUM2;
+		case '3': return WALLOS_KEY_NUM3;
+		case '#': *modifiers |= WALLOS_MOD_SHIFT; return WALLOS_KEY_NUM3;
+		case '4': return WALLOS_KEY_NUM4;
+		case '$': *modifiers |= WALLOS_MOD_SHIFT; return WALLOS_KEY_NUM4;
+		case '5': return WALLOS_KEY_NUM5;
+		case '%': *modifiers |= WALLOS_MOD_SHIFT; return WALLOS_KEY_NUM5;
+		case '6': return WALLOS_KEY_NUM6;
+		case '^': *modifiers |= WALLOS_MOD_SHIFT; return WALLOS_KEY_NUM6;
+		case '7': return WALLOS_KEY_NUM7;
+		case '&': *modifiers |= WALLOS_MOD_SHIFT; return WALLOS_KEY_NUM7;
+		case '8': return WALLOS_KEY_NUM8;
+		case '*': *modifiers |= WALLOS_MOD_SHIFT; return WALLOS_KEY_NUM8;
+		case '9': return WALLOS_KEY_NUM9;
+		case '(': *modifiers |= WALLOS_MOD_SHIFT; return WALLOS_KEY_NUM9;
 
-		case '-': return WALLOS_KEY_MINUS;        case '_': *modifiers |= WALLOS_MOD_SHIFT; return WALLOS_KEY_MINUS;
-		case '=': return WALLOS_KEY_EQUALS;       case '+': *modifiers |= WALLOS_MOD_SHIFT; return WALLOS_KEY_EQUALS;
-		case '[': return WALLOS_KEY_LEFTBRACKET;  case '{': *modifiers |= WALLOS_MOD_SHIFT; return WALLOS_KEY_LEFTBRACKET;
-		case ']': return WALLOS_KEY_RIGHTBRACKET; case '}': *modifiers |= WALLOS_MOD_SHIFT; return WALLOS_KEY_RIGHTBRACKET;
-		case '\\': return WALLOS_KEY_BACKSLASH;   case '|': *modifiers |= WALLOS_MOD_SHIFT; return WALLOS_KEY_BACKSLASH;
-		case ';': return WALLOS_KEY_SEMICOLON;    case ':': *modifiers |= WALLOS_MOD_SHIFT; return WALLOS_KEY_SEMICOLON;
-		case '\'': return WALLOS_KEY_APOSTROPHE;  case '"': *modifiers |= WALLOS_MOD_SHIFT; return WALLOS_KEY_APOSTROPHE;
-		case '`': return WALLOS_KEY_TILDE;        case '~': *modifiers |= WALLOS_MOD_SHIFT; return WALLOS_KEY_TILDE;
-		case ',': return WALLOS_KEY_COMMA;        case '<': *modifiers |= WALLOS_MOD_SHIFT; return WALLOS_KEY_COMMA;
-		case '.': return WALLOS_KEY_PERIOD;       case '>': *modifiers |= WALLOS_MOD_SHIFT; return WALLOS_KEY_PERIOD;
-		case '/': return WALLOS_KEY_SLASH;        case '?': *modifiers |= WALLOS_MOD_SHIFT; return WALLOS_KEY_SLASH;
+		case '-':  return WALLOS_KEY_MINUS;
+		case '_':  *modifiers |= WALLOS_MOD_SHIFT; return WALLOS_KEY_MINUS;
+		case '=':  return WALLOS_KEY_EQUALS;
+		case '+':  *modifiers |= WALLOS_MOD_SHIFT; return WALLOS_KEY_EQUALS;
+		case '[':  return WALLOS_KEY_LEFTBRACKET;
+		case '{':  *modifiers |= WALLOS_MOD_SHIFT; return WALLOS_KEY_LEFTBRACKET;
+		case ']':  return WALLOS_KEY_RIGHTBRACKET;
+		case '}':  *modifiers |= WALLOS_MOD_SHIFT; return WALLOS_KEY_RIGHTBRACKET;
+		case '\\': return WALLOS_KEY_BACKSLASH;
+		case '|':  *modifiers |= WALLOS_MOD_SHIFT; return WALLOS_KEY_BACKSLASH;
+		case ';':  return WALLOS_KEY_SEMICOLON;
+		case ':':  *modifiers |= WALLOS_MOD_SHIFT; return WALLOS_KEY_SEMICOLON;
+		case '\'': return WALLOS_KEY_APOSTROPHE;
+		case '"':  *modifiers |= WALLOS_MOD_SHIFT; return WALLOS_KEY_APOSTROPHE;
+		case '`':  return WALLOS_KEY_TILDE;
+		case '~':  *modifiers |= WALLOS_MOD_SHIFT; return WALLOS_KEY_TILDE;
+		case ',':  return WALLOS_KEY_COMMA;
+		case '<':  *modifiers |= WALLOS_MOD_SHIFT; return WALLOS_KEY_COMMA;
+		case '.':  return WALLOS_KEY_PERIOD;
+		case '>':  *modifiers |= WALLOS_MOD_SHIFT; return WALLOS_KEY_PERIOD;
+		case '/':  return WALLOS_KEY_SLASH;
+		case '?':  *modifiers |= WALLOS_MOD_SHIFT; return WALLOS_KEY_SLASH;
 
-		case ' ': return WALLOS_KEY_SPACE;
+		case ' ':  return WALLOS_KEY_SPACE;
 		case 0x7F: return WALLOS_KEY_BACKSPACE; // DEL - some terminals send this instead of 0x08
 
 		default: return WALLOS_KEY_COULDNT_MAP;
@@ -284,54 +319,54 @@ static void push_serial_key_event(wallos_key_t key, uint32_t modifiers) {
 static void process_serial_byte(char c) {
 	switch (esc_state) {
 		case SERIAL_ESC_NONE: {
-				if ((uint8_t) c == 0x1B) {
-					esc_state = SERIAL_ESC_GOT_ESC;
-					cr_seen = false;
-					return; // don't emit anything yet, wait to see what follows
-				}
+			if ((uint8_t) c == 0x1B) {
+				esc_state = SERIAL_ESC_GOT_ESC;
+				cr_seen = false;
+				return; // don't emit anything yet, wait to see what follows
+			}
 
-				// Some terminals will send \r\n rather than just \r or \n. 
-				// Not a huge deal, but we still want those to be a single press event
-				if (c == '\n' && cr_seen) {
-					cr_seen = false;
-					return;
-				}
-				cr_seen = (c == '\r');
-
-				uint32_t mods;
-				wallos_key_t key = ascii_to_wallos_key((uint8_t) c, &mods);
-				push_serial_key_event(key, mods);
+			// Some terminals will send \r\n rather than just \r or \n.
+			// Not a huge deal, but we still want those to be a single press event
+			if (c == '\n' && cr_seen) {
+				cr_seen = false;
 				return;
 			}
+			cr_seen = (c == '\r');
+
+			uint32_t mods;
+			wallos_key_t key = ascii_to_wallos_key((uint8_t) c, &mods);
+			push_serial_key_event(key, mods);
+			return;
+		}
 
 		case SERIAL_ESC_GOT_ESC: {
-				if (c == '[') {
-					esc_state = SERIAL_ESC_GOT_CSI;
-					esc_param = '\0';
-					return;
-				}
-
-				// Not actually a CSI sequence, was an actual esc press
-				// Emit it, then reprocess this byte from scratch since it was never part of a sequence to begin with.
-				esc_state = SERIAL_ESC_NONE;
-				push_serial_key_event(WALLOS_KEY_ESCAPE, WALLOS_MOD_NONE);
-				process_serial_byte(c);
+			if (c == '[') {
+				esc_state = SERIAL_ESC_GOT_CSI;
+				esc_param = '\0';
 				return;
 			}
+
+			// Not actually a CSI sequence, was an actual esc press
+			// Emit it, then reprocess this byte from scratch since it was never part of a sequence to begin with.
+			esc_state = SERIAL_ESC_NONE;
+			push_serial_key_event(WALLOS_KEY_ESCAPE, WALLOS_MOD_NONE);
+			process_serial_byte(c);
+			return;
+		}
 
 		case SERIAL_ESC_GOT_CSI: {
-				if (c >= '0' && c <= '9' && esc_param == '\0') {
-					esc_param = c; // we only support a single parameter digit
-					return;
-				}
-
-				// Any other byte here is the sequence's final byte
-				wallos_key_t key = csi_final_to_wallos_key(c, esc_param);
-				esc_state = SERIAL_ESC_NONE;
-				esc_param = '\0';
-				push_serial_key_event(key, WALLOS_MOD_NONE);
+			if (c >= '0' && c <= '9' && esc_param == '\0') {
+				esc_param = c; // we only support a single parameter digit
 				return;
 			}
+
+			// Any other byte here is the sequence's final byte
+			wallos_key_t key = csi_final_to_wallos_key(c, esc_param);
+			esc_state = SERIAL_ESC_NONE;
+			esc_param = '\0';
+			push_serial_key_event(key, WALLOS_MOD_NONE);
+			return;
+		}
 	}
 }
 
@@ -480,9 +515,9 @@ static int cmd_serial_send(const char* target, const char* msg) {
 
 #include <terminal/terminal.h>
 const ws_command_argument_t serial_cli_args[] = {
-	{ WS_ARG_TYPE_GENERIC, false, "command", NULL, "One of: status, init, send." },
-	{ WS_ARG_TYPE_GENERIC, false, "arg1",    NULL, "Address (init), or address/'all' (send)." },
-	{ WS_ARG_TYPE_GENERIC, false, "arg2",    NULL, "Message to send (send only)." },
+	{WS_ARG_TYPE_GENERIC, false, "command", NULL, "One of: status, init, send."},
+	{WS_ARG_TYPE_GENERIC, false, "arg1", NULL, "Address (init), or address/'all' (send)."},
+	{WS_ARG_TYPE_GENERIC, false, "arg2", NULL, "Message to send (send only)."},
 };
 const size_t serial_cli_args_count = sizeof(serial_cli_args) / sizeof(serial_cli_args[0]);
 
@@ -490,8 +525,9 @@ int serial_cli_cmd(int argc, char** argv) {
 	ws_context_t* ctx = ws_getCurrentContext();
 
 	if (!ws_parse_args(ctx, argc, argv) || !ws_has_arg(ctx, "command")) {
-		ws_executeCommand("help serial");
-		return 1;
+		// ws_printCommandHelp(
+		printf("serial <command> [arg1] [arg2]\r\nUse \"help serial\" to get more information.\r\n");
+		return 0;
 	}
 
 	const char* cmd = ws_get_generic(ctx, "command");
@@ -527,15 +563,15 @@ int serial_cli_cmd(int argc, char** argv) {
 // it outputs to. im too lazy rn.
 // ------------------------------------------------------------------------------------------------
 // ------------------------------------------------------------------------------------------------
-#include <stdio.h>
+#include <float.h>
+#include <math.h>
 #include <stdarg.h>
 #include <stdbool.h>
-#include <string.h>
-#include <stdlib.h>
-#include <stdint.h>
 #include <stddef.h>
-#include <math.h>
-#include <float.h>
+#include <stdint.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
 
 typedef enum {
 	TYPE_REGULAR,
@@ -730,8 +766,14 @@ size_t print_signed_int_serial(intmax_t value, base_type base, size_t precision,
 	// "If both the converted value and the precision are 0 the conversion results in no characters."
 	if (value == 0 && precision == 0) return 0;
 
-	if (prepend_space && value > 0) { buf[0] = ' '; written++; }
-	if (prepend_sign && value > 0) { buf[0] = '+'; written++; }
+	if (prepend_space && value > 0) {
+		buf[0] = ' ';
+		written++;
+	}
+	if (prepend_sign && value > 0) {
+		buf[0] = '+';
+		written++;
+	}
 
 	size_t length = 0;
 	if ((prepend_space || prepend_sign) && value > 0) {
@@ -878,25 +920,25 @@ int print_float_serial(long double value, float_type base, size_t precision, siz
 		goto end;
 	}
 
-	fp_frac = modf(value, &fp_int); //Separate integer/fractional parts
+	fp_frac = modf(value, &fp_int); // Separate integer/fractional parts
 
-	while (fp_int > 0) { //Convert integer part, if any
+	while (fp_int > 0) { // Convert integer part, if any
 		intPart_reversed[charCount++] = '0' + (int) fmod(fp_int, 10);
 		fp_int = floor(fp_int / 10);
 	}
 
-	//Reverse the integer part, if any
+	// Reverse the integer part, if any
 	for (i = 0; i < charCount; i++) conversion[i] = intPart_reversed[charCount - i - 1];
 
-	conversion[charCount++] = '.'; //Decimal point
+	conversion[charCount++] = '.'; // Decimal point
 
-	while (fp_frac > 0) { //Convert fractional part, if any
+	while (fp_frac > 0) { // Convert fractional part, if any
 		fp_frac *= 10;
 		fp_frac = modf(fp_frac, &fp_int);
 		conversion[charCount++] = '0' + (int) fp_int;
 	}
 
-	conversion[charCount] = '\0'; //String terminator
+	conversion[charCount] = '\0'; // String terminator
 	print_string_serial(conversion, 0, false, field_width, left_justified);
 
 end:
@@ -971,105 +1013,105 @@ int vprintf_serial(const char* restrict format, va_list list) {
 				// signed int
 				case 'd': // fallthrough
 				case 'i': {
-						switch (current_modifier) {
-							case TYPE_SHORT_SHORT: {
-									written += print_signed_int_serial((intmax_t) va_arg(list, int), BASE_DECIMAL, precision, field_width, padding, left_justified, prepend_space, prepend_sign);
-									break;
-								}
-							case TYPE_SHORT: {
-									written += print_signed_int_serial((intmax_t) va_arg(list, int), BASE_DECIMAL, precision, field_width, padding, left_justified, prepend_space, prepend_sign);
-									break;
-								}
-							case TYPE_LONG: {
-									written += print_signed_int_serial((intmax_t) va_arg(list, long), BASE_DECIMAL, precision, field_width, padding, left_justified, prepend_space, prepend_sign);
-									break;
-								}
-							case TYPE_LONG_LONG: {
-									written += print_signed_int_serial((intmax_t) va_arg(list, long long), BASE_DECIMAL, precision, field_width, padding, left_justified, prepend_space, prepend_sign);
-									break;
-								}
-							case TYPE_INTMAX_T: {
-									written += print_signed_int_serial(va_arg(list, intmax_t), BASE_DECIMAL, precision, field_width, padding, left_justified, prepend_space, prepend_sign);
-									break;
-								}
-								// I legit dont think I can even get a signed size_t to be platform independent.
-								// I'm just going to pass it through as signed and see what happens.
-							case TYPE_SIZE_T: {
-									written += print_signed_int_serial((intmax_t) va_arg(list, size_t), BASE_DECIMAL, precision, field_width, padding, left_justified, prepend_space, prepend_sign);
-									break;
-								}
-							case TYPE_PTRDIFF: {
-									written += print_signed_int_serial((intmax_t) va_arg(list, ptrdiff_t), BASE_DECIMAL, precision, field_width, padding, left_justified, prepend_space, prepend_sign);
-									break;
-								}
-								// We have Regular and Long Double here.
-								// We just pretend long double doesn't exist.
-							default: {
-									written += print_signed_int_serial((intmax_t) va_arg(list, int), BASE_DECIMAL, precision, field_width, padding, left_justified, prepend_space, prepend_sign);
-									break;
-								}
+					switch (current_modifier) {
+						case TYPE_SHORT_SHORT: {
+							written += print_signed_int_serial((intmax_t) va_arg(list, int), BASE_DECIMAL, precision, field_width, padding, left_justified, prepend_space, prepend_sign);
+							break;
 						}
-						break;
+						case TYPE_SHORT: {
+							written += print_signed_int_serial((intmax_t) va_arg(list, int), BASE_DECIMAL, precision, field_width, padding, left_justified, prepend_space, prepend_sign);
+							break;
+						}
+						case TYPE_LONG: {
+							written += print_signed_int_serial((intmax_t) va_arg(list, long), BASE_DECIMAL, precision, field_width, padding, left_justified, prepend_space, prepend_sign);
+							break;
+						}
+						case TYPE_LONG_LONG: {
+							written += print_signed_int_serial((intmax_t) va_arg(list, long long), BASE_DECIMAL, precision, field_width, padding, left_justified, prepend_space, prepend_sign);
+							break;
+						}
+						case TYPE_INTMAX_T: {
+							written += print_signed_int_serial(va_arg(list, intmax_t), BASE_DECIMAL, precision, field_width, padding, left_justified, prepend_space, prepend_sign);
+							break;
+						}
+							// I legit dont think I can even get a signed size_t to be platform independent.
+							// I'm just going to pass it through as signed and see what happens.
+						case TYPE_SIZE_T: {
+							written += print_signed_int_serial((intmax_t) va_arg(list, size_t), BASE_DECIMAL, precision, field_width, padding, left_justified, prepend_space, prepend_sign);
+							break;
+						}
+						case TYPE_PTRDIFF: {
+							written += print_signed_int_serial((intmax_t) va_arg(list, ptrdiff_t), BASE_DECIMAL, precision, field_width, padding, left_justified, prepend_space, prepend_sign);
+							break;
+						}
+							// We have Regular and Long Double here.
+							// We just pretend long double doesn't exist.
+						default: {
+							written += print_signed_int_serial((intmax_t) va_arg(list, int), BASE_DECIMAL, precision, field_width, padding, left_justified, prepend_space, prepend_sign);
+							break;
+						}
 					}
+					break;
+				}
 				// All of these have the same unsigned base type.
 				// We just change a few values to the pass to print_unsigned_int_serial
 				case 'u': // fallthrough
 				case 'o': // fallthrough
 				case 'x': // fallthrough
 				case 'X': {
-						char c = *current;
-						base_type base = BASE_DECIMAL;
-						bool capital = false;
+					char c = *current;
+					base_type base = BASE_DECIMAL;
+					bool capital = false;
 
-						if (c == 'X') {
-							base = BASE_HEX;
-							capital = true;
-						} else if (c == 'x') {
-							base = BASE_HEX;
-						} else if (c == 'o') {
-							base = BASE_OCTAL;
-						}
-
-						switch (current_modifier) {
-							case TYPE_SHORT_SHORT: {
-									written += print_unsigned_int_serial(va_arg(list, unsigned int), base, precision, field_width, padding, capital, alternate_form, left_justified);
-									break;
-								}
-							case TYPE_SHORT: {
-									written += print_unsigned_int_serial((uintmax_t) va_arg(list, unsigned int), base, precision, field_width, padding, capital, alternate_form, left_justified);
-									break;
-								}
-							case TYPE_LONG: {
-									written += print_unsigned_int_serial((uintmax_t) va_arg(list, unsigned long), base, precision, field_width, padding, capital, alternate_form, left_justified);
-									break;
-								}
-							case TYPE_LONG_LONG: {
-									written += print_unsigned_int_serial((uintmax_t) va_arg(list, unsigned long long), base, precision, field_width, padding, capital, alternate_form, left_justified);
-									break;
-								}
-							case TYPE_INTMAX_T: {
-									written += print_unsigned_int_serial(va_arg(list, uintmax_t), base, precision, field_width, padding, capital, alternate_form, left_justified);
-									break;
-								}
-							// I legit dont think I can even get a signed size_t to be platform independent.
-							// I'm just going to pass it through as signed and see what happens.
-							case TYPE_SIZE_T: {
-									written += print_unsigned_int_serial((uintmax_t) va_arg(list, size_t), base, precision, field_width, padding, capital, alternate_form, left_justified);
-									break;
-								}
-							case TYPE_PTRDIFF: {
-									written += print_unsigned_int_serial((uintmax_t) va_arg(list, ptrdiff_t), base, precision, field_width, padding, capital, alternate_form, left_justified);
-									break;
-								}
-								// We have Regular and Long Double here.
-								// We just pretend long double doesn't exist.
-							default: {
-									written += print_unsigned_int_serial((uintmax_t) va_arg(list, unsigned int), base, precision, field_width, padding, capital, alternate_form, left_justified);
-									break;
-								}
-						}
-						break;
+					if (c == 'X') {
+						base = BASE_HEX;
+						capital = true;
+					} else if (c == 'x') {
+						base = BASE_HEX;
+					} else if (c == 'o') {
+						base = BASE_OCTAL;
 					}
+
+					switch (current_modifier) {
+						case TYPE_SHORT_SHORT: {
+							written += print_unsigned_int_serial(va_arg(list, unsigned int), base, precision, field_width, padding, capital, alternate_form, left_justified);
+							break;
+						}
+						case TYPE_SHORT: {
+							written += print_unsigned_int_serial((uintmax_t) va_arg(list, unsigned int), base, precision, field_width, padding, capital, alternate_form, left_justified);
+							break;
+						}
+						case TYPE_LONG: {
+							written += print_unsigned_int_serial((uintmax_t) va_arg(list, unsigned long), base, precision, field_width, padding, capital, alternate_form, left_justified);
+							break;
+						}
+						case TYPE_LONG_LONG: {
+							written += print_unsigned_int_serial((uintmax_t) va_arg(list, unsigned long long), base, precision, field_width, padding, capital, alternate_form, left_justified);
+							break;
+						}
+						case TYPE_INTMAX_T: {
+							written += print_unsigned_int_serial(va_arg(list, uintmax_t), base, precision, field_width, padding, capital, alternate_form, left_justified);
+							break;
+						}
+						// I legit dont think I can even get a signed size_t to be platform independent.
+						// I'm just going to pass it through as signed and see what happens.
+						case TYPE_SIZE_T: {
+							written += print_unsigned_int_serial((uintmax_t) va_arg(list, size_t), base, precision, field_width, padding, capital, alternate_form, left_justified);
+							break;
+						}
+						case TYPE_PTRDIFF: {
+							written += print_unsigned_int_serial((uintmax_t) va_arg(list, ptrdiff_t), base, precision, field_width, padding, capital, alternate_form, left_justified);
+							break;
+						}
+							// We have Regular and Long Double here.
+							// We just pretend long double doesn't exist.
+						default: {
+							written += print_unsigned_int_serial((uintmax_t) va_arg(list, unsigned int), base, precision, field_width, padding, capital, alternate_form, left_justified);
+							break;
+						}
+					}
+					break;
+				}
 					// ------------------------------------------------------------------------------------------------
 					// Floating point
 					// ------------------------------------------------------------------------------------------------
@@ -1083,83 +1125,83 @@ int vprintf_serial(const char* restrict format, va_list list) {
 				case 'A': // fallthrough
 				case 'g': // fallthrough
 				case 'G': {
-						char c = *current;
-						float_type type = FLOAT_REGULAR;
-						bool capital = false;
-						long double value;
-						if (current_modifier == TYPE_LONG_DOUBLE) {
-							value = va_arg(list, long double);
-						} else {
-							value = (long double) va_arg(list, double);
-						}
-
-						switch (c) {
-							case 'F': {
-									capital = true;
-									break;
-								}
-
-							case 'e': capital = true; // fallthrough
-							case 'E': {
-									type = FLOAT_SCIENTIFIC;
-									break;
-								}
-
-							case 'a': capital = true; // fallthrough
-							case 'A': {
-									type = FLOAT_HEX;
-									break;
-								}
-
-							case 'g': capital = true; // fallthrough
-							case 'G': {
-									type = calculate_float_shortest_serial(value);
-								}
-							default: break;
-						}
-
-						//printf_serial("Value: %Lf", value);
-
-						written += print_float_serial(value, type, precision, field_width, padding, capital, alternate_form, left_justified);
-
-						break;
+					char c = *current;
+					float_type type = FLOAT_REGULAR;
+					bool capital = false;
+					long double value;
+					if (current_modifier == TYPE_LONG_DOUBLE) {
+						value = va_arg(list, long double);
+					} else {
+						value = (long double) va_arg(list, double);
 					}
+
+					switch (c) {
+						case 'F': {
+							capital = true;
+							break;
+						}
+
+						case 'e': capital = true; // fallthrough
+						case 'E': {
+							type = FLOAT_SCIENTIFIC;
+							break;
+						}
+
+						case 'a': capital = true; // fallthrough
+						case 'A': {
+							type = FLOAT_HEX;
+							break;
+						}
+
+						case 'g': capital = true; // fallthrough
+						case 'G': {
+							type = calculate_float_shortest_serial(value);
+						}
+						default: break;
+					}
+
+					// printf_serial("Value: %Lf", value);
+
+					written += print_float_serial(value, type, precision, field_width, padding, capital, alternate_form, left_justified);
+
+					break;
+				}
 					// ------------------------------------------------------------------------------------------------
 					// Chars, Strings, Pointers, and Current Written
 					// ------------------------------------------------------------------------------------------------
 				case 'c': {
-						if (current_modifier == TYPE_LONG) {
-							wchar_t c = (wchar_t) va_arg(list, int);
-							wchar_t str[] = { c, '\0' };
-							written += print_wstring_serial(str, 0, false);
-						} else {
-							// The standard calls for us to take an int and convert to unsigned char
-							write_serial((unsigned char) va_arg(list, int));
-							written++;
-						}
-						break;
+					if (current_modifier == TYPE_LONG) {
+						wchar_t c = (wchar_t) va_arg(list, int);
+						wchar_t str[] = {c, '\0'};
+						written += print_wstring_serial(str, 0, false);
+					} else {
+						// The standard calls for us to take an int and convert to unsigned char
+						write_serial((unsigned char) va_arg(list, int));
+						written++;
 					}
+					break;
+				}
 				case 's': {
 					// TODO: This is technically supposed to call wcrtomb
 					// Im not doing that, probably ever.
-						if (current_modifier == TYPE_LONG) {
-							wchar_t* str = va_arg(list, wchar_t*);
-							written += print_wstring_serial(str, precision, precision_specified);
-						} else {
-							// The standard calls for us to take an int and convert to unsigned char
-							char* str = va_arg(list, char*);
-							written += print_string_serial(str, precision, precision_specified, field_width, left_justified);
-						}
-						break;
+					if (current_modifier == TYPE_LONG) {
+						wchar_t* str = va_arg(list, wchar_t*);
+						written += print_wstring_serial(str, precision, precision_specified);
+					} else {
+						// The standard calls for us to take an int and convert to unsigned char
+						char* str = va_arg(list, char*);
+						written += print_string_serial(str, precision, precision_specified, field_width, left_justified);
 					}
+					break;
+				}
 				case 'p': {
 					// Can only be regular type. We're just going to ignore modifiers.
 					// This is actually implementation defined.
 					// We're going to write the hex for it.
-						void* p = va_arg(list, void*);
-						written += print_unsigned_int_serial((uintptr_t) p, BASE_HEX, 0, 0, 0, true, true, left_justified);
-						break;
-					}
+					void* p = va_arg(list, void*);
+					written += print_unsigned_int_serial((uintptr_t) p, BASE_HEX, 0, 0, 0, true, true, left_justified);
+					break;
+				}
 #ifdef WALLOS_ENABLE_PRINTF_N
 				// A lot of implementations disable this for "security" reasons *cough* *cough* windows.
 				// I'm disabling it by default, but it's still supported and easy to enable.
@@ -1167,137 +1209,137 @@ int vprintf_serial(const char* restrict format, va_list list) {
 					// This one a lil weird.
 					// We write the current written amount (not including flags, field width, or precision) to the provided pointer.
 					// The provided pointer is determined by the modifier
-						switch (current_modifier) {
-							case TYPE_SHORT_SHORT: {
-									signed char* dest = va_arg(list, signed char*);
-									*(dest) = (signed char) written;
-									break;
-								}
-							case TYPE_SHORT: {
-									short* dest = va_arg(list, short*);
-									*(dest) = (short) written;
-									break;
-								}
-							case TYPE_LONG: {
-									long* dest = va_arg(list, long*);
-									*(dest) = (long) written;
-									break;
-								}
-							case TYPE_LONG_LONG: {
-									long long* dest = va_arg(list, long long*);
-									*(dest) = (long long) written;
-									break;
-								}
-							case TYPE_INTMAX_T: {
-									intmax_t* dest = va_arg(list, intmax_t*);
-									*(dest) = (intmax_t) written;
-									break;
-								}
-								// The standard calls for a signed size_t???
-								// I dont think any system has a signed size_t
-							case TYPE_SIZE_T: {
-									size_t* dest = va_arg(list, size_t*);
-									*(dest) = (size_t) written;
-									break;
-								}
-							case TYPE_PTRDIFF: {
-									ptrdiff_t* dest = va_arg(list, ptrdiff_t*);
-									*(dest) = (ptrdiff_t) written;
-									break;
-								}
-								// Type Regular is here, as is Long Double.
-								// Long double should never be used for this and isn't part of the standard.
-								// We're just going to assume it's an int for this case.
-							default: {
-									int* dest = va_arg(list, int*);
-									*(dest) = (int) written;
-									break;
-								}
+					switch (current_modifier) {
+						case TYPE_SHORT_SHORT: {
+							signed char* dest = va_arg(list, signed char*);
+							*(dest) = (signed char) written;
+							break;
 						}
-						break;
+						case TYPE_SHORT: {
+							short* dest = va_arg(list, short*);
+							*(dest) = (short) written;
+							break;
+						}
+						case TYPE_LONG: {
+							long* dest = va_arg(list, long*);
+							*(dest) = (long) written;
+							break;
+						}
+						case TYPE_LONG_LONG: {
+							long long* dest = va_arg(list, long long*);
+							*(dest) = (long long) written;
+							break;
+						}
+						case TYPE_INTMAX_T: {
+							intmax_t* dest = va_arg(list, intmax_t*);
+							*(dest) = (intmax_t) written;
+							break;
+						}
+							// The standard calls for a signed size_t???
+							// I dont think any system has a signed size_t
+						case TYPE_SIZE_T: {
+							size_t* dest = va_arg(list, size_t*);
+							*(dest) = (size_t) written;
+							break;
+						}
+						case TYPE_PTRDIFF: {
+							ptrdiff_t* dest = va_arg(list, ptrdiff_t*);
+							*(dest) = (ptrdiff_t) written;
+							break;
+						}
+							// Type Regular is here, as is Long Double.
+							// Long double should never be used for this and isn't part of the standard.
+							// We're just going to assume it's an int for this case.
+						default: {
+							int* dest = va_arg(list, int*);
+							*(dest) = (int) written;
+							break;
+						}
 					}
+					break;
+				}
 #endif // WALLOS_ENABLE_PRINTF_N
 				// ------------------------------------------------------------------------------------------------
 				// Flags
 				// ------------------------------------------------------------------------------------------------
 				// Justify Left
 				case '-': {
-						left_justified = true;
-						current++;
-						check_current = true;
-						break;
-					}
+					left_justified = true;
+					current++;
+					check_current = true;
+					break;
+				}
 					// Signed Conventions
 				case '+': {
-						prepend_sign = true;
-						current++;
-						check_current = true;
-						break;
-					}
+					prepend_sign = true;
+					current++;
+					check_current = true;
+					break;
+				}
 					// I legit didn't know space was a valid format character.
 					// If no sign is going to be written, a space is inserted before the value
 				case ' ': {
-						prepend_space = true;
-						current++;
-						check_current = true;
-						break;
-					}
+					prepend_space = true;
+					current++;
+					check_current = true;
+					break;
+				}
 					// Alternate forms
 				case '#': {
-						alternate_form = true;
-						current++;
-						check_current = true;
-						break;
-					}
+					alternate_form = true;
+					current++;
+					check_current = true;
+					break;
+				}
 					// ------------------------------------------------------------------------------------------------
 					// Width/Precision
 					// ------------------------------------------------------------------------------------------------
 					// Padding
 				case '0': {
-						current++;
-						if (*current == '\0') break;
+					current++;
+					if (*current == '\0') break;
 
-						bool invalid = false;
+					bool invalid = false;
 
-						// We ignore padding if left justified
-						if (left_justified) invalid = true;
+					// We ignore padding if left justified
+					if (left_justified) invalid = true;
 
-						while (*current == '-' || (*current >= '0' && *current <= '9')) {
-							if (*current == '-') {
-								padding = 0;
-								invalid = true;
-							}
-
-							if (!invalid) {
-								if (padding_index >= 2) {
-									current++;
-									continue;
-								}
-								padding_buf[padding_index] = *current;
-								padding_buf[padding_index + 1] = '\0';
-								padding_index++;
-							}
-
-							current++;
+					while (*current == '-' || (*current >= '0' && *current <= '9')) {
+						if (*current == '-') {
+							padding = 0;
+							invalid = true;
 						}
 
 						if (!invalid) {
-							padding = (int) strtol(padding_buf, NULL, 10);
-							memset(padding_buf, 0, 3);
-							padding_index = 0;
+							if (padding_index >= 2) {
+								current++;
+								continue;
+							}
+							padding_buf[padding_index] = *current;
+							padding_buf[padding_index + 1] = '\0';
+							padding_index++;
 						}
 
-						check_current = true;
-						break;
+						current++;
 					}
+
+					if (!invalid) {
+						padding = (int) strtol(padding_buf, NULL, 10);
+						memset(padding_buf, 0, 3);
+						padding_index = 0;
+					}
+
+					check_current = true;
+					break;
+				}
 					// I have no better way of doing this.
 					// These are all field width. 0 is for padding, so that's why it's excluded.
 				case '*': {
-						field_width = va_arg(list, int);
-						check_current = true;
-						current++;
-						break;
-					}
+					field_width = va_arg(list, int);
+					check_current = true;
+					current++;
+					break;
+				}
 				case '1': // fallthrough
 				case '2': // fallthrough
 				case '3': // fallthrough
@@ -1307,142 +1349,142 @@ int vprintf_serial(const char* restrict format, va_list list) {
 				case '7': // fallthrough
 				case '8': // fallthrough
 				case '9': {
-						while ((*current >= '0' && *current <= '9')) {
-							// We just ignore anything outside the range.
-							if (field_width_index >= 2) {
+					while ((*current >= '0' && *current <= '9')) {
+						// We just ignore anything outside the range.
+						if (field_width_index >= 2) {
+							current++;
+							continue;
+						}
+						field_width_buf[field_width_index] = *current;
+						field_width_buf[field_width_index + 1] = '\0';
+						field_width_index++;
+						current++;
+					}
+
+					field_width = (int) strtol(field_width_buf, NULL, 10);
+					memset(field_width_buf, 0, 3);
+					field_width_index = 0;
+
+					check_current = true;
+					break;
+				}
+					// Precision
+				case '.': {
+					current++;
+
+					if (*current == '\0') break;
+
+					// If not one of these, it's supposed to be taken as 0
+					if (*current != '*' && *current != '-' && !(*current >= '0' && *current <= '9')) {
+						precision = 0;
+						precision_specified = true;
+						current++;
+						check_current = true;
+						break;
+					}
+
+					bool param = false;
+					if (*current == '*') {
+						precision = va_arg(list, int);
+						param = true;
+					}
+
+					bool negative = false;
+					// The standard tells us to skip any negative precision.
+					while (*current == '-' || (*current >= '0' && *current <= '9')) {
+						if (*current == '-') {
+							negative = true;
+							precision = 0;
+						}
+
+						if (!negative) {
+							if (precision_buf_index >= 2) {
 								current++;
 								continue;
 							}
-							field_width_buf[field_width_index] = *current;
-							field_width_buf[field_width_index + 1] = '\0';
-							field_width_index++;
-							current++;
+							precision_buf[precision_buf_index] = *current;
+							precision_buf[precision_buf_index + 1] = '\0';
+							precision_buf_index++;
 						}
-
-						field_width = (int) strtol(field_width_buf, NULL, 10);
-						memset(field_width_buf, 0, 3);
-						field_width_index = 0;
-
-						check_current = true;
-						break;
-					}
-					// Precision
-				case '.': {
 						current++;
-
-						if (*current == '\0') break;
-
-						// If not one of these, it's supposed to be taken as 0
-						if (*current != '*' && *current != '-' && !(*current >= '0' && *current <= '9')) {
-							precision = 0;
-							precision_specified = true;
-							current++;
-							check_current = true;
-							break;
-						}
-
-						bool param = false;
-						if (*current == '*') {
-							precision = va_arg(list, int);
-							param = true;
-						}
-
-						bool negative = false;
-						// The standard tells us to skip any negative precision.
-						while (*current == '-' || (*current >= '0' && *current <= '9')) {
-							if (*current == '-') {
-								negative = true;
-								precision = 0;
-							}
-
-							if (!negative) {
-								if (precision_buf_index >= 2) {
-									current++;
-									continue;
-								}
-								precision_buf[precision_buf_index] = *current;
-								precision_buf[precision_buf_index + 1] = '\0';
-								precision_buf_index++;
-							}
-							current++;
-						}
-
-						if (!negative && !param) {
-							precision = (int) strtol(precision_buf, NULL, 10);
-							memset(precision_buf, 0, 3);
-							precision_buf_index = 0;
-						}
-
-						precision_specified = true;
-						check_current = true;
-						break;
 					}
+
+					if (!negative && !param) {
+						precision = (int) strtol(precision_buf, NULL, 10);
+						memset(precision_buf, 0, 3);
+						precision_buf_index = 0;
+					}
+
+					precision_specified = true;
+					check_current = true;
+					break;
+				}
 
 					// ------------------------------------------------------------------------------------------------
 					// Length
 					// ------------------------------------------------------------------------------------------------
 					// short
 				case 'h': {
+					current++;
+					if (*current == '\0') break;
+
+					if (*current == 'h') {
+						current_modifier = TYPE_SHORT_SHORT;
 						current++;
-						if (*current == '\0') break;
-
-						if (*current == 'h') {
-							current_modifier = TYPE_SHORT_SHORT;
-							current++;
-						} else {
-							current_modifier = TYPE_SHORT;
-						}
-
-						check_current = true;
-						break;
+					} else {
+						current_modifier = TYPE_SHORT;
 					}
+
+					check_current = true;
+					break;
+				}
 					// long
 				case 'l': {
+					current++;
+					if (*current == '\0') break;
+
+					if (*current == 'l') {
+						current_modifier = TYPE_LONG_LONG;
 						current++;
-						if (*current == '\0') break;
-
-						if (*current == 'l') {
-							current_modifier = TYPE_LONG_LONG;
-							current++;
-						} else {
-							current_modifier = TYPE_LONG;
-						}
-
-						check_current = true;
-						break;
+					} else {
+						current_modifier = TYPE_LONG;
 					}
+
+					check_current = true;
+					break;
+				}
 					// intmax_t or uintmax_t
 				case 'j': {
-						current_modifier = TYPE_INTMAX_T;
-						current++;
-						check_current = true;
-						break;
-					}
+					current_modifier = TYPE_INTMAX_T;
+					current++;
+					check_current = true;
+					break;
+				}
 					// size_t or ssize_t
 				case 'z': {
-						current_modifier = TYPE_SIZE_T;
-						current++;
-						check_current = true;
-						break;
-					}
+					current_modifier = TYPE_SIZE_T;
+					current++;
+					check_current = true;
+					break;
+				}
 					// ptrdiff_t
 				case 't': {
-						current_modifier = TYPE_PTRDIFF;
-						current++;
-						check_current = true;
-						break;
-					}
+					current_modifier = TYPE_PTRDIFF;
+					current++;
+					check_current = true;
+					break;
+				}
 				case 'L': {
-						current_modifier = TYPE_LONG_DOUBLE;
-						current++;
-						check_current = true;
-						break;
-					}
+					current_modifier = TYPE_LONG_DOUBLE;
+					current++;
+					check_current = true;
+					break;
+				}
 				default: {
-						write_serial(*current);
-						written++;
-						break;
-					}
+					write_serial(*current);
+					written++;
+					break;
+				}
 			}
 		} else {
 			write_serial(*current);

@@ -1,17 +1,18 @@
+#include <klibc/display.h>
+#include <stdarg.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <stdarg.h>
 
 #include <system/timer.h>
 
-#include <klibc/kprint.h>
 #include <klibc/features.hpp>
+#include <klibc/kprint.h>
 #include <memory/physical_mem.hpp>
 #include <memory/virtual_mem.h>
 
-#include <terminal/terminal.h>
 #include <terminal/commands/system_commands.h>
+#include <terminal/terminal.h>
 
 extern "C" {
 	extern uint64_t kernel_end;
@@ -121,7 +122,16 @@ int sysinfo(void) {
 	printUptime();
 	printValue("Packages: ", "No package manager yet.\n");
 	printValue("Shell: ", "%s\n", WALLOS_SHELL_VERSION);
-	printValue("GUI: ", "Default (VGA Text Mode)\n");
+	display_mode_t display_mode = display_get_mode();
+	int x, y;
+	int bpp = display_get_bpp();
+	display_get_dimensions_pixels(&x, &y);
+
+	if (display_mode == DISPLAY_MODE_FRAMEBUFFER) {
+		printValue("GUI: ", "Framebuffer (%dx%dx%d)\n", x, y, bpp);
+	} else {
+		printValue("GUI: ", "VGA Text Mode (%dx%d)\n", x, y);
+	}
 	printValue("CPU: ", "%s\n", Features::getCPUName());
 	printMemInfo();
 
@@ -137,7 +147,18 @@ void sysinfo_boot() {
 	printValue("General System Info:\n", "");
 	printValue("OS:     ", "%s\n", WALLOS_VERSION_STR);
 	printValue("Shell:  ", "%s\n", WALLOS_SHELL_VERSION);
-	printValue("GUI:    ", "Default (VGA Text Mode)\n");
+
+	display_mode_t display_mode = display_get_mode();
+	int x, y;
+	int bpp = display_get_bpp();
+	display_get_dimensions_pixels(&x, &y);
+
+	if (display_mode == DISPLAY_MODE_FRAMEBUFFER) {
+		printValue("GUI:    ", "Framebuffer (%dx%dx%d)\n", x, y, bpp);
+	} else {
+		printValue("GUI:    ", "VGA Text Mode (%dx%d)\n", x, y);
+	}
+
 	printValue("CPU:    ", "%s\n", Features::getCPUName());
 	printMemInfo();
 }

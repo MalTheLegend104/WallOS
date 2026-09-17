@@ -6,17 +6,18 @@
 
 #ifdef __cplusplus
 extern "C" {
-#endif 
+#endif
 
 	void initKernelAllocator();
 	void kfree(void* ptr);
 	void* kalloc(size_t bytes);
 	void* kcalloc(size_t count, size_t size);
+	void* krealloc(void* ptr, size_t new_size);
 
 	typedef enum {
 		DMA_ZONE_ANY = 0,        // No placement constraint
 		DMA_ZONE_32BIT = 1 << 0, // Physical address must be < 4GB
-		DMA_NO_ZERO = 1 << 1,    // Skip zeroing the chunk 
+		DMA_NO_ZERO = 1 << 1,    // Skip zeroing the chunk
 
 		// Alignment field: bits 2-4. Set at most one.
 		DMA_ALIGN_NONE = 0 << 2, // No explicit alignment requirement (default)
@@ -50,5 +51,5 @@ extern "C" {
 
 #ifdef __cplusplus
 }
-#endif 
+#endif
 #endif // KERNEL_ALLOC_H

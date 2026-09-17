@@ -1,18 +1,18 @@
-#include <terminal/wall_shell.h>
-#include <string.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
+#include <terminal/wall_shell.h>
 
-#include <filesystem/wdm.h>
-#include <filesystem/vfs.h>
-#include <filesystem/filesystems.h>
 #include <filesystem/fat/fat.h>
-#include <filesystem/fat/fat32_vfs.h>
 #include <filesystem/fat/fat1216_vfs.h>
+#include <filesystem/fat/fat32_vfs.h>
+#include <filesystem/filesystems.h>
 #include <filesystem/iso9660/iso9660.h>
+#include <filesystem/vfs.h>
+#include <filesystem/wdm.h>
 
-#include <system/timer.h>
 #include <klibc/kprint.h>
+#include <system/timer.h>
 
 // This file was basically unreadable before.
 // This mostly hosts the generic filesystem CLI commands like cd/ls/tree/etc
@@ -36,7 +36,7 @@ static void register_drive_filesystems(void) {
 // Current working directory
 //
 // Current working directory. Used for the terminal prefix and relative VFS paths.
-// All the code in this section is awful for readability. 
+// All the code in this section is awful for readability.
 // There is a lot of abusing strings and printf. You were warned.
 // ------------------------------------------------------------------------------------------------
 // ------------------------------------------------------------------------------------------------
@@ -44,10 +44,13 @@ static void register_drive_filesystems(void) {
 static char cwd[VFS_PATH_MAX] = "/";
 static char prefix_buf[VFS_PATH_MAX + 4] = "/> ";
 
-/** Rebuild prefix_buf from the current cwd and push it to the terminal. */
+/**
+ * Rebuild prefix_buf from the current cwd and push it to the terminal, and keep WallShell's own CWD (ws_getCWD() / ws_resolvePath()) in sync with it.
+ */
 static void update_terminal_prefix(void) {
 	snprintf(prefix_buf, sizeof(prefix_buf), "%s> ", cwd);
 	ws_setConsolePrefix(prefix_buf);
+	ws_setCWD(cwd);
 }
 
 /**
@@ -74,7 +77,7 @@ static bool resolve_path(const char* input, char* out, size_t out_size) {
 	// Manually split on '/' and resolve "." / ".." as we go.
 	// Would be a good time to have some form of strtok() but I *really* don't want to deal with that.
 	char* segments[VFS_PATH_MAX / 2];
-	int   seg_count = 0;
+	int seg_count = 0;
 
 	char* p = work;
 	while (*p != '\0') {
@@ -195,7 +198,7 @@ static const char* wdm_strerror(WDM_Status st) {
 }
 
 void print_file_size(uint64_t size) {
-	if (size < 1024)  printf("%u B", (unsigned int) size);
+	if (size < 1024) printf("%u B", (unsigned int) size);
 	else if (size < (1024 * 1024)) printf("%u KB", (unsigned int) (size / 1024));
 	else if (size < (1024ULL * 1024 * 1024)) printf("%u MB", (unsigned int) (size / (1024 * 1024)));
 	else printf("%u GB", (unsigned int) (size / (1024ULL * 1024 * 1024)));
@@ -279,7 +282,7 @@ int drive_unmount_cmd(int argc, char** argv) {
 
 	printf("Unmounted '%s'.\n", vfs_path);
 
-	// If cwd was at or below the volume we just unmounted, it's now pointing at storage that was just torn down 
+	// If cwd was at or below the volume we just unmounted, it's now pointing at storage that was just torn down
 	// Bail back to a known-safe location rather than leaving cwd dangling
 	char prefix[VFS_PATH_MAX];
 	if (strcmp(vfs_path, "/") == 0) {
@@ -403,7 +406,7 @@ int drive_lsblk_cmd(int argc, char** argv) {
 	// Tracks which mounts get matched to a drive/partition we actually print below
 	// We bind LSBLK_MAX_HANDLES to the WDM_MAX_DRIVES, so in theory we shouldn't need this
 	// I still did it just in case we for some reason filter it out or something
-	bool matched[FS_MOUNT_QUERY_MAX] = { false };
+	bool matched[FS_MOUNT_QUERY_MAX] = {false};
 
 	printf("ADDR    TYPE       SIZE  RO  NAME/LABEL               MOUNTPOINT\n");
 	printf("------- ---- ----------  --  -----------------------  ----------\n");
@@ -523,7 +526,7 @@ static int collect_synthetic_mount_entries(const char* dir_path, ls_synth_entry_
 
 		const char* slash = strchr(remainder, '/');
 		size_t seg_len = slash ? (size_t) (slash - remainder) : strlen(remainder);
-		bool   is_exact = (slash == NULL); // no further '/' -> the mount sits exactly at this segment
+		bool is_exact = (slash == NULL); // no further '/' -> the mount sits exactly at this segment
 
 		bool found = false;
 		for (int j = 0; j < count; j++) {
@@ -565,10 +568,22 @@ int drive_ls_cmd(int argc, char** argv) {
 
 	uint8_t flags = LS_FLAG_NONE;
 	bool has_any_flag = false;
-	if (ws_get_flag(ws_ctx, "attrib")) { flags |= LS_FLAG_ATTRIB; has_any_flag = true; }
-	if (ws_get_flag(ws_ctx, "size")) { flags |= LS_FLAG_SIZE;   has_any_flag = true; }
-	if (ws_get_flag(ws_ctx, "time")) { flags |= LS_FLAG_TIME;   has_any_flag = true; }
-	if (ws_get_flag(ws_ctx, "long")) { flags |= (LS_FLAG_ATTRIB | LS_FLAG_SIZE | LS_FLAG_TIME); has_any_flag = true; }
+	if (ws_get_flag(ws_ctx, "attrib")) {
+		flags |= LS_FLAG_ATTRIB;
+		has_any_flag = true;
+	}
+	if (ws_get_flag(ws_ctx, "size")) {
+		flags |= LS_FLAG_SIZE;
+		has_any_flag = true;
+	}
+	if (ws_get_flag(ws_ctx, "time")) {
+		flags |= LS_FLAG_TIME;
+		has_any_flag = true;
+	}
+	if (ws_get_flag(ws_ctx, "long")) {
+		flags |= (LS_FLAG_ATTRIB | LS_FLAG_SIZE | LS_FLAG_TIME);
+		has_any_flag = true;
+	}
 	if (!has_any_flag) flags = LS_FLAG_DEFAULT;
 
 	// No path given means we list the current directory
@@ -587,7 +602,7 @@ int drive_ls_cmd(int argc, char** argv) {
 	VFS_FD fd;
 	VFS_Status st = VFS_Opendir(vfs_path, &fd);
 	if (st != VFS_OK) {
-		// Nothing actually mounted at vfs_path itself, but if there are mounts nested underneath it 
+		// Nothing actually mounted at vfs_path itself, but if there are mounts nested underneath it
 		// Make a directory purely out of the mount table
 		if (st != VFS_ERR_NOMNT || synth_count == 0) {
 			printf_color(PRINT_COLOR_RED, PRINT_DEFAULT_BG, "Error opening directory: %s\n", vfs_strerror(st));
@@ -661,7 +676,7 @@ int drive_ls_cmd(int argc, char** argv) {
 		printf_color(item_color, PRINT_DEFAULT_BG, "%s\n", ent.name);
 	}
 
-	// Any mount-derived entries the real filesystem didn't already show 
+	// Any mount-derived entries the real filesystem didn't already show
 	for (int i = 0; i < synth_count; i++) {
 		if (!synth[i].shown) print_ls_dir_entry(synth[i].name, synth[i].is_mount_point, flags);
 	}
@@ -671,11 +686,11 @@ int drive_ls_cmd(int argc, char** argv) {
 	return 0;
 }
 
-#define MAX_PATH_LEN   256
-#define INDENT_BRANCH  "\xC3\xC4\xC4 "
-#define INDENT_LAST    "\xC0\xC4\xC4 "
-#define INDENT_CONT    "\xB3   "
-#define INDENT_SPACE   "    "
+#define MAX_PATH_LEN  256
+#define INDENT_BRANCH "\xC3\xC4\xC4 "
+#define INDENT_LAST   "\xC0\xC4\xC4 "
+#define INDENT_CONT   "\xB3   "
+#define INDENT_SPACE  "    "
 
 void print_tree_recursive(const char* vfs_path, const char* indent_prefix);
 
@@ -709,7 +724,7 @@ void print_tree_recursive(const char* vfs_path, const char* indent_prefix) {
 			return;
 		}
 
-		// Nothing real mounted here, but the mount table says there's something below 
+		// Nothing real mounted here, but the mount table says there's something below
 		for (int i = 0; i < synth_count; i++) {
 			print_tree_dir_entry(vfs_path, indent_prefix, i == synth_count - 1, synth[i].name, synth[i].is_mount_point);
 		}
@@ -718,7 +733,7 @@ void print_tree_recursive(const char* vfs_path, const char* indent_prefix) {
 
 	// Real filesystem mounted here.
 	// Count real entries and track mount points that already exist to avoid duplicates.
-	bool synth_matched[LS_MAX_SYNTH_ENTRIES] = { false };
+	bool synth_matched[LS_MAX_SYNTH_ENTRIES] = {false};
 	int total_entries = 0;
 	VFS_DirEnt ent;
 	while (VFS_Readdir(fd, &ent) == VFS_OK && ent.name[0] != '\0') {
@@ -734,7 +749,8 @@ void print_tree_recursive(const char* vfs_path, const char* indent_prefix) {
 	if (VFS_Opendir(vfs_path, &fd) != VFS_OK) return;
 
 	int extra_synth = 0;
-	for (int i = 0; i < synth_count; i++) if (!synth_matched[i]) extra_synth++;
+	for (int i = 0; i < synth_count; i++)
+		if (!synth_matched[i]) extra_synth++;
 	int total_display = total_entries + extra_synth;
 
 	int entry_count = 0;
@@ -747,7 +763,10 @@ void print_tree_recursive(const char* vfs_path, const char* indent_prefix) {
 		// If an actual mount sits exactly at this name, style/recurse it as a mount
 		bool is_exact_mount = false;
 		for (int i = 0; i < synth_count; i++) {
-			if (synth[i].is_mount_point && strcmp(synth[i].name, ent.name) == 0) { is_exact_mount = true; break; }
+			if (synth[i].is_mount_point && strcmp(synth[i].name, ent.name) == 0) {
+				is_exact_mount = true;
+				break;
+			}
 		}
 
 		if (is_exact_mount || ent.is_directory) {
@@ -832,7 +851,7 @@ int drive_touch_cmd(int argc, char** argv) {
 }
 
 int drive_write_cmd(int argc, char** argv) {
-	// 'text' is a variadic trailing argument, so we have to parse this command manually instead of using ws_parse_args(). 
+	// 'text' is a variadic trailing argument, so we have to parse this command manually instead of using ws_parse_args().
 
 	if (argc < 3) {
 		printf("Usage: write [-a|--append] <vfs_path> <text...>\n");
@@ -976,9 +995,9 @@ int drive_cd_cmd(int argc, char** argv) {
 
 static void mount_help(int argc, char** argv);
 static const ws_command_argument_t mount_args[] = {
-	{ WS_ARG_TYPE_GENERIC, true,  "path", NULL, "Absolute VFS mount point (\"/\" \"/mnt/usb\", etc.)." },
-	{ WS_ARG_TYPE_GENERIC, true,  "addr", NULL, "Device address: 'N' or 'N:M' (use lsblk)." },
-	{ WS_ARG_TYPE_GENERIC, false, "fs",   NULL, "Filesystem to bind (see the list below). Omit to auto-detect." },
+	{WS_ARG_TYPE_GENERIC, true, "path", NULL, "Absolute VFS mount point (\"/\" \"/mnt/usb\", etc.)."},
+	{WS_ARG_TYPE_GENERIC, true, "addr", NULL, "Device address: 'N' or 'N:M' (use lsblk)."},
+	{WS_ARG_TYPE_GENERIC, false, "fs", NULL, "Filesystem to bind (see the list below). Omit to auto-detect."},
 };
 static const ws_command_t mount_command = {
 	.command_name = "mount",
@@ -988,18 +1007,21 @@ static const ws_command_t mount_command = {
 	.main_func = drive_mount_cmd,
 	.env_func = NULL,
 	.help_func = mount_help,
-	.major = 0, .minor = 0, .patch = 0,
+	.major = 0,
+	.minor = 0,
+	.patch = 0,
 	.arguments = mount_args,
 	.arguments_count = sizeof(mount_args) / sizeof(mount_args[0]),
 };
 static void mount_help(int argc, char** argv) {
-	(void) argc; (void) argv;
+	(void) argc;
+	(void) argv;
 	ws_printCommandHelp(&mount_command);
 	print_fs_name_list();
 }
 
 static const ws_command_argument_t lsblk_args[] = {
-	{ WS_ARG_TYPE_GENERIC, false, "idx", NULL, "Only show this top-level drive index (and its partitions)." },
+	{WS_ARG_TYPE_GENERIC, false, "idx", NULL, "Only show this top-level drive index (and its partitions)."},
 };
 static const ws_command_t lsblk_command = {
 	.command_name = "lsblk",
@@ -1009,13 +1031,15 @@ static const ws_command_t lsblk_command = {
 	.main_func = drive_lsblk_cmd,
 	.env_func = NULL,
 	.help_func = NULL,
-	.major = 0, .minor = 0, .patch = 0,
+	.major = 0,
+	.minor = 0,
+	.patch = 0,
 	.arguments = lsblk_args,
 	.arguments_count = sizeof(lsblk_args) / sizeof(lsblk_args[0]),
 };
 
 static const ws_command_argument_t unmount_args[] = {
-	{ WS_ARG_TYPE_GENERIC, true, "path", NULL, "VFS path to unmount." },
+	{WS_ARG_TYPE_GENERIC, true, "path", NULL, "VFS path to unmount."},
 };
 static const ws_command_t unmount_command = {
 	.command_name = "unmount",
@@ -1025,13 +1049,15 @@ static const ws_command_t unmount_command = {
 	.main_func = drive_unmount_cmd,
 	.env_func = NULL,
 	.help_func = NULL,
-	.major = 0, .minor = 0, .patch = 0,
+	.major = 0,
+	.minor = 0,
+	.patch = 0,
 	.arguments = unmount_args,
 	.arguments_count = sizeof(unmount_args) / sizeof(unmount_args[0]),
 };
 
 static const ws_command_argument_t cd_args[] = {
-	{ WS_ARG_TYPE_GENERIC, false, "path", NULL, "Directory to change into. Omit to print the current directory." },
+	{WS_ARG_TYPE_GENERIC, false, "path", NULL, "Directory to change into. Omit to print the current directory."},
 };
 static const ws_command_t cd_command = {
 	.command_name = "cd",
@@ -1041,13 +1067,15 @@ static const ws_command_t cd_command = {
 	.main_func = drive_cd_cmd,
 	.env_func = NULL,
 	.help_func = NULL,
-	.major = 0, .minor = 0, .patch = 0,
+	.major = 0,
+	.minor = 0,
+	.patch = 0,
 	.arguments = cd_args,
 	.arguments_count = sizeof(cd_args) / sizeof(cd_args[0]),
 };
 
 static const ws_command_argument_t tree_args[] = {
-	{ WS_ARG_TYPE_GENERIC, true, "path", NULL, "Directory to print the tree of." },
+	{WS_ARG_TYPE_GENERIC, true, "path", NULL, "Directory to print the tree of."},
 };
 static const ws_command_t tree_command = {
 	.command_name = "tree",
@@ -1057,17 +1085,19 @@ static const ws_command_t tree_command = {
 	.main_func = drive_tree_cmd,
 	.env_func = NULL,
 	.help_func = NULL,
-	.major = 0, .minor = 0, .patch = 0,
+	.major = 0,
+	.minor = 0,
+	.patch = 0,
 	.arguments = tree_args,
 	.arguments_count = sizeof(tree_args) / sizeof(tree_args[0]),
 };
 
 static const ws_command_argument_t ls_args[] = {
-	{ WS_ARG_TYPE_GENERIC, false, "path",     NULL, "Directory to list. Defaults to the current directory." },
-	{ WS_ARG_TYPE_FLAG,    false, "--attrib", "-a", "Show the [D]/[M]/[-] type column." },
-	{ WS_ARG_TYPE_FLAG,    false, "--size",   "-s", "Show the size/<DIR>/<MNT> column." },
-	{ WS_ARG_TYPE_FLAG,    false, "--time",   "-t", "Show modification time (TODO)." },
-	{ WS_ARG_TYPE_FLAG,    false, "--long",   "-l", "Shorthand for -a -s -t." },
+	{WS_ARG_TYPE_GENERIC, false, "path", NULL, "Directory to list. Defaults to the current directory."},
+	{WS_ARG_TYPE_FLAG, false, "--attrib", "-a", "Show the [D]/[M]/[-] type column."},
+	{WS_ARG_TYPE_FLAG, false, "--size", "-s", "Show the size/<DIR>/<MNT> column."},
+	{WS_ARG_TYPE_FLAG, false, "--time", "-t", "Show modification time (TODO)."},
+	{WS_ARG_TYPE_FLAG, false, "--long", "-l", "Shorthand for -a -s -t."},
 };
 static const ws_command_t ls_command = {
 	.command_name = "ls",
@@ -1077,13 +1107,15 @@ static const ws_command_t ls_command = {
 	.main_func = drive_ls_cmd,
 	.env_func = NULL,
 	.help_func = NULL,
-	.major = 0, .minor = 0, .patch = 0,
+	.major = 0,
+	.minor = 0,
+	.patch = 0,
 	.arguments = ls_args,
 	.arguments_count = sizeof(ls_args) / sizeof(ls_args[0]),
 };
 
 static const ws_command_argument_t cat_args[] = {
-	{ WS_ARG_TYPE_GENERIC, true, "path", NULL, "File to print the contents of." },
+	{WS_ARG_TYPE_GENERIC, true, "path", NULL, "File to print the contents of."},
 };
 static const ws_command_t cat_command = {
 	.command_name = "cat",
@@ -1093,13 +1125,15 @@ static const ws_command_t cat_command = {
 	.main_func = drive_cat_cmd,
 	.env_func = NULL,
 	.help_func = NULL,
-	.major = 0, .minor = 0, .patch = 0,
+	.major = 0,
+	.minor = 0,
+	.patch = 0,
 	.arguments = cat_args,
 	.arguments_count = sizeof(cat_args) / sizeof(cat_args[0]),
 };
 
 static const ws_command_argument_t mkdir_args[] = {
-	{ WS_ARG_TYPE_GENERIC, true, "path", NULL, "Directory to create." },
+	{WS_ARG_TYPE_GENERIC, true, "path", NULL, "Directory to create."},
 };
 static const ws_command_t mkdir_command = {
 	.command_name = "mkdir",
@@ -1109,13 +1143,15 @@ static const ws_command_t mkdir_command = {
 	.main_func = drive_mkdir_cmd,
 	.env_func = NULL,
 	.help_func = NULL,
-	.major = 0, .minor = 0, .patch = 0,
+	.major = 0,
+	.minor = 0,
+	.patch = 0,
 	.arguments = mkdir_args,
 	.arguments_count = sizeof(mkdir_args) / sizeof(mkdir_args[0]),
 };
 
 static const ws_command_argument_t touch_args[] = {
-	{ WS_ARG_TYPE_GENERIC, true, "path", NULL, "File to create, or update if it already exists." },
+	{WS_ARG_TYPE_GENERIC, true, "path", NULL, "File to create, or update if it already exists."},
 };
 static const ws_command_t touch_command = {
 	.command_name = "touch",
@@ -1125,15 +1161,17 @@ static const ws_command_t touch_command = {
 	.main_func = drive_touch_cmd,
 	.env_func = NULL,
 	.help_func = NULL,
-	.major = 0, .minor = 0, .patch = 0,
+	.major = 0,
+	.minor = 0,
+	.patch = 0,
 	.arguments = touch_args,
 	.arguments_count = sizeof(touch_args) / sizeof(touch_args[0]),
 };
 
 static void write_help(int argc, char** argv);
 static const ws_command_argument_t write_args[] = {
-	{ WS_ARG_TYPE_GENERIC, true,  "path", NULL, "File to write to." },
-	{ WS_ARG_TYPE_FLAG,    false, "--append", "-a", "Append to the file instead of overwriting it." },
+	{WS_ARG_TYPE_GENERIC, true, "path", NULL, "File to write to."},
+	{WS_ARG_TYPE_FLAG, false, "--append", "-a", "Append to the file instead of overwriting it."},
 };
 static const ws_command_t write_command = {
 	.command_name = "write",
@@ -1143,12 +1181,15 @@ static const ws_command_t write_command = {
 	.main_func = drive_write_cmd,
 	.env_func = NULL,
 	.help_func = write_help,
-	.major = 0, .minor = 0, .patch = 0,
+	.major = 0,
+	.minor = 0,
+	.patch = 0,
 	.arguments = write_args,
 	.arguments_count = sizeof(write_args) / sizeof(write_args[0]),
 };
 static void write_help(int argc, char** argv) {
-	(void) argc; (void) argv;
+	(void) argc;
+	(void) argv;
 	ws_printCommandHelp(&write_command);
 	printf("Everything after <path> is written as the file's contents.\n");
 }

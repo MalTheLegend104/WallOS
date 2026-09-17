@@ -1,17 +1,17 @@
 /**
-* @file display.h
-* @brief Unified display abstraction layer for VGA text mode and framebuffer graphics
-*
-* This provides a common interface that works with both VGA text mode and framebuffer mode,
-* allowing you to switch between them without refactoring application code.
-*/
+ * @file display.h
+ * @brief Unified display abstraction layer for VGA text mode and framebuffer
+ * graphics
+ *
+ * This provides a common interface that works with both VGA text mode and framebuffer mode
+ */
 #ifndef DISPLAY_H
 #define DISPLAY_H
 
-#include <stdint.h>
-#include <stddef.h>
-#include <stdbool.h>
 #include <apollo.h>
+#include <stdbool.h>
+#include <stddef.h>
+#include <stdint.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -21,8 +21,8 @@ extern "C" {
 	// Display Mode Types
 	// ------------------------------------------------------------------------------------------------
 	typedef enum {
-		DISPLAY_MODE_VGA_TEXT,      // VGA text mode (80x25)
-		DISPLAY_MODE_FRAMEBUFFER    // Graphics framebuffer mode
+		DISPLAY_MODE_VGA_TEXT,   // VGA text mode (80x25)
+		DISPLAY_MODE_FRAMEBUFFER // Graphics framebuffer mode
 	} display_mode_t;
 
 	// ------------------------------------------------------------------------------------------------
@@ -127,7 +127,6 @@ extern "C" {
 	 */
 	void display_puts_color(const char* str, display_color_t fg, display_color_t bg);
 
-
 	/* Both of these printf wrappers use ints rather than display_color_t because it makes them infinitely easier to `extern` when needed. */
 	/**
 	 * @brief Printf wrapper that lets you set the text colors.
@@ -182,7 +181,21 @@ extern "C" {
 	 * @param width Pointer to store width in characters
 	 * @param height Pointer to store height in characters (lines)
 	 */
-	void display_get_dimensions(int* width, int* height);
+	void display_get_dimensions_chars(int* width, int* height);
+
+	/**
+	 * @brief Get the display's dimensions in pixels.
+	 *
+	 * VGA text mode has no pixel grid to report, so this falls back to the character dimensions (80x25) in that mode, same as display_get_dimensions_chars().
+	 */
+	void display_get_dimensions_pixels(int* width, int* height);
+
+	/**
+	 * @brief Get the display's bits per pixel.
+	 *
+	 * VGA text mode isn't a pixel framebuffer, so this returns 0
+	 */
+	int display_get_bpp(void);
 
 	/**
 	 * @brief Set the font for framebuffer mode
@@ -209,10 +222,10 @@ extern "C" {
 	int display_get_chars_per_line();
 
 #ifdef __is_kernel_
-/**
- * @brief Display a kernel panic screen (pink/red screen)
- * @param error Error message to display
- */
+	/**
+	 * @brief Display a kernel panic screen (pink/red screen)
+	 * @param error Error message to display
+	 */
 	void display_panic(const char* error);
 
 	/**

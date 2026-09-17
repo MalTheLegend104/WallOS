@@ -29,6 +29,7 @@
 #include <system/idt.h>
 #include <system/timer.h>
 
+#include <terminal/wall_shell.h>
 #include <x86_64/timing.h>
 
 #include <terminal/commands/system_commands.h>
@@ -261,6 +262,7 @@ extern "C" {
 
 	// extern const ws_command_argument_t virt_mem_cli_args[];
 	// extern const size_t virt_mem_cli_args_count;
+	extern const ws_command_t kilo_cmd;
 }
 
 void setup_commands() {
@@ -330,6 +332,16 @@ void setup_commands() {
 	driver_command.arguments = driver_cli_args;
 	driver_command.arguments_count = driver_cli_args_count;
 	ws_registerCommand(driver_command);
+
+	ws_registerCommand(kilo_cmd);
+}
+
+#include <drivers/usb/class/hid/hid_common.h>
+// This here so things that take over control of the system after the kernel entry is done can poll as needed
+// This also serves as a good candidate for things that need to be actually properly taken care of when we get SMP
+extern "C" void system_poll_loop(void) {
+	hid_keyboard_poll_all();
+	acpi_poll_events();
 }
 
 void kernel_main(unsigned int magic, multiboot_info* mbt_info) {

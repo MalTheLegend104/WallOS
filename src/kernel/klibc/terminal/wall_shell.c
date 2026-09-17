@@ -27,7 +27,19 @@
 // General header & compiler config
 // ------------------------------------------------------------------------------------------------
 // ------------------------------------------------------------------------------------------------
+#include <filesystem/vfs.h>
+#include <klibc/display.h>
 #include <terminal/wall_shell.h>
+
+#include <input/input_handler.h>
+#include <input/input_text.h>
+#include <system/timer.h>
+
+#include <acpi/acpi_api.h>
+#include <drivers/usb/class/hid/hid_common.h>
+#include <system/timer.h>
+
+extern void system_poll_loop(void);
 
 /* Disable unused parameter warnings. This only affects this file. */
 #ifdef __GNUC__
@@ -107,6 +119,142 @@ bool ws_internal_startsWith(const char* str, const char* prefix) {
 		prefix++;
 		str++;
 	}
+	return true;
+}
+
+// ------------------------------------------------------------------------------------------------
+// ------------------------------------------------------------------------------------------------
+// Current Working Directory
+// ------------------------------------------------------------------------------------------------
+// ------------------------------------------------------------------------------------------------
+/* The shell owns a single CWD so that commands don't each have to keep their own idea of where they are.
+ * Commands should resolve user supplied paths with ws_resolvePath(), which handles absolute vs relative, ".", and "..".
+ */
+
+#ifndef WS_MAX_PATH
+#define WS_MAX_PATH VFS_PATH_MAX
+#endif // WS_MAX_PATH
+
+static char ws_current_working_dir[WS_MAX_PATH] = "/";
+
+/**
+ * @brief Get the shell's current working directory.
+ *
+ * The returned pointer is owned by the shell and stays valid until the next successful ws_setCWD().
+ * Copy it with ws_copyCWD() if you need to hold onto it.
+ *
+ * @return const char* Absolute, normalized path. Never NULL, never empty.
+ */
+const char* ws_getCWD(void) { return ws_current_working_dir; }
+
+/**
+ * @brief Copy the current working directory into a caller provided buffer.
+ *
+ * The result is always null terminated, and truncated if it doesn't fit.
+ *
+ * @param out Destination buffer.
+ * @param out_size Size of the destination buffer.
+ * @return size_t Number of characters written, excluding the null terminator. 0 if out is invalid.
+ */
+size_t ws_copyCWD(char* out, size_t out_size) {
+	if (!out || out_size == 0) return 0;
+	size_t len = strlen(ws_current_working_dir);
+	if (len >= out_size) len = out_size - 1;
+	memcpy(out, ws_current_working_dir, len);
+	out[len] = '\0';
+	return len;
+}
+
+/**
+ * @brief Resolve a (possibly relative) path against the current working directory.
+ *
+ * This does no filesystem validation whatsoever, it is purely string normalization.
+ * Whether the path actually exists is up to the caller.
+ *
+ * @param path Path to resolve.
+ * @param out Destination buffer for the normalized path.
+ * @param out_size Size of the destination buffer. Must be at least 2.
+ * @return true If the path was resolved.
+ * @return false If an argument was invalid, or the result didn't fit in out.
+ */
+bool ws_resolvePath(const char* path, char* out, size_t out_size) {
+	if (!path || !out || out_size < 2) return false;
+
+	char temp[WS_MAX_PATH * 2];
+	size_t t = 0;
+
+	if (path[0] != '/') {
+		// Relative: anchor to the CWD.
+		size_t cwd_len = strlen(ws_current_working_dir);
+		if (cwd_len + 2 >= sizeof(temp)) return false;
+		memcpy(temp, ws_current_working_dir, cwd_len);
+		t = cwd_len;
+		if (t == 0 || temp[t - 1] != '/') temp[t++] = '/';
+	} else {
+		temp[t++] = '/';
+	}
+
+	size_t path_len = strlen(path);
+	if (t + path_len + 1 >= sizeof(temp)) return false;
+	memcpy(temp + t, path, path_len);
+	t += path_len;
+	temp[t] = '\0';
+
+	// Walk the segments, building the normalized result as we go.
+	size_t o = 0;
+	out[o++] = '/';
+
+	const char* p = temp;
+	while (*p) {
+		while (*p == '/') p++;
+		if (!*p) break;
+
+		const char* segment = p;
+		while (*p && *p != '/') p++;
+		size_t segment_len = (size_t) (p - segment);
+
+		if (segment_len == 1 && segment[0] == '.') continue;
+		if (segment_len == 2 && segment[0] == '.' && segment[1] == '.') {
+			if (o > 1) {
+				o--; // Step over the trailing '/'
+				while (o > 1 && out[o - 1] != '/') o--;
+			}
+			continue;
+		}
+
+		if (o + segment_len + 1 >= out_size) return false;
+		memcpy(out + o, segment, segment_len);
+		o += segment_len;
+		out[o++] = '/';
+	}
+
+	if (o > 1 && out[o - 1] == '/') o--;
+	out[o] = '\0';
+	return true;
+}
+
+/**
+ * @brief Set the shell's current working directory.
+ *
+ * The path is resolved against the existing CWD before being stored, so both ws_setCWD("/home/user") and ws_setCWD("../other") work.
+ * The CWD is only updated if resolution succeeds.
+ *
+ * @note This does not check that the directory exists. It is the callers responsibility to check it.
+ *
+ * @param path Path to change to.
+ * @return true If the CWD was updated.
+ * @return false If path was NULL or didn't fit in WS_MAX_PATH.
+ */
+bool ws_setCWD(const char* path) {
+	if (!path) return false;
+
+	char resolved[WS_MAX_PATH];
+	if (!ws_resolvePath(path, resolved, sizeof(resolved))) return false;
+
+	size_t len = strlen(resolved);
+	if (len + 1 > sizeof(ws_current_working_dir)) return false;
+
+	memcpy(ws_current_working_dir, resolved, len + 1);
 	return true;
 }
 
@@ -1836,12 +1984,6 @@ void ws_internal_registerBasicCommands() {
 // Virtual Sequences and Cursor Control
 // ------------------------------------------------------------------------------------------------
 // ------------------------------------------------------------------------------------------------
-/* Input */
-typedef enum {
-	NONE = 0,
-	CURSOR,
-	FUNCTION,
-} input_type_t;
 
 #ifndef CUSTOM_CURSOR_CONTROL
 /**
@@ -1878,91 +2020,145 @@ void ws_moveCursor_n(ws_cursor_t direction, size_t n) {
 void ws_moveCursor(ws_cursor_t direction) { ws_moveCursor_n(direction, 1); }
 #endif // CUSTOM_CURSOR_CONTROL
 
+typedef enum {
+	WS_KEY_INPUT_NONE = 0,
+	WS_KEY_INPUT_CHAR,         // A printable character, see .character
+	WS_KEY_INPUT_ENTER,
+	WS_KEY_INPUT_BACKSPACE,
+	WS_KEY_INPUT_DELETE,
+	WS_KEY_INPUT_TAB,
+	WS_KEY_INPUT_ESCAPE,
+	WS_KEY_INPUT_CURSOR,       // An arrow key, see .cursor
+	WS_KEY_INPUT_HOME,
+	WS_KEY_INPUT_END,
+	WS_KEY_INPUT_CANCEL,       // Ctrl+C
+	WS_KEY_INPUT_CLEAR_LINE,   // Ctrl+U
+	WS_KEY_INPUT_CLEAR_SCREEN, // Ctrl+L
+} ws_key_input_type_t;
+
 typedef struct {
-	input_type_t type;
-	uint64_t result;
-} input_result_t;
+	ws_key_input_type_t type;
+	ws_cursor_t cursor;   // Only meaningful for WS_KEY_INPUT_CURSOR
+	char character;       // Only meaningful for WS_KEY_INPUT_CHAR
+	wallos_key_t key;     // The raw key, always populated
+	uint32_t modifiers;   // Bitmask of wallos_modifier_flags_t
+} ws_key_input_t;
 
 /**
  * @internal
- * @brief Processes a virtual terminal sequence
+ * @brief Translate a raw keyboard event into something the line editor understands.
  *
- * @return input_result_t The type of input that the sequence was.
+ * @param event Raw keyboard event.
+ * @param out Destination for the translated input.
+ * @return true If the event mapped to something actionable.
+ * @return false If the event should be ignored (modifier keys, unmapped keys, etc).
  */
-input_result_t ws_internal_processVirtualSequence() {
-	// The next character should be '[', and we can parse input until we know it should end with a certain character.
-	// For simplicity's sake we're just going to preallocate a buffer for the input
-	// If it doesn't end up being used it's not a big deal.
-	input_result_t result = {NONE, 0};
-	int next = ws_internal_get_char_blocking();
-	if (next != '[' && next != 'O') {
-		printf("%c", next);
-		return result;
+static bool ws_internal_translateKey(const wallos_keyboard_event_t* event, ws_key_input_t* out) {
+	if (!event || !out) return false;
+
+	// Releases aren't interesting to a line editor. Repeats are treated like presses.
+	if (event->state == WALLOS_INPUT_STATE_RELEASED) return false;
+
+	// Diagnostic keys carry no usable input.
+	if (event->key >= WALLOS_KEY_COUNT) return false;
+
+	out->type = WS_KEY_INPUT_NONE;
+	out->cursor = WS_CURSOR_LEFT;
+	out->character = 0;
+	out->key = event->key;
+	out->modifiers = event->modifiers;
+
+	// Control combos first, they take priority over any text mapping.
+	if (event->modifiers & WALLOS_MOD_CTRL) {
+		switch (event->key) {
+			case WALLOS_KEY_C: out->type = WS_KEY_INPUT_CANCEL; return true;
+			case WALLOS_KEY_U: out->type = WS_KEY_INPUT_CLEAR_LINE; return true;
+			case WALLOS_KEY_L: out->type = WS_KEY_INPUT_CLEAR_SCREEN; return true;
+			case WALLOS_KEY_A: out->type = WS_KEY_INPUT_HOME; return true;
+			case WALLOS_KEY_E: out->type = WS_KEY_INPUT_END; return true;
+			default:           break;
+		}
 	}
 
-	char seq[10];
-	int i = 0;
-
-	// Read until we encounter a non-numeric character
-	next = ws_internal_get_char_blocking();
-	while (next >= '0' && next <= '9' || next == ';') {
-		seq[i++] = (char) next;
-		next = ws_internal_get_char_blocking();
-	}
-	seq[i] = '\0';
-
-	// Handle the end character of the escape sequence
-	switch (next) {
-		case 'A':
-			result.type = CURSOR;
-			result.result = WS_CURSOR_UP;
-			break;
-		case 'B':
-			result.type = CURSOR;
-			result.result = WS_CURSOR_DOWN;
-			break;
-		case 'C':
-			result.type = CURSOR;
-			result.result = WS_CURSOR_RIGHT;
-			break;
-		case 'D':
-			result.type = CURSOR;
-			result.result = WS_CURSOR_LEFT;
-			break;
-			// case '~': printf("Function key, sequence: %s\n", seq);
-			//	break;
-			// case 'P':
-			// case 'Q':
-			// case 'R':
-			// case 'S': printf("Special function key\n");
-			//	break;
+	switch (event->key) {
+		case WALLOS_KEY_UP:
+			out->type = WS_KEY_INPUT_CURSOR;
+			out->cursor = WS_CURSOR_UP;
+			return true;
+		case WALLOS_KEY_DOWN:
+			out->type = WS_KEY_INPUT_CURSOR;
+			out->cursor = WS_CURSOR_DOWN;
+			return true;
+		case WALLOS_KEY_LEFT:
+			out->type = WS_KEY_INPUT_CURSOR;
+			out->cursor = WS_CURSOR_LEFT;
+			return true;
+		case WALLOS_KEY_RIGHT:
+			out->type = WS_KEY_INPUT_CURSOR;
+			out->cursor = WS_CURSOR_RIGHT;
+			return true;
+		case WALLOS_KEY_ENTER:
+		case WALLOS_KEY_NUMPAD_ENTER:
+			out->type = WS_KEY_INPUT_ENTER;
+			return true;
+		case WALLOS_KEY_BACKSPACE:
+			out->type = WS_KEY_INPUT_BACKSPACE;
+			return true;
+		case WALLOS_KEY_DELETE:
+			out->type = WS_KEY_INPUT_DELETE;
+			return true;
+		case WALLOS_KEY_TAB:
+			out->type = WS_KEY_INPUT_TAB;
+			return true;
+		case WALLOS_KEY_ESCAPE:
+			out->type = WS_KEY_INPUT_ESCAPE;
+			return true;
+		case WALLOS_KEY_HOME:
+			out->type = WS_KEY_INPUT_HOME;
+			return true;
+		case WALLOS_KEY_END:
+			out->type = WS_KEY_INPUT_END;
+			return true;
 		default: break;
 	}
-	return result;
+
+	// Anything left over is only interesting if it has a text representation
+	uint8_t c = wallos_key_to_cp437(event->key, event->modifiers);
+	if (c < 0x20 || c == 0x7f) return false; // Control codes are handled above, or not at all.
+
+	out->type = WS_KEY_INPUT_CHAR;
+	out->character = (char) c;
+	return true;
 }
 
 /**
  * @internal
- * @brief Process E0 keys. This is mostly for arrow keys in custom OS's and Windows.
+ * @brief Non-blocking read of the next actionable key.
  *
- * @return input_result_t
+ * @param out Destination for the translated input.
+ * @return true If a key was populated.
+ * @return false If there's nothing to read right now.
  */
-input_result_t ws_internal_processEO() {
-	// Up: 0x48 -> Down: 0x50 -> Right: 0x4d -> Left: 0x4b
-	int next = ws_internal_get_char_blocking();
-
-	input_result_t result = {NONE, 0};
-	switch (next) {
-		case WS_CURSOR_UP:
-		case WS_CURSOR_DOWN:
-		case WS_CURSOR_LEFT:
-		case WS_CURSOR_RIGHT:
-			result.type = CURSOR;
-			result.result = next;
-			break;
-		default: break;
+static bool ws_internal_pollKey(ws_key_input_t* out) {
+	wallos_input_event_t event;
+	while (input_poll_event(WALLOS_INPUT_DEVICE_KEYBOARD, &event)) {
+		if (event.type != WALLOS_INPUT_DEVICE_KEYBOARD) continue;
+		if (ws_internal_translateKey(&event.data.keyboard, out)) return true;
 	}
-	return result;
+	return false;
+}
+
+/**
+ * @internal
+ * @brief Blocking read of the next actionable key.
+ *
+ * @param out Destination for the translated input.
+ */
+static void ws_internal_waitKey(ws_key_input_t* out) {
+	while (!ws_internal_pollKey(out)) {
+		system_poll_loop();
+		busy_wait_ms(1);
+	}
 }
 
 char** envp = NULL;
@@ -2207,9 +2403,21 @@ const char* prefix = "> ";
  */
 void ws_setConsolePrefix(const char* newPrefix) { prefix = newPrefix; }
 
-#include <acpi/acpi_api.h>
-#include <drivers/usb/class/hid/hid_common.h>
-#include <system/timer.h>
+/**
+ * @internal
+ * @brief Redraw the prompt and the command buffer, then set the cursor.
+ *
+ * @param buf Current command buffer.
+ * @param position 1-based cursor position within the buffer.
+ */
+static void ws_internal_redrawLine(const char* buf, size_t position) {
+	CLEAR_ROW;
+	printf("\r%s%s", prefix, buf);
+	for (size_t i = strlen(buf) + 1; i > position; i--) {
+		ws_moveCursor(WS_CURSOR_LEFT);
+	}
+}
+
 /**
  * @brief Cleans everything.
  *
@@ -2258,11 +2466,12 @@ ws_error_t ws_terminalMain() {
 
 	printf_color(PRINT_COLOR_PINK, PRINT_DEFAULT_BG, "Initializing terminal...");
 	busy_wait_ms(1000);
+
+	display_enable_cursor(0, 0);
 	ws_executeCommand("clear");
 	ws_executeCommand("logo");
 
 	ws_internal_registerBasicCommands();
-
 
 	/* Ideally something should've caught this before calling main, but we still need to check. */
 #ifndef DISABLE_MALLOC
@@ -2278,7 +2487,7 @@ ws_error_t ws_terminalMain() {
 	char commandBuf[MAX_COMMAND_BUF];
 	char oldCommand[MAX_COMMAND_BUF];
 
-	input_result_t input_result = {0, 0};
+	ws_key_input_t input = {WS_KEY_INPUT_NONE, WS_CURSOR_LEFT, 0, WALLOS_KEY_INVALID, 0};
 	CHECK_EXIT_BOOL_EXISTS;
 	while (!GET_EXIT_BOOL) {
 		if (newCommand) {
@@ -2294,113 +2503,115 @@ ws_error_t ws_terminalMain() {
 #endif
 		}
 
-		// Check for the previous input results
-		if (input_result.type != NONE) {
-			if (input_result.type == CURSOR) {
-				switch (input_result.result) {
-					case WS_CURSOR_UP: {
-						if (previous_commands_size > 0) {
-							if (history_index == -1) {
-								// Save whatever the user typed before entering history
-								memset(oldCommand, 0, MAX_COMMAND_BUF);
-								memcpy(oldCommand, commandBuf, MAX_COMMAND_BUF);
-								history_index = 0;
-							} else if (history_index < (int) previous_commands_size - 1) {
-								history_index++;
-							}
-
-							CLEAR_ROW;
-							memset(commandBuf, 0, MAX_COMMAND_BUF);
-							memcpy(commandBuf, previousCommands[history_index], strlen(previousCommands[history_index]));
-							printf("\r%s%s", prefix, commandBuf);
-							current_position = strlen(commandBuf) + 1;
-						}
-						input_result.type = NONE;
-						continue;
-					}
-					case WS_CURSOR_DOWN: {
-						if (history_index != -1) {
-							CLEAR_ROW;
-							if (history_index > 0) {
-								history_index--;
-								memset(commandBuf, 0, MAX_COMMAND_BUF);
-								memcpy(commandBuf, previousCommands[history_index], strlen(previousCommands[history_index]));
-							} else {
-								// Returned to the original uncommitted command
-								history_index = -1;
-								memset(commandBuf, 0, MAX_COMMAND_BUF);
-								memcpy(commandBuf, oldCommand, MAX_COMMAND_BUF);
-							}
-							printf("\r%s%s", prefix, commandBuf);
-							current_position = strlen(commandBuf) + 1;
-						}
-						input_result.type = NONE;
-						continue;
-					}
-					case WS_CURSOR_RIGHT: {
-						if (current_position == (strlen(commandBuf) + 1)) break;
-						current_position++;
-						ws_moveCursor(WS_CURSOR_RIGHT);
-						input_result.type = NONE;
-						continue;
-					}
-					case WS_CURSOR_LEFT: {
-						if (current_position == 1) break;
-						current_position--;
-						ws_moveCursor(WS_CURSOR_LEFT);
-						input_result.type = NONE;
-						continue;
-					}
-					default: break;
-				}
-			}
-#ifdef PRINTING_NEEDS_FLUSH
-			fflush(ws_out_stream);
-#endif
-		}
-
-		int current = ws_internal_get_char_nonblocking(ws_in_stream);
-
-		if (current == -2) {
-			hid_keyboard_poll_all();
-			acpi_poll_events();
+		if (!ws_internal_pollKey(&input)) {
+			system_poll_loop();
 			busy_wait_ms(1);
-
 			continue;
 		}
 
-		if (backspace_as_ascii_delete && current == 0x7f)
-			current = '\b';
+		// Any key other than tab breaks an in-progress completion.
+		if (input.type != WS_KEY_INPUT_TAB) tabPressed = false;
 
-		if (current == '\n' || current == '\r') {
-			printf("\n");
-			if (strlen(commandBuf) == 0) {
-				newCommand = true;
-				continue;
-			}
+		switch (input.type) {
+			case WS_KEY_INPUT_CURSOR: {
+				switch (input.cursor) {
+					case WS_CURSOR_UP: {
+						if (previous_commands_size == 0) break;
 
-			if (previous_commands_size > 0) {
-				if (strcmp(previousCommands[0], commandBuf) != 0) {
-					for (size_t i = previous_commands_size; i > 0; i--) {
-						memcpy(previousCommands[i], previousCommands[i - 1], strlen(previousCommands[i - 1]));
-						memset(previousCommands[i - 1], 0, MAX_COMMAND_BUF);
+						if (history_index == -1) {
+							// Save whatever the user typed before entering history
+							memset(oldCommand, 0, MAX_COMMAND_BUF);
+							memcpy(oldCommand, commandBuf, MAX_COMMAND_BUF);
+							history_index = 0;
+						} else if (history_index < (int) previous_commands_size - 1) {
+							history_index++;
+						}
+
+						memset(commandBuf, 0, MAX_COMMAND_BUF);
+						memcpy(commandBuf, previousCommands[history_index], strlen(previousCommands[history_index]));
+						current_position = strlen(commandBuf) + 1;
+						ws_internal_redrawLine(commandBuf, current_position);
+						break;
 					}
+					case WS_CURSOR_DOWN: {
+						if (history_index == -1) break;
 
-					if (previous_commands_size < PREVIOUS_BUF_SIZE) {
-						previous_commands_size++;
+						if (history_index > 0) {
+							history_index--;
+							memset(commandBuf, 0, MAX_COMMAND_BUF);
+							memcpy(commandBuf, previousCommands[history_index], strlen(previousCommands[history_index]));
+						} else {
+							// Returned to the original uncommitted command
+							history_index = -1;
+							memset(commandBuf, 0, MAX_COMMAND_BUF);
+							memcpy(commandBuf, oldCommand, MAX_COMMAND_BUF);
+						}
+						current_position = strlen(commandBuf) + 1;
+						ws_internal_redrawLine(commandBuf, current_position);
+						break;
 					}
+					case WS_CURSOR_RIGHT: {
+						if (current_position > strlen(commandBuf)) break;
+						current_position++;
+						ws_moveCursor(WS_CURSOR_RIGHT);
+						break;
+					}
+					case WS_CURSOR_LEFT: {
+						if (current_position <= 1) break;
+						current_position--;
+						ws_moveCursor(WS_CURSOR_LEFT);
+						break;
+					}
+					default: break;
 				}
-				memcpy(previousCommands[0], commandBuf, strlen(commandBuf));
-			} else {
-				previous_commands_size++;
-				memcpy(previousCommands[0], commandBuf, strlen(commandBuf));
+				break;
 			}
-			ws_executeCommand(commandBuf);
-			commandBuf[0] = '\0';
-			newCommand = true;
-		} else if (current == '\b') {
-			if (strlen(commandBuf) > 0) {
-				if (current_position <= 1) continue;
+			case WS_KEY_INPUT_HOME: {
+				while (current_position > 1) {
+					current_position--;
+					ws_moveCursor(WS_CURSOR_LEFT);
+				}
+				break;
+			}
+			case WS_KEY_INPUT_END: {
+				size_t end = strlen(commandBuf) + 1;
+				while (current_position < end) {
+					current_position++;
+					ws_moveCursor(WS_CURSOR_RIGHT);
+				}
+				break;
+			}
+			case WS_KEY_INPUT_ENTER: {
+				printf("\n");
+				if (strlen(commandBuf) == 0) {
+					newCommand = true;
+					break;
+				}
+
+				if (previous_commands_size > 0) {
+					if (strcmp(previousCommands[0], commandBuf) != 0) {
+						for (size_t i = previous_commands_size; i > 0; i--) {
+							memcpy(previousCommands[i], previousCommands[i - 1], strlen(previousCommands[i - 1]));
+							memset(previousCommands[i - 1], 0, MAX_COMMAND_BUF);
+						}
+
+						if (previous_commands_size < PREVIOUS_BUF_SIZE) {
+							previous_commands_size++;
+						}
+					}
+					memcpy(previousCommands[0], commandBuf, strlen(commandBuf));
+				} else {
+					previous_commands_size++;
+					memcpy(previousCommands[0], commandBuf, strlen(commandBuf));
+				}
+				ws_executeCommand(commandBuf);
+				commandBuf[0] = '\0';
+				newCommand = true;
+				break;
+			}
+			case WS_KEY_INPUT_BACKSPACE: {
+				if (strlen(commandBuf) == 0) break;
+				if (current_position <= 1) break;
 
 				size_t len = strlen(commandBuf);
 				for (size_t i = current_position - 2; i < len; i++) {
@@ -2410,101 +2621,117 @@ ws_error_t ws_terminalMain() {
 
 				current_position--;
 				if (current_position != (strlen(commandBuf) + 1)) {
-					CLEAR_ROW;
-					printf("\r%s%s", prefix, commandBuf);
-
-					// Position cursor correctly after redrawing from column 0
-					for (size_t i = strlen(commandBuf) + 1; i > current_position; i--) {
-						ws_moveCursor(WS_CURSOR_LEFT);
-					}
+					ws_internal_redrawLine(commandBuf, current_position);
 				} else {
 					ws_moveCursor(WS_CURSOR_LEFT);
 					printf(" ");
 					ws_moveCursor(WS_CURSOR_LEFT);
 				}
+				break;
 			}
-		} else if (current == '\t') {
-			const char* list[50];
-			int list_size = 0;
-			for (int i = 0; i < command_size; i++) {
-				ws_setConsoleColors((ws_color_t) {WS_FG_BRIGHT_GREEN, WS_BG_DEFAULT});
-				if (commands[i].command_name && ws_internal_startsWith(commands[i].command_name, commandBuf)) {
-					list[list_size] = commands[i].command_name;
-					list_size++;
-				}
+			case WS_KEY_INPUT_DELETE: {
+				size_t len = strlen(commandBuf);
+				if (current_position > len) break; // Nothing under the cursor
 
-				for (uint8_t alias_idx = 0; alias_idx < commands[i].alias_count; alias_idx++) {
-					if (commands[i].aliases[alias_idx] && ws_internal_startsWith(commands[i].aliases[alias_idx], commandBuf)) {
-						bool already_in_list = false;
-						for (int j = 0; j < list_size; j++) {
-							if (strcmp(list[j], commands[i].command_name) == 0) {
-								already_in_list = true;
-								break;
+				for (size_t i = current_position - 1; i < len; i++) {
+					commandBuf[i] = commandBuf[i + 1];
+				}
+				ws_internal_redrawLine(commandBuf, current_position);
+				break;
+			}
+			case WS_KEY_INPUT_CANCEL: {
+				printf("^C\n");
+				newCommand = true;
+				break;
+			}
+			case WS_KEY_INPUT_CLEAR_LINE: {
+				memset(commandBuf, 0, MAX_COMMAND_BUF);
+				history_index = -1;
+				current_position = 1;
+				ws_internal_redrawLine(commandBuf, current_position);
+				break;
+			}
+			case WS_KEY_INPUT_CLEAR_SCREEN: {
+				ws_executeCommand("clear");
+				ws_internal_redrawLine(commandBuf, current_position);
+				break;
+			}
+			case WS_KEY_INPUT_TAB: {
+				const char* list[50];
+				int list_size = 0;
+				for (int i = 0; i < command_size; i++) {
+					ws_setConsoleColors((ws_color_t) {WS_FG_BRIGHT_GREEN, WS_BG_DEFAULT});
+					if (commands[i].command_name && ws_internal_startsWith(commands[i].command_name, commandBuf)) {
+						list[list_size] = commands[i].command_name;
+						list_size++;
+					}
+
+					for (uint8_t alias_idx = 0; alias_idx < commands[i].alias_count; alias_idx++) {
+						if (commands[i].aliases[alias_idx] && ws_internal_startsWith(commands[i].aliases[alias_idx], commandBuf)) {
+							bool already_in_list = false;
+							for (int j = 0; j < list_size; j++) {
+								if (strcmp(list[j], commands[i].command_name) == 0) {
+									already_in_list = true;
+									break;
+								}
+							}
+							if (!already_in_list) {
+								list[list_size] = commands[i].aliases[alias_idx];
+								list_size++;
 							}
 						}
-						if (!already_in_list) {
-							list[list_size] = commands[i].aliases[alias_idx];
-							list_size++;
-						}
-					}
-				}
-				ws_setConsoleColors(ws_getDefaultColors());
-			}
-
-			if (list_size == 1) {
-				size_t len = strlen(commandBuf);
-				const char* currentCommand = list[0];
-				for (size_t i = len; i < strlen(currentCommand); i++) {
-					printf("%c", currentCommand[i]);
-					ws_internal_strcat_c(commandBuf, currentCommand[i], MAX_COMMAND_BUF);
-				}
-				current_position = strlen(commandBuf) + 1;
-				tabPressed = false;
-			} else if (tabPressed) {
-				if (list_size == 0) {
-					ws_setConsoleColors((ws_color_t) {WS_FG_BRIGHT_RED, WS_BG_DEFAULT});
-					printf("\nNo command starting with: %s\n", commandBuf);
-					memset(commandBuf, 0, MAX_COMMAND_BUF * sizeof(char));
-					commandBuf[0] = '\0';
-					newCommand = true;
-				} else if (list_size > 1) {
-					ws_setConsoleColors((ws_color_t) {WS_FG_YELLOW, WS_BG_DEFAULT});
-					printf("\n");
-					for (int i = 0; i < list_size; i++) {
-						printf("%s\n", list[i]);
 					}
 					ws_setConsoleColors(ws_getDefaultColors());
-					printf("\r%s%s", prefix, commandBuf);
+				}
 
-					// Reposition cursor if tab completion ran mid-line
-					for (size_t i = strlen(commandBuf) + 1; i > current_position; i--) {
-						ws_moveCursor(WS_CURSOR_LEFT);
+				if (list_size == 1) {
+					size_t len = strlen(commandBuf);
+					const char* currentCommand = list[0];
+					for (size_t i = len; i < strlen(currentCommand); i++) {
+						printf("%c", currentCommand[i]);
+						ws_internal_strcat_c(commandBuf, currentCommand[i], MAX_COMMAND_BUF);
 					}
+					current_position = strlen(commandBuf) + 1;
+					tabPressed = false;
+				} else if (tabPressed) {
+					if (list_size == 0) {
+						ws_setConsoleColors((ws_color_t) {WS_FG_BRIGHT_RED, WS_BG_DEFAULT});
+						printf("\nNo command starting with: %s\n", commandBuf);
+						memset(commandBuf, 0, MAX_COMMAND_BUF * sizeof(char));
+						commandBuf[0] = '\0';
+						newCommand = true;
+					} else if (list_size > 1) {
+						ws_setConsoleColors((ws_color_t) {WS_FG_YELLOW, WS_BG_DEFAULT});
+						printf("\n");
+						for (int i = 0; i < list_size; i++) {
+							printf("%s\n", list[i]);
+						}
+						ws_setConsoleColors(ws_getDefaultColors());
+
+						// Reposition cursor if tab completion ran mid-line
+						ws_internal_redrawLine(commandBuf, current_position);
+					}
+					tabPressed = false;
+				} else {
+					tabPressed = true;
 				}
-				tabPressed = false;
-			} else {
-				tabPressed = true;
+				ws_setConsoleColors(ws_getDefaultColors());
+				break;
 			}
-			ws_setConsoleColors(ws_getDefaultColors());
-		} else if (current == EOF) {
-			break;
-			// This is *incredibly* annoying to deal with, and not really needed for what we do
-			// } else if (current == '\033') {
-			// 	input_result = ws_internal_processVirtualSequence();
-		} else if (current == 0xE0) {
-			input_result = ws_internal_processEO();
-		} else {
-			ws_internal_insert_c(commandBuf, MAX_COMMAND_BUF, (char) current, current_position);
-			if (current_position != strlen(commandBuf)) {
-				CLEAR_ROW;
-				printf("\r%s%s", prefix, commandBuf);
-				for (size_t i = strlen(commandBuf) + 1; i > current_position + 1; i--) {
-					ws_moveCursor(WS_CURSOR_LEFT);
+			case WS_KEY_INPUT_CHAR: {
+				if (strlen(commandBuf) + 1 >= MAX_COMMAND_BUF) break; // Buffer is full
+
+				ws_internal_insert_c(commandBuf, MAX_COMMAND_BUF, input.character, current_position);
+				if (current_position != strlen(commandBuf)) {
+					ws_internal_redrawLine(commandBuf, current_position + 1);
+				} else {
+					printf("%c", input.character);
 				}
-			} else {
-				printf("%c", current);
+				current_position++;
+				break;
 			}
-			current_position++;
+			case WS_KEY_INPUT_ESCAPE:
+			default:                  break;
 		}
 #ifdef PRINTING_NEEDS_FLUSH
 		fflush(ws_out_stream);
@@ -2561,13 +2788,33 @@ bool ws_promptUser(const char* format, ...) {
 	va_end(arg);
 
 	printf(" [Y/n] ");
-	int first_input = ws_internal_get_char_blocking();
-	printf("%c", first_input);
-	int input;
-	do {
-		input = ws_internal_get_char_blocking();
-		printf("%c", input);
-	} while (input != '\n' && input != '\r');
-	if (first_input == 'Y' || first_input == 'y') return true;
-	return false;
+
+	ws_key_input_t input;
+	char first_input = 0;
+	while (true) {
+		ws_internal_waitKey(&input);
+		if (input.type == WS_KEY_INPUT_ENTER) {
+			printf("\n");
+			break;
+		}
+		if (input.type == WS_KEY_INPUT_CANCEL || input.type == WS_KEY_INPUT_ESCAPE) {
+			printf("\n");
+			return false;
+		}
+		if (input.type == WS_KEY_INPUT_BACKSPACE) {
+			if (first_input != 0) {
+				first_input = 0;
+				ws_moveCursor(WS_CURSOR_LEFT);
+				printf(" ");
+				ws_moveCursor(WS_CURSOR_LEFT);
+			}
+			continue;
+		}
+		if (input.type != WS_KEY_INPUT_CHAR) continue;
+
+		if (first_input == 0) first_input = input.character;
+		printf("%c", input.character);
+	}
+
+	return (first_input == 'Y' || first_input == 'y');
 }

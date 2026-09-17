@@ -31,6 +31,8 @@ extern "C" {
 	char* strchr(const char* str, int ch);
 	char* strrchr(const char* s, int c);
 
+	char* strstr(const char* str, const char* sub);
+
 	void* memcpy(void*, const void*, size_t);
 	int memcmp(const void* s1, const void* s2, size_t n);
 

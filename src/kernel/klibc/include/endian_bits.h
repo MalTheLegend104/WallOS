@@ -190,7 +190,7 @@ static inline uint64_t mmio_read64_split(const volatile void* addr) {
  * @return Value read from the register.
  */
 static inline uint64_t mmio_read64(const volatile void* addr) {
-#ifdef WALLOS_ARCH_64
+#ifdef WALLOS_HAS_64_BIT_MMIO
 	return *(const volatile uint64_t*) addr;
 #else
 	return mmio_read64_split(addr);
@@ -253,7 +253,7 @@ static inline void mmio_write64_split(volatile void* addr, uint64_t value) {
  * @param value Value to write.
  */
 static inline void mmio_write64(volatile void* addr, uint64_t value) {
-#ifdef WALLOS_ARCH_64
+#ifdef WALLOS_HAS_64_BIT_MMIO
 	* (volatile uint64_t*) addr = value;
 #else
 	mmio_write64_split(addr, value);

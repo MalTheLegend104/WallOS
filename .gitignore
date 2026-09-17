@@ -22,3 +22,4 @@ tools/usb_dev/usb.ids
 compile_commands.json
 disk.img
 fat32_2.img
+targets/x86_64/iso/boot/initrd.img

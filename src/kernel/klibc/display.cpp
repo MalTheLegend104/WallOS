@@ -1,6 +1,6 @@
+#include <apollo.h>
 #include <klibc/display.h>
 #include <klibc/kprint.h>
-#include <apollo.h>
 #include <string.h>
 
 #include <drivers/serial.h>
@@ -9,8 +9,8 @@
 #include <klibc/multiboot.h>
 
 #include <fonts/apollo_12x18.h>
-#include <fonts/apollo_8x16.h>
 #include <fonts/apollo_16x16.h>
+#include <fonts/apollo_8x16.h>
 // ------------------------------------------------------------------------------------------------
 // Internal State
 // ------------------------------------------------------------------------------------------------
@@ -30,38 +30,115 @@ static framebuffer_t* render_target = &front_buffer;
 static bool use_backbuffer = false;
 
 static framebuffer_info_t fb_info;
-static apollo_font_instance font_instance = { NULL, 1, 1 };
+static apollo_font_instance font_instance = {NULL, 1, 1};
 static int fb_cursor_x = 0;
 static int fb_cursor_y = 0;
 
 uintptr_t framebuffer_ptr;
 
 // ------------------------------------------------------------------------------------------------
+// Software Cursor State
+// ------------------------------------------------------------------------------------------------
+static bool fb_cursor_visible = false;
+static bool fb_cursor_drawn = false;
+static int fb_saved_cursor_x = 0;
+static int fb_saved_cursor_y = 0;
+
+// ------------------------------------------------------------------------------------------------
 // Color Conversion
 // ------------------------------------------------------------------------------------------------
 static apollo_color_t display_color_to_apollo(display_color_t color) {
-	apollo_color_t result = { .alpha = 255, .red = 0, .green = 0, .blue = 0, .type = APOLLO_PIXEL_TYPE_ARGB8888 };
+	apollo_color_t result = {.alpha = 255, .red = 0, .green = 0, .blue = 0, .type = APOLLO_PIXEL_TYPE_ARGB8888};
 
 	switch (color) {
-		case DISPLAY_COLOR_BLACK:       result.alpha = 0; result.red = 0;   result.green = 0;   result.blue = 0;   break;
-		case DISPLAY_COLOR_BLUE:        result.red = 0;   result.green = 0;   result.blue = 170; break;
-		case DISPLAY_COLOR_GREEN:       result.red = 0;   result.green = 170; result.blue = 0;   break;
-		case DISPLAY_COLOR_CYAN:        result.red = 0;   result.green = 170; result.blue = 170; break;
-		case DISPLAY_COLOR_RED:         result.red = 170; result.green = 0;   result.blue = 0;   break;
-		case DISPLAY_COLOR_PURPLE:      result.red = 170; result.green = 0;   result.blue = 170; break;
-		case DISPLAY_COLOR_BROWN:       result.red = 170; result.green = 85;  result.blue = 0;   break;
-		case DISPLAY_COLOR_LIGHT_GREY:  result.red = 170; result.green = 170; result.blue = 170; break;
-		case DISPLAY_COLOR_DARK_GREY:   result.red = 85;  result.green = 85;  result.blue = 85;  break;
-		case DISPLAY_COLOR_LIGHT_BLUE:  result.red = 85;  result.green = 85;  result.blue = 255; break;
-		case DISPLAY_COLOR_LIGHT_GREEN: result.red = 85;  result.green = 255; result.blue = 85;  break;
-		case DISPLAY_COLOR_LIGHT_CYAN:  result.red = 85;  result.green = 255; result.blue = 255; break;
-		case DISPLAY_COLOR_LIGHT_RED:   result.red = 255; result.green = 85;  result.blue = 85;  break;
-		case DISPLAY_COLOR_PINK:        result.red = 255; result.green = 85;  result.blue = 255; break;
-		case DISPLAY_COLOR_YELLOW:      result.red = 255; result.green = 255; result.blue = 85;  break;
-		case DISPLAY_COLOR_WHITE:       result.red = 255; result.green = 255; result.blue = 255; break;
+		case DISPLAY_COLOR_BLACK:
+			result.alpha = 0;
+			result.red = 0;
+			result.green = 0;
+			result.blue = 0;
+			break;
+		case DISPLAY_COLOR_BLUE:
+			result.red = 0;
+			result.green = 0;
+			result.blue = 170;
+			break;
+		case DISPLAY_COLOR_GREEN:
+			result.red = 0;
+			result.green = 170;
+			result.blue = 0;
+			break;
+		case DISPLAY_COLOR_CYAN:
+			result.red = 0;
+			result.green = 170;
+			result.blue = 170;
+			break;
+		case DISPLAY_COLOR_RED:
+			result.red = 170;
+			result.green = 0;
+			result.blue = 0;
+			break;
+		case DISPLAY_COLOR_PURPLE:
+			result.red = 170;
+			result.green = 0;
+			result.blue = 170;
+			break;
+		case DISPLAY_COLOR_BROWN:
+			result.red = 170;
+			result.green = 85;
+			result.blue = 0;
+			break;
+		case DISPLAY_COLOR_LIGHT_GREY:
+			result.red = 170;
+			result.green = 170;
+			result.blue = 170;
+			break;
+		case DISPLAY_COLOR_DARK_GREY:
+			result.red = 85;
+			result.green = 85;
+			result.blue = 85;
+			break;
+		case DISPLAY_COLOR_LIGHT_BLUE:
+			result.red = 85;
+			result.green = 85;
+			result.blue = 255;
+			break;
+		case DISPLAY_COLOR_LIGHT_GREEN:
+			result.red = 85;
+			result.green = 255;
+			result.blue = 85;
+			break;
+		case DISPLAY_COLOR_LIGHT_CYAN:
+			result.red = 85;
+			result.green = 255;
+			result.blue = 255;
+			break;
+		case DISPLAY_COLOR_LIGHT_RED:
+			result.red = 255;
+			result.green = 85;
+			result.blue = 85;
+			break;
+		case DISPLAY_COLOR_PINK:
+			result.red = 255;
+			result.green = 85;
+			result.blue = 255;
+			break;
+		case DISPLAY_COLOR_YELLOW:
+			result.red = 255;
+			result.green = 255;
+			result.blue = 85;
+			break;
+		case DISPLAY_COLOR_WHITE:
+			result.red = 255;
+			result.green = 255;
+			result.blue = 255;
+			break;
 		// case DISPLAY_DEFAULT_BG:        result.red = 0; result.green = 0; result.blue = 0;  break;
 		// case DISPLAY_DEFAULT_FG:        result.red = 255; result.green = 255; result.blue = 255; break;
-		default:                        result.red = 170; result.green = 170; result.blue = 170; break;
+		default:
+			result.red = 170;
+			result.green = 170;
+			result.blue = 170;
+			break;
 	}
 
 	return result;
@@ -133,6 +210,23 @@ static inline void fast_memmove(void* dest, const void* src, size_t n) {
 // ------------------------------------------------------------------------------------------------
 // Framebuffer Mode Helpers
 // ------------------------------------------------------------------------------------------------
+void display_flush_rect(int x, int y, int width, int height) {
+	if (!use_backbuffer) return;
+
+	int bpp = fb_info.pixel_width;
+	size_t pitch = fb_info.pitch;
+
+	for (int row = 0; row < height; row++) {
+		int current_y = y + row;
+		if (current_y >= fb_info.height) break; // Don't draw off the bottom
+
+		uint8_t* dst = front_buffer.buffer + (current_y * pitch) + (x * bpp);
+		uint8_t* src = back_buffer.buffer + (current_y * pitch) + (x * bpp);
+
+		fast_memmove(dst, src, width * bpp);
+	}
+}
+
 void display_flush() {
 	if (display_mode != DISPLAY_MODE_FRAMEBUFFER) return;
 	if (!use_backbuffer) return;
@@ -157,14 +251,13 @@ static void fb_scroll(void) {
 
 	// Use the CURRENT render target (VRAM early, RAM late)
 	fast_memmove(render_target->buffer,
-		render_target->buffer + (pitch * font_height),
-		pitch * (fb_info.height - font_height));
+				 render_target->buffer + (pitch * font_height),
+				 pitch * (fb_info.height - font_height));
 
 	// Clear bottom line
 	apollo_color_t bg = display_color_to_apollo(current_bg);
-	coordinate_pair bottom_left = { 0, fb_info.height - font_height };
-	apollo_set_rect(render_target, bottom_left, PAIR_TOP_LEFT,
-		fb_info.width, font_height, bg);
+	coordinate_pair bottom_left = {0, fb_info.height - font_height};
+	apollo_set_rect(render_target, bottom_left, PAIR_TOP_LEFT, fb_info.width, font_height, bg);
 
 	if (use_backbuffer) {
 		display_flush();
@@ -207,9 +300,7 @@ static void fb_putc_internal(uint8_t c) {
 				fb_cursor_x * char_width,
 				fb_cursor_y * char_height
 			};
-			apollo_set_rect(render_target, pos, PAIR_TOP_LEFT,
-				char_width, char_height,
-				colors.background);
+			apollo_set_rect(render_target, pos, PAIR_TOP_LEFT, char_width, char_height, colors.background);
 		}
 		return;
 	}
@@ -232,6 +323,8 @@ static void fb_putc_internal(uint8_t c) {
 		fb_cursor_y * char_height
 	};
 	apollo_print_char(render_target, &font_instance, c, pos, colors);
+
+	display_flush_rect(pos.x, pos.y, char_width, char_height);
 
 	fb_cursor_x++;
 	if (fb_cursor_x >= chars_per_line) {
@@ -284,9 +377,7 @@ static apollo_pixel_type apollo_pixel_type_from_multiboot(const struct multiboot
 	uint8_t bsize = fb->framebuffer_blue_mask_size;
 
 #define MATCH(rp, rs, gp, gs, bp, bs) \
-    (rpos == (rp) && rsize == (rs) && \
-     gpos == (gp) && gsize == (gs) && \
-     bpos == (bp) && bsize == (bs))
+	(rpos == (rp) && rsize == (rs) && gpos == (gp) && gsize == (gs) && bpos == (bp) && bsize == (bs))
 
 	/* =======================
 	 * 32-bit formats
@@ -413,21 +504,60 @@ void init_framebuffer(framebuffer_t* framebuffer) {
 
 const char* pixel_type_to_string(apollo_pixel_type type) {
 	switch (type) {
-		case APOLLO_PIXEL_TYPE_UNKNOWN:		return "Unknown Pixel Type";
-		case APOLLO_PIXEL_TYPE_ARGB8888: 	return "ARGB8888";
-		case APOLLO_PIXEL_TYPE_RGB32: 		return "RGB 32-bit";
-		case APOLLO_PIXEL_TYPE_RGBA32: 		return "RGBA 32-bit";
-		case APOLLO_PIXEL_TYPE_BGR32: 		return "BGR 32-bit";
-		case APOLLO_PIXEL_TYPE_BGRA32: 		return "BGRA 32-bit";
-		case APOLLO_PIXEL_TYPE_RGB16_565: 	return "RGB 16-bit (5-6-5)";
-		case APOLLO_PIXEL_TYPE_RGB16_555: 	return "RGB 16-bit (5-5-5)";
-		case APOLLO_PIXEL_TYPE_BGR16_565: 	return "BGR 16-bit (5-6-5)";
-		case APOLLO_PIXEL_TYPE_BGR16_555: 	return "BGR 16-bit (5-5-5)";
-		case APOLLO_PIXEL_TYPE_RGB24: 		return "RGB 24-bit";
-		case APOLLO_PIXEL_TYPE_BGR24: 		return "BGR 24-bit";
-		default: 							return "Invalid Pixel Type";
+		case APOLLO_PIXEL_TYPE_UNKNOWN:   return "Unknown Pixel Type";
+		case APOLLO_PIXEL_TYPE_ARGB8888:  return "ARGB8888";
+		case APOLLO_PIXEL_TYPE_RGB32:     return "RGB 32-bit";
+		case APOLLO_PIXEL_TYPE_RGBA32:    return "RGBA 32-bit";
+		case APOLLO_PIXEL_TYPE_BGR32:     return "BGR 32-bit";
+		case APOLLO_PIXEL_TYPE_BGRA32:    return "BGRA 32-bit";
+		case APOLLO_PIXEL_TYPE_RGB16_565: return "RGB 16-bit (5-6-5)";
+		case APOLLO_PIXEL_TYPE_RGB16_555: return "RGB 16-bit (5-5-5)";
+		case APOLLO_PIXEL_TYPE_BGR16_565: return "BGR 16-bit (5-6-5)";
+		case APOLLO_PIXEL_TYPE_BGR16_555: return "BGR 16-bit (5-5-5)";
+		case APOLLO_PIXEL_TYPE_RGB24:     return "RGB 24-bit";
+		case APOLLO_PIXEL_TYPE_BGR24:     return "BGR 24-bit";
+		default:                          return "Invalid Pixel Type";
 	}
 }
+static void fb_toggle_cursor(int cx, int cy) {
+	if (!font_instance.font) return;
+
+	int char_width = font_instance.font->font_width * font_instance.x_scaling;
+	int char_height = font_instance.font->font_height * font_instance.y_scaling;
+	int bpp = render_target->info->pixel_width;
+	size_t pitch = render_target->info->pitch;
+
+	int px = cx * char_width;
+	int py = cy * char_height;
+
+	if (px + char_width > fb_info.width || py + char_height > fb_info.height) return;
+
+	// Invert the pixels in the backbuffer to create the cursor block
+	for (int row = 0; row < char_height; row++) {
+		uint8_t* ptr = render_target->buffer + ((py + row) * pitch) + (px * bpp);
+		for (int i = 0; i < char_width * bpp; i++) {
+			ptr[i] = ~ptr[i];
+		}
+	}
+
+	// Flush just this tiny changed rectangle to VRAM
+	display_flush_rect(px, py, char_width, char_height);
+}
+
+static void fb_erase_cursor(void) {
+	if (!fb_cursor_drawn) return;
+	fb_toggle_cursor(fb_saved_cursor_x, fb_saved_cursor_y);
+	fb_cursor_drawn = false;
+}
+
+static void fb_draw_cursor(void) {
+	if (!fb_cursor_visible || fb_cursor_drawn) return;
+	fb_toggle_cursor(fb_cursor_x, fb_cursor_y);
+	fb_saved_cursor_x = fb_cursor_x;
+	fb_saved_cursor_y = fb_cursor_y;
+	fb_cursor_drawn = true;
+}
+
 // ------------------------------------------------------------------------------------------------
 // Public API Implementation
 // ------------------------------------------------------------------------------------------------
@@ -489,20 +619,20 @@ void display_init_late() {
 
 	size_t fb_size = fb_info.height * fb_info.pitch;
 
-	// 1. Map or Allocate the system RAM buffer
-	// You might use your own 'kmalloc' or 'PageFrameAllocator::requestPage'
 	void* ram_buffer = kalloc(fb_size);
 
 	if (ram_buffer) {
+		fb_erase_cursor();
+
 		back_buffer.info = &fb_info;
 		back_buffer.buffer = (uint8_t*) ram_buffer;
 
-		// 2. Sync current screen state to the backbuffer so we don't start with a black screen
 		memcpy(back_buffer.buffer, front_buffer.buffer, fb_size);
 
-		// 3. SWITCH THE TARGET: All future draws go to RAM
 		render_target = &back_buffer;
 		use_backbuffer = true;
+
+		fb_draw_cursor();
 
 		printf_serial("[FB] Switched to back buffer.\r\n");
 	}
@@ -514,44 +644,6 @@ display_mode_t display_get_mode(void) {
 
 bool display_switch_mode(display_mode_t mode) {
 	return display_init(mode);
-}
-
-void display_clear(void) {
-	if (display_mode == DISPLAY_MODE_VGA_TEXT) {
-		clearVGABuf();
-		enable_cursor(0, 25);
-		update_cursor(0, 0);
-	} else {
-		apollo_color_t bg = display_color_to_apollo(current_bg);
-
-		apollo_fill_buffer(render_target, bg);
-
-		fb_cursor_x = 0;
-		fb_cursor_y = 0;
-
-		if (use_backbuffer) {
-			display_flush();
-		}
-	}
-}
-
-void display_clear_row(void) {
-	if (display_mode == DISPLAY_MODE_VGA_TEXT) {
-		clear_current_row();
-	} else {
-		if (!font_instance.font) return;
-		apollo_color_t bg = display_color_to_apollo(current_bg);
-		int char_height = font_instance.font->font_height * font_instance.y_scaling;
-		coordinate_pair pos = { 0, fb_cursor_y * char_height };
-
-		apollo_set_rect(render_target, pos, PAIR_TOP_LEFT, fb_info.width, char_height, bg);
-
-		fb_cursor_x = 0;
-
-		if (use_backbuffer) {
-			display_flush();
-		}
-	}
 }
 
 void display_set_colors(int fg, int bg) {
@@ -572,7 +664,9 @@ void display_putc(unsigned char c) {
 	if (display_mode == DISPLAY_MODE_VGA_TEXT) {
 		putc_vga(c);
 	} else {
+		fb_erase_cursor();
 		fb_putc_internal(c);
+		fb_draw_cursor();
 	}
 }
 
@@ -580,7 +674,9 @@ void display_putc_unfiltered(char c) {
 	if (display_mode == DISPLAY_MODE_VGA_TEXT) {
 		putc_vga_unfiltered(c);
 	} else {
+		fb_erase_cursor();
 		fb_putc_internal(c);
+		fb_draw_cursor();
 	}
 }
 
@@ -588,10 +684,51 @@ void display_puts(const char* str) {
 	if (display_mode == DISPLAY_MODE_VGA_TEXT) {
 		puts_vga(str);
 	} else {
+		fb_erase_cursor();
 		for (const char* p = str; *p; p++) {
 			fb_putc_internal(*p);
 		}
-		display_flush();
+		fb_draw_cursor();
+	}
+}
+
+void display_clear(void) {
+	if (display_mode == DISPLAY_MODE_VGA_TEXT) {
+		clearVGABuf();
+		enable_cursor(0, 25);
+		update_cursor(0, 0);
+	} else {
+		fb_erase_cursor();
+
+		apollo_color_t bg = display_color_to_apollo(current_bg);
+		apollo_fill_buffer(render_target, bg);
+
+		fb_cursor_x = 0;
+		fb_cursor_y = 0;
+
+		fb_draw_cursor();
+		if (use_backbuffer) display_flush();
+	}
+}
+
+void display_clear_row(void) {
+	if (display_mode == DISPLAY_MODE_VGA_TEXT) {
+		clear_current_row();
+	} else {
+		if (!font_instance.font) return;
+
+		fb_erase_cursor();
+
+		apollo_color_t bg = display_color_to_apollo(current_bg);
+		int char_height = font_instance.font->font_height * font_instance.y_scaling;
+		coordinate_pair pos = {0, fb_cursor_y * char_height};
+
+		apollo_set_rect(render_target, pos, PAIR_TOP_LEFT, fb_info.width, char_height, bg);
+
+		fb_cursor_x = 0;
+
+		fb_draw_cursor();
+		if (use_backbuffer) display_flush();
 	}
 }
 
@@ -627,17 +764,23 @@ int vprintf_color(int fg, int bg, const char* fmt, va_list arg) {
 	display_set_colors_default();
 	return ret;
 }
-
 void display_enable_cursor(uint8_t cursor_start, uint8_t cursor_end) {
 	if (display_mode == DISPLAY_MODE_VGA_TEXT) {
 		enable_cursor(cursor_start, cursor_end);
+	} else {
+		fb_cursor_visible = true;
+		fb_draw_cursor();
+		if (use_backbuffer) display_flush();
 	}
-	// Framebuffer mode: Could implement a software cursor if needed
 }
 
 void display_disable_cursor(void) {
 	if (display_mode == DISPLAY_MODE_VGA_TEXT) {
 		disable_cursor();
+	} else {
+		fb_cursor_visible = false;
+		fb_erase_cursor();
+		if (use_backbuffer) display_flush();
 	}
 }
 
@@ -645,8 +788,11 @@ void display_update_cursor(int x, int y) {
 	if (display_mode == DISPLAY_MODE_VGA_TEXT) {
 		update_cursor(x, y);
 	} else {
+		fb_erase_cursor();
 		fb_cursor_x = x;
 		fb_cursor_y = y;
+		fb_draw_cursor();
+		if (use_backbuffer) display_flush();
 	}
 }
 
@@ -662,7 +808,7 @@ void display_get_cursor(int* x, int* y) {
 	}
 }
 
-void display_get_dimensions(int* width, int* height) {
+void display_get_dimensions_chars(int* width, int* height) {
 	if (display_mode == DISPLAY_MODE_VGA_TEXT) {
 		if (width) *width = 80;
 		if (height) *height = 25;
@@ -677,6 +823,24 @@ void display_get_dimensions(int* width, int* height) {
 			if (height) *height = 0;
 		}
 	}
+}
+
+void display_get_dimensions_pixels(int* width, int* height) {
+	if (display_mode == DISPLAY_MODE_VGA_TEXT) {
+		if (width) *width = 80;
+		if (height) *height = 25;
+	} else {
+		if (width) *width = fb_info.width;
+		if (height) *height = fb_info.height;
+	}
+}
+
+int display_get_bpp(void) {
+	if (display_mode == DISPLAY_MODE_VGA_TEXT) {
+		return 4;
+	}
+
+	return fb_info.pixel_width * 8;
 }
 
 void display_set_font(const apollo_font* font) {

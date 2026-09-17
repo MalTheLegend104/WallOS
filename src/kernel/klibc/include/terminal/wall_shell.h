@@ -26,16 +26,16 @@
 #define COMMAND_HANDLER_H
 
 /* Freestanding headers. */
-#include <stdint.h>
-#include <stddef.h>
-#include <stdbool.h>
 #include <stdarg.h>
+#include <stdbool.h>
+#include <stddef.h>
+#include <stdint.h>
 
 /* Standard Library Headers */
-#include <string.h>
-#include <stdlib.h>
-#include <stdio.h>
 #include <ctype.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
 
 /* Config Header */
 #if defined(__has_include)
@@ -70,10 +70,10 @@ extern "C" {
 #ifndef CUSTOM_THREADS
 #ifdef _WIN32
 #include <Windows.h>
-/**
- * @brief Wrapper around your system's mutex type.
- * @note `CRITICAL_SECTION` is replaced with your systems mutex type.
- */
+	/**
+	 * @brief Wrapper around your system's mutex type.
+	 * @note `CRITICAL_SECTION` is replaced with your systems mutex type.
+	 */
 	typedef CRITICAL_SECTION ws_mutex_t;
 	/**
 	 * @brief Wrapper around your system's thread handle.
@@ -83,10 +83,10 @@ extern "C" {
 
 #else
 #include <pthread.h>
-/**
- * @brief Wrapper around your system's mutex type.
- * @note `pthread_mutex_t` is replaced with your systems mutex type.
- */
+	/**
+	 * @brief Wrapper around your system's mutex type.
+	 * @note `pthread_mutex_t` is replaced with your systems mutex type.
+	 */
 	typedef pthread_mutex_t ws_mutex_t;
 	/**
 	 * @brief Wrapper around your system's thread hadnle.
@@ -95,7 +95,7 @@ extern "C" {
 	typedef uint64_t ws_thread_id_t;
 #endif // _WIN32
 #endif
-/* Mutex */
+	/* Mutex */
 	void ws_lockMutex(ws_mutex_t* mut);
 	void ws_unlockMutex(ws_mutex_t* mut);
 	ws_mutex_t* ws_createMutex();
@@ -224,7 +224,7 @@ extern "C" {
 		// No, I don't like the const char* const* either.
 		// It's technically more correct than const char**
 		const char* const* aliases; // optional
-		uint8_t	alias_count; // required if aliases is defined.
+		uint8_t alias_count; // required if aliases is defined.
 
 		/* One of main_void, main_func, or env_func is required.
 		 * If all are defined, only env_func will be called.
@@ -301,6 +301,11 @@ extern "C" {
 	uint64_t ws_get_uint64(const ws_context_t* ctx, const char* name);
 	double ws_get_double(const ws_context_t* ctx, const char* name);
 	const char* ws_get_generic(const ws_context_t* ctx, const char* name);
+
+	const char* ws_getCWD(void);
+	size_t ws_copyCWD(char* out, size_t out_size);
+	bool ws_setCWD(const char* path);
+	bool ws_resolvePath(const char* path, char* out, size_t out_size);
 
 	/* There are more types than we have ws_get_* functions for.
 	 * Any of the other int types should be cast to the proper type.
