@@ -128,6 +128,8 @@ These are not necessarily in order. It's been a _very_ long since I've merged in
    - Added a ton of new features to this, and actually "ported" the standalone version of WallShell I maintained separately to WallOS. Dedicated way to extract arguments, CWD, proper input handling, some keybinds, etc.
 6. Timing
    - Added a proper timer interface that's abstracted from x86_64. Designed to be able to support a ton of different timers in a system with different purposes, and should be very platform agnostic. Also added HPET support, which I should've done a long time ago.
+7. Ported [Kilo](https://github.com/antirez/kilo)
+   - I wanted a way to actually edit files, so I ported the most minimal text editor I could find. Had no interest in writing my own. I had to do a decent amount of work for this to work with my display and input APIs. It works incredibly well for how small it is.
 
 ### Kernel
 
