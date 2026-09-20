@@ -14,89 +14,11 @@
 // ------------------------------------------------------------------------------------------------
 // Clear command
 // ------------------------------------------------------------------------------------------------
-<<<<<<< HEAD
 const char* clear_aliases[] = {"clr", "cls"};
 int clear_command(void) {
 	display_clear();
 	display_update_cursor(0, 0);
 	// printf("\n");
-=======
-const char* clear_aliases[] = { "clr", "cls" };
-int clear_command(int argc, char** argv) {
-	clearVGABuf();
-	printf("\n");
-	return 0;
-}
-int clear_help(int argc, char** argv) {
-	HelpEntryGeneral entry = {
-		"Clear",
-		"Clears the screen",
-		NULL,
-		0,
-		clear_aliases,
-		2 
-	};
-	printGeneralHelp(&entry);
-	return 0;
-}
-
-// ------------------------------------------------------------------------------------------------
-// Test command
-// ------------------------------------------------------------------------------------------------
-const char* test_aliases[] = { "te", "tes", "zest" };
-int test_command(int argc, char** argv) {
-	printf("argc: %d\n", argc);
-
-	for (int i = 0; i < argc; i++) {
-		printf("argv[%d]: %s\n", i, argv[i]);
-	}
-
-	return -1; // Success
-}
-int test_help(int argc, char** argv) {
-	if (argc > 1) {
-		// Specific Help
-		for (int i = 1; i <= argc; i++) {
-			// 
-			if (strcmp(argv[i], "a") == 0) {
-				const char* required[] = {
-					"-a     -> desription of the flag -a",
-					"-asdf  -> desription of the flag -asdf"
-				};
-				const char* optional[] = {
-					"-d     -> desription of the flag -d",
-				};
-				HelpEntry entry = {
-					"Test A",
-					"Test command that does test things.",
-					required,
-					2,
-					optional,
-					1
-				};
-				printSpecificHelp(&entry);
-			}
-			// Check for other specific commands as you wish
-		}
-
-	} else {
-		// General Help
-		const char* commands[] = {
-		"a      -> command a",
-		"asdf   -> command asdf"
-		};
-		HelpEntryGeneral entry = {
-			"Test",
-			"Test command that does test things.",
-			commands,
-			2,
-			test_aliases,
-			2
-		};
-		printGeneralHelp(&entry);
-	}
-
->>>>>>> origin/main
 	return 0;
 }
 
