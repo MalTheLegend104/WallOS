@@ -1,19 +1,23 @@
 #ifndef _STDIO_H
 #define _STDIO_H
 #include <stdarg.h>
-#include <stdint.h>
 #include <stdbool.h>
 #include <stddef.h>
+#include <stdint.h>
+
+#include <print_type.h>
 
 #define EOF (-1)
 
 #ifdef __cplusplus
 extern "C" {
 #endif
-	extern void putc_vga(const unsigned char c);
-	int vprintf(const char* format, va_list arg);
+	int vsnprintf(char* str, size_t size, const char* format, va_list list);
+	int vprintf(const char* format, va_list list);
+
 	int printf(const char* format, ...);
-	int puts(const char* string);
+	int snprintf(char* str, size_t size, const char* format, ...);
+	int sprintf(char* str, const char* format, ...);
 
 	// Custom Extensions
 	size_t int_to_string(intmax_t value, int base, char* buf, size_t buflen);

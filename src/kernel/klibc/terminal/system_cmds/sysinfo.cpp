@@ -1,38 +1,36 @@
+#include <klibc/display.h>
+#include <stdarg.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <stdarg.h>
 
-#include <system/timing.h>
+#include <system/timer.h>
 
-#include <klibc/kprint.h>
 #include <klibc/features.hpp>
+#include <klibc/kprint.h>
 #include <memory/physical_mem.hpp>
 #include <memory/virtual_mem.h>
 
-#include <terminal/terminal.h>
 #include <terminal/commands/system_commands.h>
+#include <terminal/terminal.h>
 
 extern "C" {
 	extern uint64_t kernel_end;
-	int sysinfo(int argc, char** argv);
+	int sysinfo(void);
 	void sysinfo_boot();
 }
 
 void printValue(const char* title, const char* format, ...) {
-	set_colors(VGA_COLOR_PINK, VGA_DEFAULT_BG);
-	printf(title);
-	set_to_last();
-	set_colors(VGA_COLOR_LIGHT_GREY, VGA_DEFAULT_BG);
+	printf_color(PRINT_COLOR_PINK, PRINT_DEFAULT_BG, title);
+
 	va_list arg;
 	va_start(arg, format);
-	vprintf(format, arg);
+	vprintf_color(PRINT_COLOR_LIGHT_GREY, PRINT_DEFAULT_BG, format, arg);
 	va_end(arg);
-	set_to_last();
 }
 
 void printUptime() {
-	size_t time = get_system_up_time();
+	size_t time = timer_uptime_ms();
 	// Calculate years, months, days, hours, minutes, and seconds
 	// Calculate years, months, days, hours, minutes, and seconds
 	size_t years = time / (0x16BEE00); // 0x16BEE00 = 1000 * 60 * 60 * 24 * 365
@@ -52,11 +50,10 @@ void printUptime() {
 
 	size_t seconds = time / 0x3E8; // 0x3E8 = 1000
 	time %= 0x3E8;
-	set_colors(VGA_COLOR_PINK, VGA_DEFAULT_BG);
-	printf("Uptime: ");
-	set_to_last();
+	printf_color(PRINT_COLOR_PINK, PRINT_DEFAULT_BG, "Uptime: ");
 
-	set_colors(VGA_COLOR_LIGHT_GREY, VGA_DEFAULT_BG);
+
+	display_set_colors(PRINT_COLOR_LIGHT_GREY, PRINT_DEFAULT_BG);
 	if (years > 0) {
 		printf("%lldy ", years);
 	}
@@ -76,7 +73,7 @@ void printUptime() {
 		printf("%llds ", seconds);
 	}
 	printf("%lldms \n", time);
-	set_to_last();
+	display_set_colors_default();
 }
 
 // The first physical page begins after the kernel, rounded up.
@@ -101,15 +98,12 @@ void printMemInfo() {
 	}
 }
 
-#pragma GCC diagnostic ignored "-Wunused-parameter" 
 /**
  * @brief Prints general system information.
  *
- * @param argc Ignored
- * @param argv Ignored
  * @return int Always 0
  */
-int sysinfo(int argc, char** argv) {
+int sysinfo(void) {
 	/* This is supposed to be similar to neofetch on linux:
 	 * OS: WallOS v0.1
 	 * Uptime: <time>
@@ -124,11 +118,20 @@ int sysinfo(int argc, char** argv) {
 	// print_logo();
 	printf("\n");
 
-	printValue("OS: ", "%s\n", WALLOS_VERSION);
+	printValue("OS: ", "%s\n", WALLOS_VERSION_STR);
 	printUptime();
 	printValue("Packages: ", "No package manager yet.\n");
 	printValue("Shell: ", "%s\n", WALLOS_SHELL_VERSION);
-	printValue("GUI: ", "Default (VGA Text Mode)\n");
+	display_mode_t display_mode = display_get_mode();
+	int x, y;
+	int bpp = display_get_bpp();
+	display_get_dimensions_pixels(&x, &y);
+
+	if (display_mode == DISPLAY_MODE_FRAMEBUFFER) {
+		printValue("GUI: ", "Framebuffer (%dx%dx%d)\n", x, y, bpp);
+	} else {
+		printValue("GUI: ", "VGA Text Mode (%dx%d)\n", x, y);
+	}
 	printValue("CPU: ", "%s\n", Features::getCPUName());
 	printMemInfo();
 
@@ -142,9 +145,20 @@ int sysinfo(int argc, char** argv) {
  */
 void sysinfo_boot() {
 	printValue("General System Info:\n", "");
-	printValue("OS:     ", "%s\n", WALLOS_VERSION);
+	printValue("OS:     ", "%s\n", WALLOS_VERSION_STR);
 	printValue("Shell:  ", "%s\n", WALLOS_SHELL_VERSION);
-	printValue("GUI:    ", "Default (VGA Text Mode)\n");
+
+	display_mode_t display_mode = display_get_mode();
+	int x, y;
+	int bpp = display_get_bpp();
+	display_get_dimensions_pixels(&x, &y);
+
+	if (display_mode == DISPLAY_MODE_FRAMEBUFFER) {
+		printValue("GUI:    ", "Framebuffer (%dx%dx%d)\n", x, y, bpp);
+	} else {
+		printValue("GUI:    ", "VGA Text Mode (%dx%d)\n", x, y);
+	}
+
 	printValue("CPU:    ", "%s\n", Features::getCPUName());
 	printMemInfo();
 }

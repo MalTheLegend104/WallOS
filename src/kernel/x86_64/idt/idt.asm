@@ -75,8 +75,11 @@ irq_enable:
         ret
     .slave:
         ; Recursively enable master IRQ2, or else slave IRQs will not work.
-        mov     rdi,    2
+        push    rcx         ; Save original IRQ number (rcx) before the recursive call
+        mov     rdi,    2   ; Recursively enable master IRQ2
         call    irq_enable
+        pop     rcx          ; Restore original IRQ number
+
         ; Subtract 8 from the IRQ.
         sub     cl,     8
         ; Compute the mask ~(1 << IRQ).
@@ -120,24 +123,6 @@ irq_disable:
         or      al,     dl
         out     0xa1,   al
         ret
-
-; This is broken
-enableAPIC:
-	; Set the APIC enable bit (bit 11) in the IA32_APIC_BASE MSR
-	rdmsr                      ; Read the IA32_APIC_BASE MSR into EDX:EAX.
-	or     eax, (1 << 11)      ; Set bit 11 to enable the APIC.
-	wrmsr                      ; Write the modified value back to IA32_APIC_BASE MSR.
-
-	; Enable the x2APIC by setting the x2APIC_ENABLE bit (bit 10) in IA32_APIC_BASE MSR.
-	rdmsr                      ; Read the IA32_APIC_BASE MSR into EDX:EAX.
-	or     eax, (1 << 10)      ; Set bit 10 to enable x2APIC.
-	wrmsr                      ; Write the modified value back to IA32_APIC_BASE MSR.
-
-	mov     ecx, 0x21         ; The interrupt vector (ISR 0x21) we want to map the keyboard to.
-	mov     eax, 1 << 16      ; Set the Delivery Mode to "Fixed" (bits 8-10 = 0b000) and
-	or      eax, 1 << 11      ; Set the Destination Mode to "Physical" (bit 11 = 1).
-	mov     edx, 1 << 24      ; Set bit 24 to enable the interrupt (IA32_APIC_LVT_MASK).
-	wrmsr
 
 enablePS2:
 	ret

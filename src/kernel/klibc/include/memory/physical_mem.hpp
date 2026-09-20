@@ -54,6 +54,12 @@ namespace Memory {
 		uintptr_t getPhysKernelEnd();
 	}
 
+	/**
+	 * @brief Get a 2MB chunk of memory from below the 4GB mark.
+	 * A lot of legacy hardware (OHCI, UHCI, etc) can only access 32 bit physical addresses.
+	 * This should only be used sparingly, there's only so much 32 bit accessible memory that's free.
+	 */
+	uintptr_t PhysicalAlloc2MB_32bit();
 
 	uintptr_t PhysicalAlloc2MB();
 	uintptr_t PhysicalAlloc2MBSequential(size_t amount);

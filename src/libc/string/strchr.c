@@ -23,6 +23,7 @@ char* strchr(const char* str, int ch) {
 }
 
 char* strrchr(const char* s, int c) {
+	if (s == NULL) return 0;
 	const unsigned char* p = (const unsigned char*) s;
 	unsigned char ch = (unsigned char) c;
 

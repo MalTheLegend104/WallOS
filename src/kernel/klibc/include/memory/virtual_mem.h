@@ -16,6 +16,8 @@
 #define GET_PAGE_TABLE_INDEX(page)   (((page) >> 12) & 0x1FF)
 
 #define BIT_NX                     0x8000000000000000ULL // Highest bit, bit 63
+
+#define BIT_PAT_LARGE              0x1000ULL 
 #define BIT_11                     0x800ULL
 #define BIT_10                     0x400ULL
 #define BIT_9                      0x200ULL
@@ -28,6 +30,9 @@
 #define BIT_USR                    0x04ULL
 #define BIT_WRITE                  0x02ULL
 #define BIT_PRESENT                0x01ULL
+
+#define PDE_FLAGS_WC_2MB (BIT_PRESENT | BIT_WRITE | BIT_PWT | BIT_PCD | BIT_SIZE | BIT_PAT_LARGE)
+#define PDE_FLAGS_UC_2MB (BIT_PRESENT | BIT_WRITE | BIT_PCD | BIT_PWT | BIT_SIZE)
 
 #define POS_NX                     63
 #define POS_11                     11
@@ -72,11 +77,14 @@ namespace Memory {
 	void initVirtualMemory();
 
 	uintptr_t VirtToPhysBase(uintptr_t addr);
-	uintptr_t MapPreAllocMem(uintptr_t addr);
-	void mapFramebuffer(uintptr_t base_addr, size_t size);
-	uintptr_t MapKernelLocation(uintptr_t addr, size_t len);
+	void MapPreAllocMem(uintptr_t addr);
+	void mapFramebuffer(uintptr_t base_addr, size_t size, bool text_mode);
 	uintptr_t MapSequentialKernelPages(size_t pages);
 	uintptr_t MapSequentialKernelPages(size_t pages, uintptr_t base_addr);
+	uintptr_t MapSequentialKernelPagesWithFlags(size_t pages, uintptr_t phys_base_addr, uint64_t flags);
+
+	uintptr_t MapKernelLocation(uintptr_t addr, size_t len);
+	uintptr_t MapKernelLocationWithFlags(uintptr_t addr, size_t len, uint64_t flags);
 
 	void reserveMemory(uintptr_t base_addr, size_t size);
 
@@ -89,13 +97,46 @@ namespace Memory {
 	uintptr_t GetMappingEnd();
 }
 
+#include <terminal/terminal.h>
+const ws_command_argument_t virt_mem_cli_args[] = {
+	{ WS_ARG_TYPE_GENERIC, false, "command",  NULL, "One of: help, info, walk, v2p, dump." },
+	{ WS_ARG_TYPE_GENERIC, false, "argument", NULL, "Virtual address (walk/v2p) or table name (dump)." },
+};
+const size_t virt_mem_cli_args_count = sizeof(virt_mem_cli_args) / sizeof(virt_mem_cli_args[0]);
+
 extern "C" {
 #endif //__cplusplus
 
 	// C mappings for Memory Namespace. 
 	// Try to keep this minimal, most of the kernel should be C++ anyway.
+	/**
+	 * @brief Maps the provided address into the kernel address space.
+	 *
+	 * The entire 2MB page around the address will be mapped. The length is to check how many pages it takes up.
+	 * If (addr + len) is over the 2MB boundary, both pages will be mapped sequentially.
+	 *
+	 * @param addr The PHYSICAL address to be mapped. This will NOT work for remapping virtual addresses.
+	 * @param len Length of the requested mapping in bytes.
+	 * @return uintptr_t Virtual address corresponding to the provided physical address.
+	 */
 	uintptr_t mapKernelLocation(uintptr_t addr, size_t len);
 
+
+	/**
+	 * @brief Map sequential pages of virtual memory.
+	 * This assumes you've already provided/allocated the base address of the sequential physical pages you require.
+	 *
+	 * @param pages Amount of pages to map
+	 * @param phys_base_addr Base address of the physical pages.
+	 * If you have more than one page, it will automatically add 2MB_PAGE_SIZE to the base for each sequential page.
+	 * @param flags The flags to apply to the page, as defined in virtual_mem.h
+	 * @return uintptr_t The base virtual memory address corresponding to the provided physical addresses.
+	 */
+	uintptr_t mapSequentialKernelPagesWithFlags(size_t pages, uintptr_t phys_base_addr, uint64_t flags);
+
+	uintptr_t mapKernelLocationWithFlags(uintptr_t addr, size_t len, uint64_t flags);
+
+	uintptr_t virt_to_phys(uintptr_t addr);
 #ifdef __cplusplus
 }
 #endif // __cplusplus

@@ -33,6 +33,59 @@ struct idt_descriptor {
 struct idt_entry idt[256];
 struct idt_descriptor idt_desc;
 
+
+// ------------------------------------------------------------------------------------------------
+// ------------------------------------------------------------------------------------------------
+// Abstraction for EOI.
+// We need LAPIC EOI if using IOAPIC, regular PIC EOI otherwise.
+// ------------------------------------------------------------------------------------------------
+// ------------------------------------------------------------------------------------------------
+#include <x86_64/lapic.h>
+// Do we currently accept interrupts from the PIC?
+// False = Legacy PIC mode, True = IOAPIC/LAPIC mode.
+bool pic_disabled = false;
+
+void interrupt_eoi(uint8_t irq_number) {
+	if (pic_disabled) {
+		// Local APIC EOI is just a write of 0 to the EOI register
+		lapic_write(LAPIC_EOI, 0);
+	} else {
+		// Legacy PIC EOI
+		if (irq_number >= 8) {
+			outb(0xA0, 0x20); // Slave
+		}
+		outb(0x20, 0x20); // Master
+	}
+}
+
+/* A few IRQs are required to be level triggered rather than edge triggered.
+ * This is currently only used by ACPI but I want this abstraction in case I need it again.
+ */
+
+void irq_set_level_triggered(uint8_t irq) {
+	if (irq > 15) {
+		return; // The 8259 PIC only handles IRQs 0-15
+	}
+
+	uint16_t port = (irq < 8) ? 0x4D0 : 0x4D1;
+	uint8_t bit = irq % 8;
+
+	uint8_t elcr = inb(port);
+	outb(port, elcr | (1 << bit));
+}
+
+void irq_set_edge_triggered(uint8_t irq) {
+	if (irq > 15) {
+		return;
+	}
+
+	uint16_t port = (irq < 8) ? 0x4D0 : 0x4D1;
+	uint8_t bit = irq % 8;
+
+	uint8_t elcr = inb(port);
+	outb(port, elcr & ~(1 << bit));
+}
+
 // ------------------------------------------------------------------------------------------------
 // ------------------------------------------------------------------------------------------------
 // Generic IRQ Handlers for all interrupts
@@ -149,6 +202,7 @@ __attribute__((interrupt)) void general_protection_fault_handler(struct interrup
 
 	printf("\n=== GENERAL PROTECTION FAULT ===\n");
 	printf("Error code: %llu\n", error_code);
+	printf("  Selector: %u\n", selector);
 	printf("  Selector index: %u\n", index);
 	printf("  Table: %s\n",
 		ti == 0 ? "GDT" :
@@ -269,13 +323,16 @@ __attribute__((interrupt)) void test_sys_handler(struct interrupt_frame* frame) 
 // Keyboard Handler.
 __attribute__((interrupt)) void keyboard_handler(struct interrupt_frame* frame) {
 	handle_scancode(inb(0x60));
-	outb(0x20, 0x20);
+	// outb(0x20, 0x20);
+	interrupt_eoi(1);
 }
 
-#include <system/timing.h>
+#include <system/timer.h>
+#include <x86_64/timing.h>
 __attribute__((interrupt)) void system_pit(struct interrupt_frame* frame) {
-	incriment_sys_time();
-	outb(0x20, 0x20);
+	pit_handle_tick();
+	// outb(0x20, 0x20);
+	interrupt_eoi(0);
 }
 
 // ------------------------------------------------------------------------------------------------
@@ -307,7 +364,6 @@ void set_idt_entry_err(struct idt_entry* entry, void (*handler)(struct interrupt
 
 extern void idt_load(struct idt_descriptor* idt_desc);
 extern void disablePIC();
-extern void enableAPIC();
 extern void enablePS2();
 extern void reEnableIRQ1();
 
@@ -387,5 +443,9 @@ void initIDT() {
 	//enableAPIC();
 	//enablePS2();
 	// Call the external assembly function to load the IDT
+	idt_load(&idt_desc);
+}
+
+void ap_load_idt() {
 	idt_load(&idt_desc);
 }

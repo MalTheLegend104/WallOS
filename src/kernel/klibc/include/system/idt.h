@@ -51,6 +51,12 @@ extern "C" {
 	void remove_interrupt_handler(uint8_t entry);
 
 	void initIDT();
+
+	/**
+	 * @brief Meant to be called during AP bringup.
+	 * Loads the same IDT that we do on the BSP.
+	 */
+	void ap_load_idt();
 	/**
 	 * @brief Enable the IRQ number on the legacy 8529 PIC.
 	 * Ideally we should use the APIC, but legacy PIC support is baked in so idrc.
@@ -66,6 +72,18 @@ extern "C" {
 	 * @param irq IRQ number to enable on the PIC.
 	 */
 	extern void irq_disable(uint8_t irq);
+
+	void irq_set_level_triggered(uint8_t irq);
+	void irq_set_edge_triggered(uint8_t irq);
+
+	/**
+	 * @brief Abstracted EOI handler.
+	 *
+	 * It will send EOI to LAPIC if enabled, regular PIC otherwise.
+	 *
+	 * @param irq_number IRQ number we are servicing (0-15).
+	 */
+	void interrupt_eoi(uint8_t irq_number);
 #ifdef __cplusplus
 }
 #endif

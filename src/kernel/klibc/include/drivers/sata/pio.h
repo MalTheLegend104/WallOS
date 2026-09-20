@@ -39,6 +39,12 @@
 #define COMMAND_READ_MAX_ADDR		0xF8 // Max address the device supports
 #define COMMAND_SET_MAX_ADDR		0xF9 // Sets the max address that can be used in the future
 
+// LBA48 Extended Commands
+#define COMMAND_READ_SECTOR_EXT     0x24  // READ SECTORS EXT  (LBA48)
+#define COMMAND_WRITE_SECTOR_EXT    0x34  // WRITE SECTORS EXT (LBA48)
+#define COMMAND_FLUSH_CACHE_EXT     0xEA  // FLUSH CACHE EXT   (LBA48)
+#define COMMAND_READ_MAX_ADDR_EXT   0x27  // READ NATIVE MAX ADDRESS EXT
+
 // ATAPI Device Commands (CD/Floppy/Optical)
 // These are probably gonna be ignored for a while
 // They use SCSI not PIO, but it's still very similar.
@@ -477,6 +483,7 @@ extern "C" {
 		sata_device_identify identify;
 		bool exists;
 		bool atapi;
+		uint8_t hardware_id;
 	} drive_info_t;
 
 
@@ -485,7 +492,7 @@ extern "C" {
 	bool identify(int drive_number);
 
 	void detect_ide_drives();
-	int get_capacity_bytes(const sata_device_identify* device);
+	uint64_t get_capacity_bytes(const sata_device_identify* device);
 	int get_drive_info(int argc, char** argv);
 	int sata_test_cmd(int argc, char** argv);
 	bool sata_pio_read28(int drive_number, uint32_t lba, uint8_t sector_count, void* buffer);

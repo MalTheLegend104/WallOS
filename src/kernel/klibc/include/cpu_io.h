@@ -11,8 +11,6 @@
 extern "C" {
 #endif
 
-
-
 	// read an 8 bit value from a port
 	static inline uint8_t inb(uint16_t port) {
 		uint8_t ret;
@@ -42,6 +40,16 @@ extern "C" {
 	}
 	static inline void outl(uint16_t port, uint32_t val) {
 		__asm volatile ("outl %0, %1" : : "a"(val), "Nd"(port));
+	}
+
+	// This really belongs elsewhere, but whatever
+	static inline void i8042_flush(void) {
+		int timeout = 1000;
+		while ((inb(0x64) & 0x01) && timeout--) {
+			inb(0x60); // discard byte
+		}
+
+		outb(0x64, 0xAE);
 	}
 
 #ifdef __cplusplus

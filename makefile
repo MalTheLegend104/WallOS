@@ -7,13 +7,48 @@ THIS_FILE := $(lastword $(MAKEFILE_LIST)) # useful for if the user tries to incl
 include libs/libs.mk
 include src/initrd/initrd.mk
 
+# Define our framebuffer request.
+# GRUB will almost always give us what we request, as long as the UEFI/BIOS lets us
+# Default is 1920x1080x32bpp, basically everything will support it ant looks good enough
+# FRAMEBUFFER_WIDTH  := 1280
+# FRAMEBUFFER_HEIGHT := 720
+# FRAMEBUFFER_BPP    := 32
+
 # This is for qemu:
-ARGS ?= -m 5G -M hpet=on -machine pc -cpu max
+ARGS ?= -vga std -m 5G -M hpet=on -machine q35 -cpu max -smp 4 -serial stdio
+
+# This adds one of each type of USB host controllers
+# OHCI, UHCI, EHCI, and XHCI
+ARGS += \
+  -device qemu-xhci,id=xhci \
+  -device usb-kbd
+#   -device piix3-usb-uhci,id=uhci0
+#   -device usb-mouse
+#   -device usb-ehci,id=ehci0 \
+#   -device pci-ohci,id=ohci \
+
+ARGS += -device ahci,id=ahci0 \
+  -drive file=disk.img,if=none,id=d1 \
+  -device ide-hd,drive=d1,bus=ahci0.0
+#   -drive file=hda2.img,if=none,id=d2 \
+#   -device ide-hd,drive=d2,bus=ahci0.1
+
+# This filters the outputs from -d int (very poorly), to at least attempt to remove the timer interrupts
+# -d int -dfilter 0x0..0x1f,0x21..0xff 2>&1 | sed '/v=20/,/EFER=/d'
+
 # To add more devices, simply put them at any index 0-3, excluding 2.
 # Qemu mounts the cd drive at index 2 (secondary master drive)
 # ARGS += -drive file=hda.img,if=ide,media=disk,format=raw,index=0 \
 #         -drive file=hda2.img,if=ide,media=disk,format=raw,index=1 \
 #         -drive file=hda3.img,if=ide,media=disk,format=raw,index=3
+
+# Uncomment this to add audio devices to the system.
+ARGS +=  -audiodev sdl,id=snd0 \
+  -device sb16,audiodev=snd0 \
+  -device es1370,audiodev=snd0 \
+  -device ac97,audiodev=snd0
+
+# ARGS += -d int -dfilter 0x0..0x1f,0x21..0xff 2>&1 | sed '/v=20/,/EFER=/d'
 
 # These make it much easier to change things whenever we are finally self hosted.
 WALLOS_C_COMPILER 	:= x86_64-wallos-gcc
@@ -51,10 +86,23 @@ FORCED_INCLUDES = -include $(CURDIR)/wallos_debug_macros.h -include $(CURDIR)/wa
 
 # Default things for all platforms. This includes things like LIBC, the WallOS, and compile flags.
 DEBUG_SYMBOLS   :=
-C_FLAGS 		:= -ffreestanding -std=gnu99 -Wall -Wextra -Wno-format -nostdlib -lgcc -mno-red-zone -O0 -mcmodel=kernel $(DEBUG_SYMBOLS) $(FORCED_INCLUDES)
-CPP_FLAGS 		:= -ffreestanding -std=c++11 -fno-rtti -Wall -Wextra -Wno-format -nostdlib -lgcc -mno-red-zone -O0 -mcmodel=kernel $(DEBUG_SYMBOLS) $(FORCED_INCLUDES)
+C_FLAGS 		:= -ffreestanding -std=gnu99 -Wall -Wextra -Wno-format -nostdlib -lgcc -mno-red-zone -O2 -mcmodel=kernel $(DEBUG_SYMBOLS) $(FORCED_INCLUDES)
+CPP_FLAGS 		:= -ffreestanding -std=c++11 -fno-rtti -Wall -Wextra -Wno-format -nostdlib -lgcc -mno-red-zone -O2 -mcmodel=kernel $(DEBUG_SYMBOLS) $(FORCED_INCLUDES)
 NASM_FLAGS 		:= $(DEBUG_SYMBOLS)
 LINKER_FLAGS 	:=
+
+# Framebuffer settings
+# We want to make sure they are all set, and don't want the defines unless they are
+ifneq ($(FRAMEBUFFER_WIDTH),)
+ifneq ($(FRAMEBUFFER_HEIGHT),)
+ifneq ($(FRAMEBUFFER_BPP),)
+NASM_FLAGS += \
+	-DFB_WIDTH=$(FRAMEBUFFER_WIDTH) \
+	-DFB_HEIGHT=$(FRAMEBUFFER_HEIGHT) \
+	-DFB_BPP=$(FRAMEBUFFER_BPP)
+endif
+endif
+endif
 
 LIBC_INCLUDE	:= src/libc/include
 KLIBC_INCLUDE 	:= src/kernel/klibc/include
@@ -194,15 +242,15 @@ $(IDT_C_OBJ): build/x86_64/%.o : src/kernel/x86_64/%.c
 # all 	-> builds for all supported architectures
 # build 		-> builds for x86-64 (default)
 # build_arm64 	-> builds for Aarch64 <-------------------- This doesnt exist yet. It's just an example.
-# clean 		-> deletes all build files, iso's, etc. 
+# clean 		-> deletes all build files, iso's, etc.
 # qemu			-> builds x86-64 iso, then runs in qemu
 
 .PHONY: all build clean qemu
 
-all: 
-	+$(MAKE) -f $(THIS_FILE) initrd 
-	+$(MAKE) -f $(THIS_FILE) libs 
-	+$(MAKE) -f $(THIS_FILE) build 
+all:
+	+$(MAKE) -f $(THIS_FILE) initrd
+	+$(MAKE) -f $(THIS_FILE) libs
+	+$(MAKE) -f $(THIS_FILE) build
 
 build: $(LIBC_OBJ) $(KLIBC_OBJ) $(KCORE_OBJ) $(x86_64_OBJ) $(IDT_C_OBJ) initrd_temp
 	echo "$(COLOR_CYAN)<--------------------------------------------------------->$(END_COLOR)"
@@ -233,8 +281,14 @@ initrd_temp:
 
 
 qemu: all
+# 	qemu-system-x86_64 -cdrom dist/x86_64/WallOS.iso  -cpu max $(ARGS)
+	qemu-system-x86_64 -bios /usr/share/ovmf/OVMF.fd -cdrom dist/x86_64/WallOS.iso $(ARGS)
+
+qemu_only:
+	qemu-system-x86_64 -bios /usr/share/ovmf/OVMF.fd -cdrom dist/x86_64/WallOS.iso $(ARGS)
+
+qemu_bios:
 	qemu-system-x86_64 -cdrom dist/x86_64/WallOS.iso  -cpu max $(ARGS)
-# 	qemu-system-x86_64 -bios /usr/share/ovmf/OVMF.fd -cdrom dist/x86_64/WallOS.iso -vga virtio $(ARGS)
 
 clean: libs_clean initrd_clean
 	rm -rf build && echo "$(COLOR_GREEN)Cleaned build folder$(END_COLOR)"

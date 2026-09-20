@@ -2,10 +2,10 @@
 #include <stdbool.h>
 #include <stdio.h>
 
+#include <arch.h>
+
 #include <memory/semaphore.h>
 #include <memory/kernel_alloc.h>
-
-#include <system/timing.h>
 
 semaphore_t* semaphore_create(uint64_t max_count, uint64_t initial_count) {
 	if (initial_count > max_count) {
@@ -25,27 +25,31 @@ semaphore_t* semaphore_create(uint64_t max_count, uint64_t initial_count) {
 
 semaphore_status semaphore_wait(semaphore_t* sem, uint64_t units, uint64_t timeout) {
 	if (sem == NULL) return SEMAPHORE_FAILURE;
-	if (timeout == 0) timeout = UINT64_MAX;
+
+	// In ACPICA: 
+	// Timeout 0 means "return immediately if not available"
+	// Timeout 0xFFFF means "wait forever"
 
 	uint64_t time = 0;
-
 	while (true) {
-		if (time >= timeout) return SEMAPHORE_TIMEOUT;
 		uint64_t old_count = __atomic_load_n(&(sem->count), __ATOMIC_RELAXED);
 
-		// If the current count is greater than 0, try to decrement it
-		if (old_count > 0) {
-			// Attempt to atomically decrement the count
+		if (old_count >= units) {
 			if (__atomic_compare_exchange_n(&(sem->count), &old_count, old_count - units, false, __ATOMIC_ACQUIRE, __ATOMIC_RELAXED)) {
-				break;  // Successfully decremented
+				return SEMAPHORE_SUCCESS;
 			}
+			continue; // Retry immediately if CMPXCHG failed due to contention
 		}
 
-		sleep(1);
+		// If we can't get it and timeout is 0, fail immediately
+		if (timeout == 0) return SEMAPHORE_TIMEOUT;
+
+		// If we have a timeout and reached it, fail
+		if (timeout != 0xFFFF && time >= timeout) return SEMAPHORE_TIMEOUT;
+
+		cpu_pause();
 		time++;
 	}
-
-	return SEMAPHORE_SUCCESS;
 }
 
 semaphore_status semaphore_signal(semaphore_t* sem, uint64_t units) {

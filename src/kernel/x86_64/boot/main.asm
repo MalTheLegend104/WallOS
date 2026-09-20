@@ -178,6 +178,14 @@ section .text
 long_mode_start:
 	lgdt [GDT64Pointer64]
 
+    ; Perform a higher half jump
+    lea rax, [rel .upper_half]
+    mov rbx, KERNEL_VIRTUAL_BASE
+    add rax, rbx
+    jmp rax
+
+.upper_half:
+
    	mov ax, 0x10
 	mov ds, ax
 	mov es, ax
@@ -185,22 +193,28 @@ long_mode_start:
 	mov gs, ax
 	mov ss, ax
 
-	; Zero uninitialized memory so there's no junk
-	mov rdi, _bss_start_
-	mov rcx, _bss_end_
-	sub rcx, _bss_start_
-	xor rax, rax
-	rep stosb
-
 	mov rsp, stack_top
 
-	mov edi, DWORD[multiboot_data_magic]
+    mov edi, DWORD[multiboot_data_magic]
     mov esi, DWORD[multiboot_data_address]
-	call kernel_main
+    call kernel_main
     hlt
 
 section .bss
 align 4096
 stack_bottom:
-	resb 32768
+	; resb 32768
+	resb 65536
 stack_top:
+
+section .text
+bits 32
+enable_sse_main:
+	mov eax, cr0
+	and ax, 0xFFFB		;clear coprocessor emulation CR0.EM
+	or ax, 0x2			;set coprocessor monitoring  CR0.MP
+	mov cr0, eax
+	mov eax, cr4
+	or ax, 3 << 9		;set CR4.OSFXSR and CR4.OSXMMEXCPT at the same time
+	mov cr4, eax
+	ret

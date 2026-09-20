@@ -1,30 +1,44 @@
-#include <stdlib.h>
+#include <drivers/usb/usb_core.h>
+#include <print_type.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
-#include <panic.h>
 #include <multiboot.h>
+#include <panic.h>
 
 #include <acpi/acpi_init.h>
 
 #include <drivers/keyboard.h>
+#include <drivers/pci.h>
+#include <drivers/sata/pio.h>
 #include <drivers/serial.h>
 
-#include <klibc/kprint.h>
 #include <klibc/cpuid_calls.h>
-#include <klibc/logger.h>
+#include <klibc/display.h>
 #include <klibc/features.hpp>
+#include <klibc/kprint.h>
+#include <klibc/logger.h>
 #include <klibc/multiboot.h>
 
+#include <memory/kernel_alloc.h>
 #include <memory/physical_mem.hpp>
 #include <memory/virtual_mem.h>
-#include <memory/kernel_alloc.h>
 
-#include <system/idt.h>
 #include <system/cpuid.h>
-#include <system/timing.h>
+#include <system/idt.h>
+#include <system/timer.h>
 
+#include <terminal/wall_shell.h>
+#include <x86_64/timing.h>
+
+#include <terminal/commands/system_commands.h>
 #include <terminal/terminal.h>
+
+#include <filesystem/filesystems.h>
+
+// #include <ff.h>
+
 
 /* Okay, this is where the fun begins. Literally and figuratively.
  * We mark these extern c because we need to call it from asm,
@@ -38,29 +52,27 @@
  */
 extern "C" {
 	void kernel_main(unsigned int magic, multiboot_info* mbt_info);
-	void __cxa_pure_virtual() { }; // needed for pure virtual functions
+	void __cxa_pure_virtual() {}; // needed for pure virtual functions
 }
 
-#pragma GCC diagnostic ignored "-Wunused-parameter" 
+#pragma GCC diagnostic ignored "-Wunused-parameter"
 int bootdev_command(int argc, char** argv) {
 	const auto a = getBootDev();
-	set_colors(VGA_COLOR_LIGHT_CYAN, VGA_DEFAULT_BG);
-	printf("BIOS Drive Number: 0x%x\n", a->biosdev);
-	set_to_last();
+	printf_color(PRINT_COLOR_LIGHT_CYAN, PRINT_DEFAULT_BG, "BIOS Drive Number: 0x%x\n", a->biosdev);
 
-	set_colors(VGA_COLOR_CYAN, VGA_DEFAULT_BG);
+	display_set_colors(PRINT_COLOR_CYAN, PRINT_DEFAULT_BG);
 	printf("Partition: %d (not relevant for floppy or cd-rom)\n", a->part);
 	printf("SubPart: %d (not relevant for floppy or cd-rom)\n", a->slice);
-	set_to_last();
+	display_set_colors_default();
 
-	set_colors(VGA_COLOR_PINK, VGA_DEFAULT_BG);
+	display_set_colors(PRINT_COLOR_PINK, PRINT_DEFAULT_BG);
 	switch (a->biosdev) {
 		case 0x00: printf("Boot device assumed to be floppy. How did you get here...?\n"); break;
 		case 0x80: printf("Boot device assumed to be hard drive.\n"); break;
 		case 0xE0: printf("Boot device assumed to be CD-ROM (or similar).\n"); break;
-		default: printf("Boot device unknown. How did you get here...? (seriously please let me know)\n");
+		default:   printf("Boot device unknown. How did you get here...? (seriously please let me know)\n");
 	}
-	set_to_last();
+	display_set_colors_default();
 	return 0;
 }
 
@@ -98,7 +110,7 @@ int testKalloc(int argc, char** argv) {
 
 #include <syscall/syscall.h>
 
-#pragma GCC diagnostic ignored "-Wunused-parameter" 
+#pragma GCC diagnostic ignored "-Wunused-parameter"
 int syscall_command(int argc, char** argv) {
 	uint64_t syscall_number = UINT64_MAX;
 	// We default to the 64 bit max, anything outside of 0-255 isn't valid.
@@ -111,177 +123,22 @@ int syscall_command(int argc, char** argv) {
 		arg1 = atoi(argv[2]);
 	}
 	uint64_t ret;
-	asm volatile(
+	__asm__ volatile(
 		"movq %1, %%rax\n\t"
 		"movq %2, %%rdi\n\t"
 		"int $0x42\n\t"
 		"movq %%rax, %0\n\t"
-		: "=r" (ret)
-		: "r" (syscall_number), "r" (arg1)
+		: "=r"(ret)
+		: "r"(syscall_number), "r"(arg1)
 		: "rax", "rdi"
-		);
+	);
 	return ret;
 }
-
-// Apollo is the name of a framebuffer library im working on.
-// It's private right now and this was a test to make sure that it worked in a freestanding environment
-// This code will be useful, so it's getting pushed to main. 
-// The actual framebuffer implementation will later be on a different branch.
-#ifdef APOLLO_TEST
-#include <apollo.h>
-#include <fonts/apollo_12x18.h>
-#include <drivers/framebuffer.h>
-
-coordinate_pair current = { 0, 0 };
-
-// void putc_apollo(const unsigned char c) {
-// 	if (c == '\0') return;
-// 	apollo_print_char()
-// }
-
-void pixel_serial(apollo_pixel_type type) {
-	switch (type) {
-		case APOLLO_PIXEL_TYPE_UNKNOWN:
-			printf_serial("Unknown Pixel Type");
-			break;
-		case APOLLO_PIXEL_TYPE_RGB32:
-			printf_serial("RGB 32-bit");
-			break;
-		case APOLLO_PIXEL_TYPE_RGBA32:
-			printf_serial("RGBA 32-bit");
-			break;
-		case APOLLO_PIXEL_TYPE_BGR32:
-			printf_serial("BGR 32-bit");
-			break;
-		case APOLLO_PIXEL_TYPE_BGRA32:
-			printf_serial("BGRA 32-bit");
-			break;
-		case APOLLO_PIXEL_TYPE_RGB16_565:
-			printf_serial("RGB 16-bit (5-6-5)");
-			break;
-		case APOLLO_PIXEL_TYPE_RGB16_555:
-			printf_serial("RGB 16-bit (5-5-5)");
-			break;
-		case APOLLO_PIXEL_TYPE_BGR16_565:
-			printf_serial("BGR 16-bit (5-6-5)");
-			break;
-		case APOLLO_PIXEL_TYPE_BGR16_555:
-			printf_serial("BGR 16-bit (5-5-5)");
-			break;
-		case APOLLO_PIXEL_TYPE_RGB24:
-			printf_serial("RGB 24-bit");
-			break;
-		case APOLLO_PIXEL_TYPE_BGR24:
-			printf_serial("BGR 24-bit");
-			break;
-		default:
-			printf_serial("Invalid Pixel Type");
-			break;
-	}
-}
-
-void framebuffer() {
-	multiboot_tag_framebuffer* e = MultibootManager::getFramebufferTag();
-
-	// Memory::mapFramebuffer((uintptr_t) fb_base, e->common.framebuffer_height * e->common.framebuffer_pitch);
-
-	if (e->common.framebuffer_type == 1) {
-		// TODO: actually get the pixel type.
-		framebuffer_info_t fb_info;
-		framebuffer_t fb;
-		print_fb_info();
-
-		apollo_get_info(&fb_info);
-
-		printf_serial("here\r\n");
-		printf_serial("Framebuffer Info:\r\n");
-		printf_serial("\tWidth: %i\r\n", fb_info.width);
-		printf_serial("\tHeight: %i\r\n", fb_info.height);
-		printf_serial("\tPitch: %i\r\n", fb_info.pitch);
-		printf_serial("\tPixel Width: %i\r\n\t", fb_info.pixel_width);
-		pixel_serial(fb_info.type);
-		printf_serial("\r\n");
-
-		printf_serial("Framebuffer total length: %llu bytes.\r\n", fb_info.height * fb_info.width * fb_info.pixel_width);
-
-		//fb.buffer = (uint8_t*) kalloc(fb_info.height * fb_info.width * fb_info.pixel_width);
-		fb.buffer = (uint8_t*) e->common.framebuffer_addr;
-
-		printf_serial("Double buffer location: %p\r\n", fb.buffer);
-
-		fb.info = &fb_info;
-
-		//apollo_color_t fg = { 0, 0xff, 0xff, 0xff, APOLLO_PIXEL_TYPE_ARGB8888 };
-		apollo_color_t fg = { 0, 0x1f, 0, 0x1f, APOLLO_PIXEL_TYPE_RGB16_565 };
-		apollo_color_t bg = { 0, 0, 0, 0, APOLLO_PIXEL_TYPE_RGBA32 };
-		apollo_font_color_t c = { fg, bg };
-
-		//apollo_print_char(&fb, &apollo_8x8, 'a', (coordinate_pair) { 0, 0 }, c);
-
-		uint8_t a[] = {
-			0x0A, 0xdb, 0xdb, 0xbb, 0x20, 0x20, 0x20, 0x20, 0xdb, 0xdb,
-			0xbb, 0x20, 0xdb, 0xdb, 0xdb, 0xdb, 0xdb, 0xbb, 0x20, 0xdb,
-			0xdb, 0xbb, 0x20, 0x20, 0x20, 0x20, 0x20, 0xdb, 0xdb, 0xbb,
-			0x20, 0x20, 0x20, 0x20, 0x20, 0x20, 0xdb, 0xdb, 0xdb, 0xdb,
-			0xdb, 0xdb, 0xbb, 0x20, 0xdb, 0xdb, 0xdb, 0xdb, 0xdb, 0xdb,
-			0xdb, 0xbb, 0x0a, 0xdb, 0xdb, 0xba, 0x20, 0x20, 0x20, 0x20,
-			0xdb, 0xdb, 0xba, 0xdb, 0xdb, 0xc9, 0xcd, 0xcd, 0xdb, 0xdb,
-			0xbb, 0xdb, 0xdb, 0xba, 0x20, 0x20, 0x20, 0x20, 0x20, 0xdb,
-			0xdb, 0xba, 0x20, 0x20, 0x20, 0x20, 0x20, 0xdb, 0xdb, 0xc9,
-			0xcd, 0xcd, 0xcd, 0xdb, 0xdb, 0xbb, 0xdb, 0xdb, 0xc9, 0xcd,
-			0xcd, 0xcd, 0xcd, 0xbc, 0x0a, 0xdb, 0xdb, 0xba, 0x20, 0xdb,
-			0xbb, 0x20, 0xdb, 0xdb, 0xba, 0xdb, 0xdb, 0xdb, 0xdb, 0xdb,
-			0xdb, 0xdb, 0xba, 0xdb, 0xdb, 0xba, 0x20, 0x20, 0x20, 0x20,
-			0x20, 0xdb, 0xdb, 0xba, 0x20, 0x20, 0x20, 0x20, 0x20, 0xdb,
-			0xdb, 0xba, 0x20, 0x20, 0x20, 0xdb, 0xdb, 0xba, 0xdb, 0xdb,
-			0xdb, 0xdb, 0xdb, 0xdb, 0xdb, 0xbb, 0x0a, 0xdb, 0xdb, 0xba,
-			0xdb, 0xdb, 0xdb, 0xbb, 0xdb, 0xdb, 0xba, 0xdb, 0xdb, 0xc9,
-			0xcd, 0xcd, 0xdb, 0xdb, 0xba, 0xdb, 0xdb, 0xba, 0x20, 0x20,
-			0x20, 0x20, 0x20, 0xdb, 0xdb, 0xba, 0x20, 0x20, 0x20, 0x20,
-			0x20, 0xdb, 0xdb, 0xba, 0x20, 0x20, 0x20, 0xdb, 0xdb, 0xba,
-			0xc8, 0xcd, 0xcd, 0xcd, 0xcd, 0xdb, 0xdb, 0xba, 0x0a, 0xc8,
-			0xdb, 0xdb, 0xdb, 0xc9, 0xdb, 0xdb, 0xdb, 0xc9, 0xbc, 0xdb,
-			0xdb, 0xba, 0x20, 0x20, 0xdb, 0xdb, 0xba, 0xdb, 0xdb, 0xdb,
-			0xdb, 0xdb, 0xdb, 0xdb, 0xbb, 0xdb, 0xdb, 0xdb, 0xdb, 0xdb,
-			0xdb, 0xdb, 0xbb, 0xc8, 0xdb, 0xdb, 0xdb, 0xdb, 0xdb, 0xdb,
-			0xc9, 0xbc, 0xdb, 0xdb, 0xdb, 0xdb, 0xdb, 0xdb, 0xdb, 0xba,
-			0x0a, 0x20, 0xc8, 0xcd, 0xcd, 0xbc, 0xc8, 0xcd, 0xcd, 0xbc,
-			0x20, 0xc8, 0xcd, 0xbc, 0x20, 0x20, 0xc8, 0xcd, 0xbc, 0xc8,
-			0xcd, 0xcd, 0xcd, 0xcd, 0xcd, 0xcd, 0xbc, 0xc8, 0xcd, 0xcd,
-			0xcd, 0xcd, 0xcd, 0xcd, 0xbc, 0x20, 0xc8, 0xcd, 0xcd, 0xcd,
-			0xcd, 0xcd, 0xbc, 0x20, 0xc8, 0xcd, 0xcd, 0xcd, 0xcd, 0xcd,
-			0xcd, 0xbc, 0x0a, '\0'
-		};
-
-		apollo_print_string(&fb, &apollo_12x18, (const char*) a, (coordinate_pair) { 0, 0 }, c, true, true);
-		coordinate_pair pair[] = {
-			{0, 0},
-			{100, 100},
-			{100, 150}
-		};
-
-		//apollo_draw_triangle(&fb, pair, fg);
-		//apollo_fill_buffer(&fb, fg);
-		apollo_draw_buffer(&fb);
-
-		//__asm __volatile("cli\n\thlt");
-
-	} else {
-		printf_serial("FRAMEBUFFER TYPE: %d -> UNKNOWN, LEADS TO PANIC.\r\n", e->common.framebuffer_type);
-		panic_s("Framebuffer of wrong type.");
-	}
-
-}
-#endif // APOLLO_TEST
-
-#include <drivers/sata/pio.h>
 
 /* TODO: Remove this when PMM is fixed. */
 #define JANKY_INITRD_LOADER
 #ifdef JANKY_INITRD_LOADER
 extern "C" {
-	// extern int drive_mount_cmd(int argc, char** argv);
-
 	extern uint64_t _initrd_start_;
 	extern uint64_t _initrd_end_;
 	uint64_t _initrd_size;
@@ -289,40 +146,253 @@ extern "C" {
 }
 
 void init_initrd() {
-	// size_t size = (size_t) _binary_initrd_img_size;
-	// const uint8_t* data = _binary_initrd_img_start;
-
 	_initrd_size = (size_t) &_initrd_end_ - (size_t) &_initrd_start_;
 	_initrd_data = (uint8_t*) &_initrd_start_;
 
-	printf_serial("Initrd start: 0x%llx\r\n", &_initrd_start_);
-	printf_serial("Initrd end: 0x%llx\r\n", &_initrd_end_);
-	printf_serial("Initrd size: %llu bytes\r\n", (uint64_t) &_initrd_end_ - (uint64_t) &_initrd_start_);
-
-	// now you can feed `data` and `size` into your FS code
+	printf_serial("[initrd] Initrd start: 0x%llx\r\n", &_initrd_start_);
+	printf_serial("[initrd] Initrd end: 0x%llx\r\n", &_initrd_end_);
+	printf_serial("[initrd] Initrd size: %llu bytes\r\n", (uint64_t) &_initrd_end_ - (uint64_t) &_initrd_start_);
 }
 #endif // JANKY_INITRD_LOADER
 
-extern void pmm_init();
+
+/**
+ * This allows write-combining.
+ * This is mainly for the framebuffer (but likely helps us elsewhere).
+ */
+void init_pat() {
+	uint32_t low, high;
+	// Read IA32_PAT MSR (0x277)
+	asm volatile("rdmsr" : "=a"(low), "=d"(high) : "c"(0x277));
+
+	// We modify Slot 7 (top 8 bits of the high 32-bit register)
+	// Clear bits 56-63 and set them to 0x01 (Write-Combining)
+	high &= ~(0xFFULL << 24);
+	high |= (0x01ULL << 24);
+
+	asm volatile("wrmsr" : : "a"(low), "d"(high), "c"(0x277));
+}
+
+#include <scheduler/scheduler.h>
+int temp_cmd(int, char**) {
+	arch_init_cpus();
+	return 0;
+}
+
+extern "C" void setup_serial_interrupts();
+extern "C" int virt_mem_cli(int argc, char** argv);
+
+/* These are for printing out information about PS/2 controller state.
+ * I have had issues with PS/2 on some devices but not others.
+ * It mostly has to do with how well some BIOS's emulate the controller.
+ * I've honestly kind of resigned to the fact that I *may* not have keyboard support until I get a simple USB driver.
+ */
+#include <cpu_io.h>
+static inline bool wait_output() {
+	for (int i = 0; i < 50000; i++)
+		if (inb(0x64) & 0x01) return true;
+	return false;
+}
+
+void keyboard_debug() {
+	// Status register (port 0x64)
+	uint8_t status = inb(0x64);
+	printf_serial("=== PS/2 8042 Debug ===\r\n");
+	printf_serial("Status Register (0x%02x):\r\n", status);
+	printf_serial("  Output buffer full:  %d\r\n", (status >> 0) & 1);
+	printf_serial("  Input buffer full:   %d\r\n", (status >> 1) & 1);
+	printf_serial("  System flag:         %d\r\n", (status >> 2) & 1);
+	printf_serial("  Command/data:        %d\r\n", (status >> 3) & 1);
+	printf_serial("  Keyboard locked:     %d\r\n", (status >> 4) & 1);
+	printf_serial("  Aux buffer full:     %d\r\n", (status >> 5) & 1);
+	printf_serial("  Timeout error:       %d\r\n", (status >> 6) & 1);
+	printf_serial("  Parity error:        %d\r\n", (status >> 7) & 1);
+
+	// Read config byte (command 0x20)
+	uint8_t config = 0xFF;
+	outb(0x64, 0x20);
+	if (wait_output()) config = inb(0x60);
+	printf_serial("Config Byte (0x%02x):\r\n", config);
+	printf_serial("  Port 1 interrupt:    %d\r\n", (config >> 0) & 1);
+	printf_serial("  Port 2 interrupt:    %d\r\n", (config >> 1) & 1);
+	printf_serial("  System flag:         %d\r\n", (config >> 2) & 1);
+	printf_serial("  Port 1 clock:        %d (0=enabled)\r\n", (config >> 4) & 1);
+	printf_serial("  Port 2 clock:        %d (0=enabled)\r\n", (config >> 5) & 1);
+	printf_serial("  Port 1 translation:  %d\r\n", (config >> 6) & 1);
+	printf_serial("======================\r\n");
+}
+
+#include <acpi/acpi_api.h>
+#include <device/device_manager.h>
+#include <drivers/driver_manager.h>
+#include <drivers/sata/ahci.h>
+#include <drivers/usb/hosts/xhci.h>
+#include <filesystem/initrd.h>
+#include <filesystem/vfs.h>
+#include <filesystem/wdm.h>
+#include <klibc/internal_calls.h>
+#include <klibc/kernel_rng.h>
+
+extern "C" int tst_command(int argc, char** argv) {
+	// this is just going to be a "permanent" command to let me quickly test things.
+	// I routinely end up adding and removing this stupid command signature from this file when needing to do targeted testing.
+
+	(void) argc;
+	(void) argv;
+
+	return 0;
+}
+
+extern "C" {
+
+	extern const ws_command_argument_t acpi_args[];
+	extern const size_t acpi_args_count;
+
+	extern const ws_command_argument_t driver_cli_args[];
+	extern const size_t driver_cli_args_count;
+
+	extern const ws_command_argument_t cpu_info_args[];
+	extern const size_t cpu_info_args_count;
+
+	extern const ws_command_argument_t serial_cli_args[];
+	extern const size_t serial_cli_args_count;
+
+	extern const ws_command_argument_t device_cmd_args[];
+	extern const size_t device_cmd_args_count;
+
+	// extern const ws_command_argument_t virt_mem_cli_args[];
+	// extern const size_t virt_mem_cli_args_count;
+	extern const ws_command_t kilo_cmd;
+}
+
+void setup_commands() {
+
+	registerSystemCommands();
+
+	ws_command_t kalloc_command = {};
+	kalloc_command.main_func = testKalloc;
+	kalloc_command.command_name = "kalloc";
+	ws_registerCommand(kalloc_command);
+
+	ws_command_t mem_alloc_command = {};
+	mem_alloc_command.main_func = mem_alloc;
+	mem_alloc_command.command_name = "mem_alloc";
+	ws_registerCommand(mem_alloc_command);
+
+	ws_command_t acpi_ws_command = {};
+	acpi_ws_command.main_func = acpi_command;
+	acpi_ws_command.command_name = "acpi";
+	acpi_ws_command.arguments = acpi_args;
+	acpi_ws_command.arguments_count = acpi_args_count;
+	ws_registerCommand(acpi_ws_command);
+
+	ws_command_t syscall_ws_command = {};
+	syscall_ws_command.main_func = syscall_command;
+	syscall_ws_command.command_name = "syscall";
+	ws_registerCommand(syscall_ws_command);
+
+	ws_command_t bootdev_ws_command = {};
+	bootdev_ws_command.main_func = bootdev_command;
+	bootdev_ws_command.command_name = "bootdev";
+	ws_registerCommand(bootdev_ws_command);
+
+	ws_command_t serial_command = {};
+	serial_command.main_func = serial_cli_cmd;
+	serial_command.command_name = "serial";
+	serial_command.arguments = serial_cli_args;
+	serial_command.arguments_count = serial_cli_args_count;
+	ws_registerCommand(serial_command);
+
+	ws_command_t vmm_command = {};
+	vmm_command.main_func = virt_mem_cli;
+	vmm_command.command_name = "vmm";
+	vmm_command.arguments = virt_mem_cli_args;
+	vmm_command.arguments_count = virt_mem_cli_args_count;
+	ws_registerCommand(vmm_command);
+
+	ws_command_t device_command = {};
+	device_command.main_func = device_cmd;
+	device_command.command_name = "device";
+	device_command.arguments = device_cmd_args;
+	device_command.arguments_count = device_cmd_args_count;
+	device_command.aliases = dev_aliases;
+	device_command.alias_count = 1;
+	ws_registerCommand(device_command);
+
+	ws_command_t cpu_command = {};
+	cpu_command.main_func = cpu_info;
+	cpu_command.command_name = "cpu";
+	cpu_command.arguments = cpu_info_args;
+	cpu_command.arguments_count = cpu_info_args_count;
+	ws_registerCommand(cpu_command);
+
+	ws_command_t driver_command = {};
+	driver_command.main_func = driver_cli;
+	driver_command.command_name = "driver";
+	driver_command.arguments = driver_cli_args;
+	driver_command.arguments_count = driver_cli_args_count;
+	ws_registerCommand(driver_command);
+
+	ws_registerCommand(kilo_cmd);
+}
+
+#include <drivers/usb/class/hid/hid_common.h>
+// This here so things that take over control of the system after the kernel entry is done can poll as needed
+// This also serves as a good candidate for things that need to be actually properly taken care of when we get SMP
+extern "C" void system_poll_loop(void) {
+	hid_keyboard_poll_all();
+	acpi_poll_events();
+}
 
 void kernel_main(unsigned int magic, multiboot_info* mbt_info) {
+	// ------------------------------------------------------------------------------------------------
+	// Very early init
+	// We *are not* guaranteed to have any graphics until after the framebuffer is set up.
+	// ------------------------------------------------------------------------------------------------
+	// If we have VGA Text Mode, we set it up before everything else.
+	// If we don't we have to wait for framebuffer init (which relies on a lot of this early init).
+	init_pat();
+
 	initScreen();
-	init_serial();
+
+	// Tries to initialize all COM port 1-4, if present.
+	// Information about serial can be accessed using the `serial` command, to see what got loaded.
+	init_all_serial();
+
 	printf_serial("Welcome to WallOS!\r\n");
 	Memory::initVirtualMemory();
 
 	MultibootManager::initialize(magic, mbt_info);
 	cpu_features f = cpuFeatures();
 	Features::checkFeatures(&f);
-	Features::enableFeatures();
+	// Features::enableFeatures();
+
+	rng_seed(rdtsc());
+
+	// This inits the first 22 interrupts + the PIT interrupt (PIT is disabled at this point).
 	initIDT();
 
-	printf_serial("Kernel Mapping End: 0x%llx\r\nRSDP ADDR: 0x%llx\r\n", Memory::GetMappingEnd(), MultibootManager::getACPI()->rsdp);
+	// printf_serial("Kernel Mapping End: 0x%llx\r\nRSDP ADDR: 0x%llx\r\n\r\n", Memory::GetMappingEnd(), MultibootManager::getACPI()->rsdp);
 
+	// ------------------------------------------------------------------------------------------------
+	// Framebuffer
+	// ------------------------------------------------------------------------------------------------
 	multiboot_tag_framebuffer* e = MultibootManager::getFramebufferTag();
-	Memory::mapFramebuffer((uintptr_t) e->common.framebuffer_addr, e->common.framebuffer_height * e->common.framebuffer_pitch);
-	//	framebuffer_init();
 
+	display_mode_t display_mode = DISPLAY_MODE_VGA_TEXT;
+	if (e->common.framebuffer_type == MULTIBOOT_FRAMEBUFFER_TYPE_RGB) display_mode = DISPLAY_MODE_FRAMEBUFFER;
+	if (e->common.framebuffer_type == MULTIBOOT_FRAMEBUFFER_TYPE_EGA_TEXT) display_mode = DISPLAY_MODE_VGA_TEXT;
+
+	Memory::mapFramebuffer(
+		(uintptr_t) e->common.framebuffer_addr,
+		e->common.framebuffer_height * e->common.framebuffer_pitch,
+		display_mode == DISPLAY_MODE_VGA_TEXT
+	);
+	display_init(display_mode);
+
+	// ------------------------------------------------------------------------------------------------
+	// Initrd
+	// ------------------------------------------------------------------------------------------------
 	// We get initrd from grub via a multiboot module tag.
 	// We *should* be reserving this memory so it doesn't get allocated to something else.
 	// the physical allocator is a horrible mess from past me
@@ -333,80 +403,123 @@ void kernel_main(unsigned int magic, multiboot_info* mbt_info) {
 	// printf_serial("    Module Type: %d\r\n", module_tag->type);
 	// printf_serial("    Module Size: %d bytes\r\n", module_tag->size);
 	// printf_serial("    Module Physical Size: %d bytes\r\n", module_tag->mod_end - module_tag->mod_start);
-	//Memory::reserveMemory(module_tag->mod_start, module_tag->mod_end - module_tag->mod_start);
+	// Memory::reserveMemory(module_tag->mod_start, module_tag->mod_end - module_tag->mod_start);
 
+	// I need to move this to be a multiboot module...
+	// I mean this works fine and initrd is limited to 2MB so...
 	init_initrd();
+	/* initrd is always drive 0:
+	 * I don't entirely know if I want to keep that as an explicit path or
+	 * hide it in /initrd in the virtual FS whenever we get one set up.
+	 */
+	// mount_drive(0);
 
-	// pmm_init();
-	// Things that need interrupts here (like keyboard, mouse, etc.)
+	// ------------------------------------------------------------------------------------------------
+	// Early Interrupt Handlers
+	// ------------------------------------------------------------------------------------------------
+	// Things that use interrupts but other init steps depend on should be set here.
+	// Everything else should come in the regular interrupt handler section.
 	// Everything that needs an IRQ should be done after the PIT as it messes with the mask
 	// If it requires allocations, add it after `initKernelAllocator()`
+	io_delay_init(); // uses outb(0x80, 0) to try to add a small delay. it's best effort if we don't have a good resolution timer
+	// I thought I fixed that this will destroy the PIT state if called after pit_init?
+	// apparently didn't (or lost the commit) and dont feel like fixing it
+	timer_no_interrupts_init(); // sets up TSC timing for ACPI on x86_64
 	pit_init(1000);
+	rtc_cmos_init();
+
+	i8042_flush();
 	keyboard_init();
+	keyboard_debug();
 
-	// wait_for_esc();
-
+	// ------------------------------------------------------------------------------------------------
+	// Physical Memory & Allocators
+	// ------------------------------------------------------------------------------------------------
 	Memory::PhysicalMemInit();
-
-	acpi_tables();
-
-	printf_serial("Physical kernel end: 0x%llx\r\n", Memory::Info::getPhysKernelEnd());
-
-	/* This is all framebuffer stuff.
-	 * I'm not in too much of a rush about it, it was just a fun experiment
-	 * multiboot_tag_framebuffer* e = MultibootManager::getFramebufferTag();
-	 * pixelwidth = e->common.framebuffer_bpp;
-	 * pitch = e->common.framebuffer_pitch;
-	 * uintptr_t fb_addr = e->common.framebuffer_addr;
-	 * uint8_t* fb = (uint8_t*) fb_addr;
-	 * Memory::mapFramebuffer(fb_addr, e->common.framebuffer_height * e->common.framebuffer_pitch);
-	 * framebuf(0, 0);
-
-	 * int bpp = e->common.framebuffer_bpp;
-	 * for (int i = 0; i < 200; i++) {
-	 * 	for (int j = 0; j < 200; j++) {
-	 * 		//putpixel(fb, i, j, 0xffffff, bpp / 8, e->common.framebuffer_pitch);
-	 * 	}
-	 * }
-	 * for (int i = 0; i < 26; i++) {
-	 * 	//putchar(fb, e->common.framebuffer_pitch, 'a', i, 0, 0xFF0000, 0x000000);
-	 * }
-	 * init_ssfn();
-	 * print_logo_ssfn();
-	 */
-
-	// panic_s("GOT BEFORE IDE DRIVES?????");
-	detect_ide_drives();
-
 	initKernelAllocator();
 
-	//framebuffer();
-
+	// The last thing this requires is the allocator.
+	display_init_late();
+	// ------------------------------------------------------------------------------------------------
+	// Regular Interrupt Handlers
+	// ------------------------------------------------------------------------------------------------
 	Syscall::initialize();
+	setup_serial_interrupts();
 
+
+	// ------------------------------------------------------------------------------------------------
+	// ACPI
+	// ------------------------------------------------------------------------------------------------
+	uint64_t acpi_runtime = timer_uptime_ms();
 	initialize_acpi();
+	acpi_runtime = timer_uptime_ms() - acpi_runtime;
+	printf_color(PRINT_COLOR_PINK, PRINT_DEFAULT_BG, "ACPI Init took a total of %llu ms\n", acpi_runtime);
 
+	// ------------------------------------------------------------------------------------------------
+	// Device Discovery
+	// ------------------------------------------------------------------------------------------------
+	serial_register_devices();
+	pci_discover();
+	// uhci_register();
 
-	// char* array[] = { (char*) "drive", (char*) "mount", (char*) "0" };
-	// drive_mount_cmd(3, array);
+	// Not really device discovery, but it needs to exist after acpi init so...
+	hpet_init();
+	pit_init_dev();
 
+	// ------------------------------------------------------------------------------------------------
+	// Drive detection (and eventual virtual FS setup)
+	// ------------------------------------------------------------------------------------------------
+	// I have no better spot to put this so it goes here.
+	detect_ide_drives();
+	// TODO: I commented this out because initializing a specific drive on one of my test PCs takes FOREVER
+	// Need to re-enable this when done with AHCI
+	ahci_register_driver();
+
+	WDM_Init();
+	WDM_DriveHandle initrd = initrd_wdm_init(INITRD_FLAG_NONE);
+	if (!initrd) panic_s("initrd: WDM registration failed");
+	filesystem_mount_explicit(initrd, "/initrd", FILESYSTEM_FAT12_16);
+
+	// register_usb_controller_drivers();
+	usb_init();
+
+	printf_color(PRINT_COLOR_GREEN, PRINT_DEFAULT_BG, "Starting global driver binding...\n");
+	dm_bind_all_registered();
+	// Doing this twice is a cheap way of forcing it to bind all newly discovered devices in the last pass
+	// Technically all drivers are supposed to tell the dm to bind all new devices, but I've found that sometimes it just doesnt work to call dm_bind_dev on a newly created device
+	// Rather than figuring out the root cause, we just do it twice
+	printf_color(PRINT_COLOR_GREEN, PRINT_DEFAULT_BG, "Global driver binding pass two...\n");
+	dm_bind_all_registered();
+
+	// ------------------------------------------------------------------------------------------------
+	// ------------------------------------------------------------------------------------------------
+	// Everything after this point should be handoff code.
+	// ------------------------------------------------------------------------------------------------
+	// ------------------------------------------------------------------------------------------------
 	printf_serial("Ended kernel init... handing control to WallShell.\r\n");
-	set_colors(VGA_COLOR_PINK, VGA_DEFAULT_BG);
-	printf("Ended kernel init... Press `ESC` to hand control to WallShell.\r\n");
-	set_to_last();
-	// WALLOS_CLI_HLT();
-
-	wait_for_esc();
-
-	// char* args[] = { "acpi", "list" };
-	// acpi_command(2, args);
+	printf_color(PRINT_COLOR_PINK, PRINT_DEFAULT_BG, "Ended kernel init... Press `ESC` to hand control to WallShell.\r\n");
 
 	// After we're done checking features, we need to set up our terminal.
-	// Eventually this will be a userspace program. 
-	registerCommand((Command) { testKalloc, 0, "kalloc", 0, 0 });
-	registerCommand((Command) { mem_alloc, 0, "mem_alloc", 0, 0 });
-	registerCommand((Command) { acpi_command, 0, "acpi", 0, 0 });
-	registerCommand((Command) { syscall_command, 0, "syscall", 0, 0 });
-	registerCommand((Command) { bootdev_command, 0, "bootdev", 0, 0 });
-	terminalMain();
+	// Eventually this will be a userspace program.
+	setup_commands();
+	ws_terminalMain();
+
+	// char* cmd[] = { "dev", "list", "-u" };
+	// device_cmd(3, cmd);
+
+	// char* cmd2[] = { "dev", "list", "-b" };
+	// device_cmd(3, cmd2);
+
+	// // char* cmd2[] = { "time", "-i" };
+	// // time_command(2, cmd2);
+
+	printf_color(PRINT_COLOR_YELLOW, PRINT_DEFAULT_BG, "You've returned from the main kernel terminal.\nThe only thing that will happen now is waiting for power events or timer callbacks.\n");
+
+	// while (true)
+	while (true) {
+		acpi_poll_events();
+		// the only interrupts should be ACPI, serial, or timer at 1000hz
+		// We could busy wait or pause, but it really wouldn't matter.
+		WALLOS_HLT();
+	}
 }

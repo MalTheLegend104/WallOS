@@ -1,4 +1,4 @@
-// All is* functions from ctypes 
+// All is* functions from ctypes
 
 #include <ctype.h>
 

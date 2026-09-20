@@ -1,12 +1,23 @@
-#include <stdint.h>
+// This *SIGNIFICANTLY* increases performance whenever there's thousands of allocations.
+// I've never had it be a problem until a SuperMicro motherboard wanted me to deal with a 10MB ACPI structure.
+#pragma GCC push_options
+#pragma GCC optimize("O3")
 #include <stddef.h>
+#include <stdint.h>
 #include <stdio.h>
 #include <string.h>
 
+#include <drivers/serial.h>
 #include <klibc/kprint.h>
 #include <memory/kernel_alloc.h>
 #include <memory/virtual_mem.h>
-#include <drivers/serial.h>
+
+#include <memory/spinlock.h>
+spinlock_t* memlock;
+
+// kalloc_dma() callers pass map_flags == 0 to mean "just give me a normal present, writable, cached kernel mapping".
+// This is what that resolves to.
+#define DMA_MAP_FLAGS_DEFAULT (BIT_SIZE | BIT_WRITE | BIT_PRESENT)
 
 
 #define SET_BIT(bitlist_entry, bit)   (bitlist_entry = bitlist_entry | (1 << (8 - bit)))
@@ -34,9 +45,21 @@ typedef enum {
 	WORD = 2,
 	DWORD = 4,
 	QWORD = 8,
-
+	OWORD = 16,
+	SIZE_32 = 32,
+	SIZE_64 = 64,
+	SIZE_128 = 128,
+	SIZE_256 = 256,
 	PAGE_ENTRY = 4096,
 } cache_type_t;
+
+// dma_flags_t (DMA_ZONE_ANY / DMA_ZONE_32BIT / DMA_NO_ZERO) is declared in
+// memory/kernel_alloc.h since it's part of the public kalloc_dma() API.
+// DMA_ZONE_MASK is the subset of dma_flags_t bits that affect physical
+// placement (and therefore which slab a chunk is drawn from) - non-zone bits
+// like DMA_NO_ZERO must never be included here, or ANY-zone and 32BIT-zone
+// requests could get muddled together.
+#define DMA_ZONE_MASK (DMA_ZONE_32BIT)
 
 // We're going to have a list of bits that contain information about what is free and taken.
 
@@ -46,6 +69,11 @@ typedef struct slab_header_t {
 
 	uintptr_t chunk_base;
 	size_t chunk_count; // There will be this / 8 entries in bitlist
+
+	// Only populated/used for DMA slabs. Regular kalloc() slabs leave these at 0.
+	uintptr_t phys_base;  // Physical address backing this slab's virtual chunk_base
+	uint32_t dma_zone;    // DMA_ZONE_* bits this slab was created with (DMA_ZONE_MASK applied) - never mixed across zones
+	uint64_t map_flags;   // Page-table flags (BIT_PRESENT | BIT_WRITE | ...) this slab's pages were mapped with
 } slab_header_t;
 
 slab_header_t* first_slab;
@@ -65,12 +93,23 @@ slab_header_t* span_slab_end;
 allocated_span_t* first_span;
 allocated_span_t* last_span;
 
+slab_header_t* dma_slab_head = NULL;
+
+// Forward declarations: kalloc_dma()/kfree_dma() reuse the same bitlist/span
+// helpers as kalloc()/kfree(), but those are defined further down the file.
+void setChunkUsed(slab_header_t* header, size_t chunk);
+void setChunkFree(slab_header_t* header, size_t chunk);
+allocated_span_t* allocateSpan();
+void addSpan(uintptr_t ptr, size_t count);
+allocated_span_t* findSpan(uintptr_t ptr);
+void removeSpan(allocated_span_t* span);
+
 uint64_t calculatePadding(uint64_t bitlist_size, uint64_t chunksize) {
 	return PAGE_2MB_SIZE - sizeof(slab_header_t) - bitlist_size - (bitlist_size * chunksize * 8);
 }
 
 // This will leave up to 7 * chunksize of bytes left over.
-// This would cause more memory wastage than it's worth to keep track of the rest. 
+// This would cause more memory wastage than it's worth to keep track of the rest.
 // It would use another byte, plus another few bytes to keep track of how many bits in that int are used.
 uint64_t calculateBitlistSize(uint64_t chunksize) {
 	// P/8C+1
@@ -151,17 +190,212 @@ void initSlab(uint64_t object_size) {
 	}
 	last_slab = header;
 
-	//printSlabInfo(header, base, bls, padding);
+	// printSlabInfo(header, base, bls, padding);
+}
+
+#include <memory/physical_mem.hpp>
+
+/**
+ * @brief Initializes a new 2MB DMA slab of object_size byte chunks
+ *
+ * @param object_size Amount of bytes per chunk.
+ * @param zone DMA_ZONE_* bits (already masked with DMA_ZONE_MASK) describing the required physical placement.
+ * @param map_flags Page-table flags to map this slab's pages with.
+ */
+slab_header_t* initSlabDMA(uint64_t object_size, uint32_t zone, uint64_t map_flags) {
+	uintptr_t phys = (zone & DMA_ZONE_32BIT) ? Memory::PhysicalAlloc2MB_32bit() : Memory::PhysicalAlloc2MBSequential(1);
+	if (!phys) return NULL;
+
+	uintptr_t base = Memory::MapSequentialKernelPagesWithFlags(1, phys, map_flags);
+	if (!base) return NULL;
+
+	slab_header_t* header = (slab_header_t*) base;
+	header->object_size = object_size;
+	header->next_slab = NULL;
+	header->phys_base = phys;
+	header->dma_zone = zone;
+	header->map_flags = map_flags;
+
+	uint64_t bls = calculateBitlistSize(object_size);
+	header->chunk_count = bls * 8;
+	memset((uint8_t*) header + sizeof(slab_header_t), 0, bls);
+
+	uint64_t padding = calculatePadding(bls, object_size);
+	header->chunk_base = base + sizeof(slab_header_t) + bls + padding;
+
+	return header;
+}
+
+/**
+ * @brief Maps a DMA_ALIGN_* flag to the size class that provides it.
+ *
+ * @return Required alignment in bytes, or 0 for DMA_ALIGN_NONE (no requirement beyond the byte count's own class).
+ */
+static size_t dma_align_bytes_from_flags(uint32_t flags) {
+	switch (flags & DMA_ALIGN_MASK) {
+		case DMA_ALIGN_16:   return OWORD;
+		case DMA_ALIGN_32:   return SIZE_32;
+		case DMA_ALIGN_64:   return SIZE_64;
+		case DMA_ALIGN_128:  return SIZE_128;
+		case DMA_ALIGN_256:  return SIZE_256;
+		case DMA_ALIGN_4096: return PAGE_ENTRY;
+		default:             return 0; // DMA_ALIGN_NONE
+	}
+}
+
+
+/**
+ * @brief Allocates DMA-capable memory
+ *
+ * @param bytes Number of bytes needed.
+ * @param flags dma_flags_t bits describing the required zone/alignment/behavior.
+ * @param map_flags Page-table flags to map the backing pages with.
+ *                  Pass 0 to get the default present/writable/cached kernel mapping.
+ * @param phys_out If non-NULL, receives the physical address backing the returned pointer.
+ */
+void* kalloc_dma(size_t bytes, uint32_t flags, uint64_t map_flags, uintptr_t* phys_out) {
+	spinlock_lock(memlock);
+
+	if (bytes > PAGE_2MB_SIZE) {
+		printf_serial("[KALLOC_DMA] Requested DMA size of %llu bytes (0x%llx). Too large for current allocator...\r\n", bytes, bytes);
+		spinlock_unlock(memlock);
+		return NULL;
+	}
+
+	uint32_t zone = flags & DMA_ZONE_MASK;
+	uint64_t resolved_map_flags = map_flags ? map_flags : DMA_MAP_FLAGS_DEFAULT;
+
+	size_t object_size;
+	if (bytes <= 2) object_size = WORD;
+	else if (bytes <= 4) object_size = DWORD;
+	else if (bytes <= 8) object_size = QWORD;
+	else if (bytes <= 16) object_size = OWORD;
+	else if (bytes <= 32) object_size = SIZE_32;
+	else if (bytes <= 64) object_size = SIZE_64;
+	else if (bytes <= 128) object_size = SIZE_128;
+	else if (bytes <= 256) object_size = SIZE_256;
+	else object_size = PAGE_ENTRY;
+
+	// This ensures that objects that need certain alignments can request it, even if their object is smaller than the alignment required
+	size_t align_bytes = dma_align_bytes_from_flags(flags);
+	if (align_bytes > object_size) {
+		object_size = align_bytes;
+	}
+
+	size_t amount_of_objects = (bytes + object_size - 1) / object_size;
+
+	slab_header_t* header = dma_slab_head;
+	while (header != NULL) {
+		if (header->object_size != object_size || header->dma_zone != zone || header->map_flags != resolved_map_flags) {
+			header = header->next_slab;
+			continue;
+		}
+
+		size_t consecutive_chunks = 0;
+		size_t start_chunk = 0;
+
+		for (size_t chunk = 1; chunk <= header->chunk_count; chunk++) {
+			size_t byte_idx = (chunk - 1) / 8;
+			size_t bit_idx = ((chunk - 1) % 8) + 1;
+
+			if (!GET_BIT(BITLIST_BASE(header)[byte_idx], bit_idx)) {
+				if (consecutive_chunks == 0) {
+					start_chunk = chunk;
+				}
+				consecutive_chunks++;
+
+				if (consecutive_chunks == amount_of_objects) {
+					for (size_t k = 0; k < amount_of_objects; k++) {
+						setChunkUsed(header, start_chunk + k);
+					}
+
+					uintptr_t virt = header->chunk_base + ((start_chunk - 1) * object_size);
+					if (amount_of_objects > 1) {
+						addSpan(virt, amount_of_objects);
+					}
+
+					// DMA memory should be zeroed by default to prevent hardware from reading garbage/old descriptor data.
+					// Callers that will fully overwrite the chunk anyway can opt out with DMA_NO_ZERO.
+					if (!(flags & DMA_NO_ZERO)) {
+						memset((void*) virt, 0, amount_of_objects * object_size);
+					}
+
+					if (phys_out) {
+						*phys_out = header->phys_base + (virt - (uintptr_t) header);
+					}
+
+					spinlock_unlock(memlock);
+					return (void*) virt;
+				}
+			} else {
+				consecutive_chunks = 0;
+			}
+		}
+
+		header = header->next_slab;
+	}
+
+	// No existing DMA slab had room (or matched this zone/mapping)
+	printf_serial("[KALLOC_DMA] Allocating new DMA slab (zone: 0x%x, obj_size: %llu, map_flags: 0x%llx)\r\n", zone, (uint64_t) object_size, resolved_map_flags);
+	slab_header_t* new_slab = initSlabDMA(object_size, zone, resolved_map_flags);
+	if (!new_slab) {
+		printf_serial("[KALLOC_DMA] FATAL: Out of physical memory for zone 0x%x!\r\n", zone);
+		spinlock_unlock(memlock);
+		return NULL;
+	}
+
+	new_slab->next_slab = dma_slab_head;
+	dma_slab_head = new_slab;
+
+	spinlock_unlock(memlock);
+
+	// Recurse once to grab the first chunk(s) out of the freshly created slab.
+	return kalloc_dma(bytes, flags, map_flags, phys_out);
+}
+
+
+/**
+ * @brief Frees memory previously returned by kalloc_dma()
+ */
+void kfree_dma(void* ptr) {
+	if (!ptr) return;
+
+	spinlock_lock(memlock);
+
+	slab_header_t* header = dma_slab_head;
+	while (header != NULL) {
+		if ((uintptr_t) ptr > (uintptr_t) header && (uintptr_t) ptr < (uintptr_t) header + PAGE_2MB_SIZE) {
+			size_t chunk = (size_t) ((uintptr_t) ptr - header->chunk_base) / header->object_size;
+			chunk++;
+
+			allocated_span_t* span = findSpan((uintptr_t) ptr);
+			if (span != NULL) {
+				for (size_t i = 0; i < span->size; i++) {
+					setChunkFree(header, chunk + i);
+				}
+				memset(ptr, 0, span->size * header->object_size);
+				removeSpan(span);
+			} else {
+				memset(ptr, 0, header->object_size);
+				setChunkFree(header, chunk);
+			}
+
+			spinlock_unlock(memlock);
+			return;
+		}
+		header = header->next_slab;
+	}
+
+	spinlock_unlock(memlock);
 }
 
 /**
  * @brief Initializes the kernel allocator. Creates a 2, 4, 8, and 4096 cache.
  */
 void initKernelAllocator() {
-	set_colors(VGA_COLOR_LIGHT_GREEN, VGA_DEFAULT_BG);
-	printf("Initializing Kernel Slab Allocator.\n");
-	set_to_last();
-	set_colors(VGA_COLOR_GREEN, VGA_DEFAULT_BG);
+	printf_color(PRINT_COLOR_LIGHT_GREEN, PRINT_DEFAULT_BG, "Initializing Kernel Slab Allocator.\n");
+
+	display_set_colors(PRINT_COLOR_GREEN, PRINT_DEFAULT_BG);
 
 	initSlab(WORD);
 	printf("\t%u Byte Header Initialized.\n", WORD);
@@ -172,13 +406,36 @@ void initKernelAllocator() {
 	initSlab(QWORD);
 	printf("\t%u Byte Header Initialized.\n", QWORD);
 
+	initSlab(OWORD);
+	printf("\t%u Byte Header Initialized.\n", OWORD);
+
+	initSlab(SIZE_32);
+	printf("\t%u Byte Header Initialized.\n", SIZE_32);
+
+	initSlab(SIZE_64);
+	printf("\t%u Byte Header Initialized.\n", SIZE_64);
+
+	initSlab(SIZE_128);
+	printf("\t%u Byte Header Initialized.\n", SIZE_128);
+
+	initSlab(SIZE_256);
+	printf("\t%u Byte Header Initialized.\n", SIZE_256);
+
 	initSlab(PAGE_ENTRY);
 	printf("\t%u Byte Header Initialized.\n", PAGE_ENTRY);
+
+	// This is broken, causes an infinite loop
+	// I didn't even try to debug it.
+	// initSlab32(PAGE_ENTRY);
+	// printf("\t32-Bit DMA (%u Bytes) Header Initialized.\n", PAGE_ENTRY);
 
 	createSpanList();
 	printf("\t%u Byte Header Initialized.\n", sizeof(allocated_span_t));
 
-	set_to_last();
+	memlock = spinlock_create();
+	printf("\tCreated Spinlock.\n");
+
+	display_set_colors_default();
 }
 
 /**
@@ -281,7 +538,7 @@ void addSpan(uintptr_t ptr, size_t count) {
 
 	last_span = span;
 
-	//printf("added span: addr: 0x%llx -> ptr: 0x%llx -> size: %llu\n", (uintptr_t) span, span->ptr, span->size);
+	// printf("added span: addr: 0x%llx -> ptr: 0x%llx -> size: %llu\n", (uintptr_t) span, span->ptr, span->size);
 }
 
 allocated_span_t* findSpan(uintptr_t ptr) {
@@ -314,6 +571,20 @@ void removeSpan(allocated_span_t* span) {
 }
 
 void kfree(void* ptr) {
+	spinlock_lock(memlock);
+
+	{
+		slab_header_t* h = dma_slab_head;
+		while (h != NULL) {
+			if ((uintptr_t) ptr > (uintptr_t) h && (uintptr_t) ptr < (uintptr_t) h + PAGE_2MB_SIZE) {
+				printf_serial("[KALLOC] kfree() called on DMA memory (0x%llx) - use kfree_dma() instead.\r\n", (uint64_t) ptr);
+				spinlock_unlock(memlock);
+				return;
+			}
+			h = h->next_slab;
+		}
+	}
+
 	slab_header_t* header = first_slab;
 	while (header != NULL) {
 		// If the addr is after the starting addr of the header and before the end address it's in that slab
@@ -322,7 +593,7 @@ void kfree(void* ptr) {
 			chunk++; // The caluclation gives it in terms of index, we need index + 1
 			allocated_span_t* span = findSpan((uintptr_t) ptr);
 			if (span != NULL) {
-				//printf("Found span: 0x%llx -> PTR: 0x%llx -> SIZE: 0x%llx\n", span, span->ptr, span->size);
+				// printf("Found span: 0x%llx -> PTR: 0x%llx -> SIZE: 0x%llx\n", span, span->ptr, span->size);
 
 				for (size_t i = 0; i < span->size; i++) {
 					setChunkFree(header, chunk + i);
@@ -334,98 +605,42 @@ void kfree(void* ptr) {
 				memset(ptr, 0, header->object_size);
 				setChunkFree(header, chunk);
 			}
+			spinlock_unlock(memlock);
 			return;
 		}
 		header = header->next_slab;
 	}
+	spinlock_unlock(memlock);
 }
 
 #include <drivers/serial.h>
-// void* kalloc(size_t bytes) {
-// 	printf("kalloc called: BYTES: 0x%llx", bytes);
-// 	printf_serial("kalloc called: BYTES: 0x%llx", bytes);
-// 	if (bytes > PAGE_2MB_SIZE) {
-// 		// For stupidly large objects, we're just going to allocate consecutive blocks and return the base pointer.
-// 		// This cannot be freed properly. This will be properly handled later.
-// 		// The only object larger than 2MB that we allocate is the framebuffer right now, which is never freed anyway.
-// 		return (void*) Memory::MapSequentialKernelPages(((int) (bytes / PAGE_2MB_SIZE)) + 1);
-// 	}
-
-// 	size_t object_size = 2;
-// 	if (bytes % 8 == 0) object_size = 8;
-// 	else if (bytes % 4 == 0) object_size = 4;
-// 	else if (bytes % 2 != 0) bytes++;
-// 	size_t amount_of_objects = bytes / object_size;
-
-// 	slab_header_t* header = first_slab;
-// 	size_t chunk_number = 0;
-// 	while (header != NULL) {
-// 		if (header->object_size != object_size) {
-// 			header = header->next_slab;
-// 			continue;
-// 		}
-
-// 		size_t consecutive_chunks = 0;
-// 		chunk_number = 0;
-// 		for (size_t i = 0; i < header->chunk_count / 8; i++) {
-// 			if (consecutive_chunks == 0) chunk_number = i * 8;
-// 			for (int j = 1; j <= 8; j++) {
-// 				if (!GET_BIT(BITLIST_BASE(header)[i], j)) {
-// 					if (consecutive_chunks == 0) chunk_number = (i * 8) + j;
-
-// 					consecutive_chunks++;
-
-// 					if (consecutive_chunks == amount_of_objects) {
-// 						for (size_t k = 0; k < amount_of_objects; k++) {
-// 							setChunkUsed(header, chunk_number + k);
-// 						}
-// 						// printf("i: %llu -> j: %llu\nchunk#: %llu\n", i, j, chunk_number);
-// 						// printf("Header: 0x%llx -> bitlist_base: 0x%llx\n", header, BITLIST_BASE(header));
-// 						// printf("chunk count: %llu -> object_size: %llu\n", header->chunk_count, header->object_size);
-// 						// printf("chunk base: 0x%llx\n\n", header->chunk_base);
-// 						goto finish;
-// 					}
-// 				} else {
-// 					consecutive_chunks = 0;
-// 				}
-// 			}
-// 		}
-// 		header = header->next_slab;
-// 	}
-
-// finish:
-// 	printf("header: 0x%llx\r\n", header);
-// 	printf_serial("header: 0x%llx\r\n", header);
-// 	if (header == NULL) {
-// 		initSlab(object_size);
-// 		printf("recursion");
-// 		printf_serial("recursion");
-// 		return kalloc(bytes);
-// 	} else {
-// 		//printf("chunk #: %llu\n", (chunk_number - 1));
-// 		uintptr_t ptr = (header->chunk_base + ((chunk_number - 1) * object_size));
-// 		if (amount_of_objects > 1)
-// 			addSpan(ptr, amount_of_objects);
-// 		return (void*) ptr;
-// 	}
-// }
-
 void* kalloc(size_t bytes) {
+	// A 0-byte request would make amount_of_objects 0, which the chunk-search loop can never satisfy.
+	// I really want to try to avoid touching any logic in this file when it comes to the chunks. 
+	// We normalize it to 1 byte (which will turn into a 2 byte allocation), like regular malloc(0).
+	if (bytes == 0) bytes = 1;
+
+	spinlock_lock(memlock);
+
 	if (bytes > PAGE_2MB_SIZE) {
-		return (void*) Memory::MapSequentialKernelPages(((int) (bytes / PAGE_2MB_SIZE)) + 1);
+		printf_serial("[KALLOC] Requested memory allocation.\r\n\tBytes: 0x%llx ", bytes);
+		void* ret = (void*) Memory::MapSequentialKernelPages(((int) (bytes / PAGE_2MB_SIZE)) + 1);
+		printf_serial("virt: 0x%llx", (uint64_t) ret);
+		spinlock_unlock(memlock);
+		return ret;
 	}
 
 	// Determine best object size - pick the smallest size that fits
 	size_t object_size;
-	if (bytes <= 2) {
-		object_size = WORD;  // 2
-	} else if (bytes <= 4) {
-		object_size = DWORD;  // 4
-	} else if (bytes <= 8) {
-		object_size = QWORD;  // 8
-	} else {
-		object_size = PAGE_ENTRY;  // 4096
-	}
+	if (bytes <= 2) object_size = WORD;
+	else if (bytes <= 4) object_size = DWORD;
+	else if (bytes <= 8) object_size = QWORD;
+	else if (bytes <= 16) object_size = OWORD;
+	else if (bytes <= 32) object_size = SIZE_32;
+	else if (bytes <= 64) object_size = SIZE_64;
+	else if (bytes <= 128) object_size = SIZE_128;
+	else if (bytes <= 256) object_size = SIZE_256;
+	else object_size = PAGE_ENTRY;
 
 	size_t amount_of_objects = (bytes + object_size - 1) / object_size;
 
@@ -461,6 +676,7 @@ void* kalloc(size_t bytes) {
 					if (amount_of_objects > 1) {
 						addSpan(ptr, amount_of_objects);
 					}
+					spinlock_unlock(memlock);
 					return (void*) ptr;
 				}
 			} else {
@@ -472,6 +688,90 @@ void* kalloc(size_t bytes) {
 	}
 
 	// No space found, create new slab
+	printf_serial("[KALLOC] Requested memory allocation. Bytes: 0x%llx\r\n", bytes);
 	initSlab(object_size);
+
+	spinlock_unlock(memlock);
 	return kalloc(bytes);
 }
+
+void* kcalloc(size_t count, size_t size) {
+	if (count == 0 || size == 0) return NULL;
+	if (count > SIZE_MAX / size) return NULL; // overflow check
+
+	size_t total = count * size;
+	void* ret = kalloc(total);
+	if (ret != NULL) {
+		// zero the memory
+		memset(ret, 0, total);
+	}
+	return ret;
+}
+
+/**
+ * @brief Resizes a previous kalloc()/kcalloc() allocation.
+ *
+ * @param ptr Pointer previously returned by kalloc()/kcalloc()/krealloc(), or NULL.
+ * @param new_size Desired size in bytes.
+ * @return Pointer to the (possibly moved) allocation, or NULL on failure / when new_size is 0.
+ */
+void* krealloc(void* ptr, size_t new_size) {
+	if (ptr == NULL) return kalloc(new_size);
+
+	if (new_size == 0) {
+		kfree(ptr);
+		return NULL;
+	}
+
+	spinlock_lock(memlock);
+
+	// DMA allocations live in a separate slab list with their own lifecycle
+	// They must go through kalloc_dma()/kfree_dma() instead
+	{
+		slab_header_t* h = dma_slab_head;
+		while (h != NULL) {
+			if ((uintptr_t) ptr > (uintptr_t) h && (uintptr_t) ptr < (uintptr_t) h + PAGE_2MB_SIZE) {
+				printf_serial("[KALLOC] krealloc() called on DMA memory (0x%llx) - use kalloc_dma()/kfree_dma() instead.\r\n", (uint64_t) ptr);
+				spinlock_unlock(memlock);
+				return NULL;
+			}
+			h = h->next_slab;
+		}
+	}
+
+	slab_header_t* header = first_slab;
+	while (header != NULL) {
+		if ((uintptr_t) ptr > (uintptr_t) header && (uintptr_t) ptr < (uintptr_t) header + PAGE_2MB_SIZE) {
+			// Multi-chunk allocations are tracked via allocated_span_t
+			// Single-chunk ones just occupy exactly one object_size-sized chunk.
+			allocated_span_t* span = findSpan((uintptr_t) ptr);
+			size_t old_capacity = span ? span->size * header->object_size : header->object_size;
+
+			if (new_size <= old_capacity) {
+				// Already fits within the chunk(s) it has, nothing to move.
+				spinlock_unlock(memlock);
+				return ptr;
+			}
+
+			// Needs to grow, need to release the lock so the others can work on it
+			spinlock_unlock(memlock);
+
+			void* new_ptr = kalloc(new_size);
+			if (new_ptr == NULL) return NULL;
+
+			memcpy(new_ptr, ptr, old_capacity);
+			kfree(ptr);
+			return new_ptr;
+		}
+		header = header->next_slab;
+	}
+
+	spinlock_unlock(memlock);
+	// ptr wasn't found in any tracked slab. 
+	// Large allocations bypass slab tracking,  so their size is unknown here.
+	// We refuse rather than guess and risk an out-of-bounds copy.
+	printf_serial("[KALLOC] krealloc() called on untracked pointer (0x%llx) - large (>2MB) allocations can't be resized.\r\n", (uint64_t) ptr);
+	return NULL;
+}
+
+#pragma GCC pop_options

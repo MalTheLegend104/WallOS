@@ -1,21 +1,18 @@
 #include <stdio.h>
 #include <klibc/kprint.h>
 #include <klibc/logger.h>
+#include <klibc/display.h>
 
 void set_green() {
-	set_colors(VGA_COLOR_GREEN, VGA_COLOR_BLACK);
+	display_set_colors(VGA_COLOR_GREEN, VGA_COLOR_BLACK);
 }
 
 void set_red() {
-	set_colors(VGA_COLOR_RED, VGA_COLOR_BLACK);
+	display_set_colors(VGA_COLOR_RED, VGA_COLOR_BLACK);
 }
 
 void printTime() {
 	// TODO print good stuff here 
-}
-
-void set_default() {
-	set_to_last();
 }
 
 void print(const char* format, ...) {
@@ -26,39 +23,39 @@ void print(const char* format, ...) {
 }
 
 void  Logger::vlogf(const char* format, va_list args) {
-	set_colors(VGA_COLOR_WHITE, VGA_COLOR_BLACK);
+	display_set_colors(VGA_COLOR_WHITE, VGA_COLOR_BLACK);
 	printTime();
 	printf("[LOG]   ");
 	vprintf(format, args);
-	set_default();
+	display_set_colors_default();
 }
 void  Logger::vinfof(const char* format, va_list args) {
-	set_colors(VGA_COLOR_CYAN, VGA_COLOR_BLACK);
+	display_set_colors(VGA_COLOR_CYAN, VGA_COLOR_BLACK);
 	printTime();
 	printf("[INFO]  ");
 	vprintf(format, args);
-	set_default();
+	display_set_colors_default();
 }
 void  Logger::vwarnf(const char* format, va_list args) {
-	set_colors(VGA_COLOR_YELLOW, VGA_COLOR_BLACK);
+	display_set_colors(VGA_COLOR_YELLOW, VGA_COLOR_BLACK);
 	printTime();
 	printf("[WARN]  ");
 	vprintf(format, args);
-	set_default();
+	display_set_colors_default();
 }
 void  Logger::verrorf(const char* format, va_list args) {
-	set_colors(VGA_COLOR_LIGHT_RED, VGA_COLOR_BLACK);
+	display_set_colors(VGA_COLOR_LIGHT_RED, VGA_COLOR_BLACK);
 	printTime();
 	printf("[ERROR] ");
 	vprintf(format, args);
-	set_default();
+	display_set_colors_default();
 }
 void  Logger::vfatalf(const char* format, va_list args) {
-	set_colors(VGA_COLOR_RED, VGA_COLOR_BLACK);
+	display_set_colors(VGA_COLOR_RED, VGA_COLOR_BLACK);
 	printTime();
 	printf("[FATAL] ");
 	vprintf(format, args);
-	set_default();
+	display_set_colors_default();
 }
 
 void Logger::logf(const char* format, ...) {
@@ -103,8 +100,8 @@ void Logger::Checklist::blankEntry(const char* format, ...) {
 void Logger::Checklist::checkEntry(const char* format, ...) {
 	print("[");
 	set_green();
-	putc_vga(0xfb);
-	set_default();
+	display_putc(0xfb);
+	display_set_colors_default();
 	print("] ");
 	va_list args;
 	va_start(args, format);
@@ -115,8 +112,8 @@ void Logger::Checklist::checkEntry(const char* format, ...) {
 void Logger::Checklist::noCheckEntry(const char* format, ...) {
 	print("[");
 	set_red();
-	putc_vga('X');
-	set_default();
+	display_putc('X');
+	display_set_colors_default();
 	print("] ");
 	va_list args;
 	va_start(args, format);
@@ -133,8 +130,8 @@ void Logger::Checklist::v_blankEntry(const char* format, va_list args) {
 void Logger::Checklist::v_checkEntry(const char* format, va_list args) {
 	print("[");
 	set_green();
-	putc_vga(0xfb);
-	set_default();
+	display_putc(0xfb);
+	display_set_colors_default();
 	print("] ");
 	vprintf(format, args);
 	print("\n");
@@ -142,8 +139,8 @@ void Logger::Checklist::v_checkEntry(const char* format, va_list args) {
 void Logger::Checklist::v_noCheckEntry(const char* format, va_list args) {
 	print("[");
 	set_red();
-	putc_vga('X');
-	set_default();
+	display_putc('X');
+	display_set_colors_default();
 	print("] ");
 	vprintf(format, args);
 	print("\n");

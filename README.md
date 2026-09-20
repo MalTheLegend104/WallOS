@@ -1,9 +1,13 @@
 # WallOS
 
-WallOS (pronounced Wall-OS) is a 64-bit hobby operating system currently targeting x86_64, with plans for AArch64 and other architectures in the future.
+64-Bit hobby OS. Currently only supports x86-64, but hope to expand to Aarch64 and potentially other platforms.
 
-> Disclaimer: Currently, the CI/CD is broken. This build "requires" (not really, it could still be built with x86_64-elf-gcc) a custom cross-compiler.
-> More documentation is "on the way" for this, but definitely not a priority.
+> Disclaimer: Currently the CI/CD is broken. This build "requires" (not really, it could still be built with x86_64-elf-gcc) a custom cross-compiler.
+>
+> I have a fork of [GCC](https://github.com/MalTheLegend104/gcc), [binutils](https://github.com/MalTheLegend104/binutils-gdb), and [mlibc](https://github.com/MalTheLegend104/mlibc) that contain branches for my patches.
+> These are updated as required, generally whenever new major versions come out or new important features are added.
+> The process of building them is rather complicated, and will not be discussed here.
+> I plan on writing a small python CLI tool to clone/configure/build the toolchain, but it's a very low priority.
 
 ## Philosophy and Backstory
 
@@ -33,7 +37,7 @@ Most of what I've been building recently has been pure C, though.
 
 ### Philosophy
 
-My entire philosophy with this OS is that it's solely a learning experience. 
+My entire philosophy with this OS is that it's solely a learning experience.
 It has never been written with any intent that it actually become anything more than a learning experience.
 
 I work on it off-and-on as I feel like it, hopping between it and some other personal projects.
@@ -55,21 +59,21 @@ The goal is to understand systems deeply, not to compete with production kernels
 src┐
    ├──kernel
    │   ├──kcore
-   │   │ 
+   │   │
    │   ├──klibc
    │   │  ├──include
    │   │  └──<klibc implementations>
-   │   │ 
+   │   │
    │   ├──x86_64
    │   │  ├──boot
    │   │  ├──acpi
    │   │  │  └─ Internal ACPI abstraction layer.
    │   │  └──<other platform specific files>
-   │   │ 
+   │   │
    │   └──<other architectures here>
    │      ├──boot
    │      └──<other platform specific files>
-   │   
+   │
    ├──libc
    │  ├──include
    │  ├──string
@@ -86,7 +90,7 @@ src┐
 
 1. CPU Scheduler
    - I really need the ability to spawn tasks in different threads. I don't even really care about this being a fully featured scheduler, I just want different threads.
-      - I will implement at least the *interface* for a proper scheduler, even if I only care about basic round-robin multithreading for now.
+     - I will implement at least the _interface_ for a proper scheduler, even if I only care about basic round-robin multithreading for now.
    - I have implemented the interface for this, but honestly, I think it'll get a whole rewrite because I don't particularly like how I've done it.
 2. System Calls
    - These are already supported, at least in a "the infrastructure exists" kind of way.
@@ -95,35 +99,35 @@ src┐
 3. Move terminal to userspace.
    - Scheduling and multitasking are necessary for me to do userspace apps, but I can still move the terminal to userspace.
    - This would also make developing and testing syscalls much easier.
-4. PCI
-   - This is the last "big" device interface I've not conquered (which unlocks an incredible amount of devices I can interface with).
-   - I mostly want this (and need it) for AHCI, basic HID device support, and networking.
 
 ### Future "Wishlist"
 
 - VMM
-   - My virtual memory manager has been a long-standing annoyance of mine. Don't get me wrong, it works, it does what it's supposed to, but it's very limited.
-     It's a pain to add support for new things. Basically all VMM issues I've had have stemmed from the original PMM design, though, so this is on the back burner until I *really* need 4KB pages.
+  - My virtual memory manager has been a long-standing annoyance of mine. Don't get me wrong, it works, it does what it's supposed to, but it's very limited.
+    It's a pain to add support for new things. Basically all VMM issues I've had have stemmed from the original PMM design, though, so this is on the back burner until I _really_ need 4KB pages.
 - Buildsystem
-   - The `make` based buildsystem has worked great for basically the entire length of the project. With that said, I hate it. It's a pain to maintain, and I have to basically relearn how and why I did everything the way I did it anytime I need to make changes.
-   - I ideally want something smoother to use, likely CMake (which I've tried implementing unsuccessfully several times, mainly due to me giving up halfway through each time). 
+  - The `make` based buildsystem has worked great for basically the entire length of the project. With that said, I hate it. It's a pain to maintain, and I have to basically relearn how and why I did everything the way I did it anytime I need to make changes.
+  - I ideally want something smoother to use, likely CMake (which I've tried implementing unsuccessfully several times, mainly due to me giving up halfway through each time).
 - Major Refactor
-   - A ton of things are written with only x86_64 in mind, and should ideally be abstracted away into proper interfaces. For example, time depends on the x86 RTC, serial depends on x86 CPU I/O ports, etc. 
-- AHCI
-   - It would be nice not to have to rely on the incredibly old SATA PIO interface, but it works for what little I do with filesystem stuff for now.
+  - A ton of things are written with only x86_64 in mind, and should ideally be abstracted away into proper interfaces. For example, serial depends on x86 CPU I/O ports exclusively.
 
 ### Recently Completed
 
-1. PMM
-   - Physical memory manager has finally been rewritten. It now uses a buddy allocator system, and is *way* more robust than the old one.
-   - The interface for this is much more intuitive than the old one, and it now supports things that aren't 2MB blocks
-      - It still has the old interface, as I haven't rewritten my VMM (and don't plan to for quite a while). 
-   - Supports up to 8MB allocations in O(1) time, with 4KB chunks being the minimum allocation size.
-2. Framebuffer Graphics
-   - This uses my `Apollo Graphics Framework`, designed to work with basically any pixel-based framebuffer.
-   - This works very well. It was (and still is) extensively tested independently of this project, and is used in some other private projects of mine.
-   - This *is* compiled using `-O3`, which hasn't caused problems yet, but potentially could depending on how GCC is feeling at compile time.
-   - This also allowed us to finally have UEFI support. The main `makefile` has to be changed depending on whether you want a UEFI/BIOS or pure BIOS build.
+These are not necessarily in order. It's been a _very_ long since I've merged into main.
+
+1. XHCI
+   - I decided to start with XHCI first when implementing USB because it seems "easier" in the sense that the controller did a lot of the work that you'd have to manually do in USB1/2. That said, that's about the about thing that was "easy" about this. XHCI was a nightmare to get working, and some of my testing devices have non-compliant hardware. Got it implemented, and working with HID keyboards, so good enough for me.
+   - This will need to be greatly cleaned up. There is a TON of bad code in this (albeit I restarted 3 times in the making of it because of code structure, so it's not too awful). I started out trying to make it readable and followable, and after a few weeks of writing it, I started wanting to "just get it done" and code quality went way down.
+2. HID
+   - The whole reason I wanted to write a USB driver in the first place is that one of my testing devices doesn't have PS/2 emulation or a serial input/output, so the only way to interact with it was USB keyboards. The HID layer only really supports boot protocol keyboards, but can identify controllers and mice (just doesn't really do anything with them).
+3. Input Layer
+   - Implementing HID required me to remove the dependence on the PS/2 layer for inputs. I tried to make this layer have as good of an interface as possible, and it is very extendable in the future as needed.
+4. Filesystems
+   - As a sort of side project while being a bit burned out while implementing XHCI, I wrote iso9660 and FAT (12/26/32) filesystem drivers. Wrote a small filesystem layer (that sits next to the VFS) to help manage mounting. I basically rewrote the entire command layer relating to filesystems and drives, so we have "normal" cd/ls/cat/etc.
+5. WallShell
+   - Added a ton of new features to this, and actually "ported" the standalone version of WallShell I maintained separately to WallOS. Dedicated way to extract arguments, CWD, proper input handling, some keybinds, etc.
+6. Timing
+   - Added a proper timer interface that's abstracted from x86_64. Designed to be able to support a ton of different timers in a system with different purposes, and should be very platform agnostic. Also added HPET support, which I should've done a long time ago.
 
 ### Kernel
 
@@ -132,6 +136,8 @@ This section is a very basic description of each "module" of the kernel. I reall
 #### KCore
 
 The core kernel files. This is mostly related to things like the kernel entrypoint, kernel panics, and important drivers (like serial and PS/2).
+There are also the "important" filesystem drivers (FAT and iso9660).
+
 Pretty much all headers for this are located in [klibc](#Klibc) to make them accessible to the rest of the system. (There's definitely room for buildsystem improvements).
 
 My past self didn't really plan on supporting anything other than x86_64, which has caused present me much pain.
@@ -140,13 +146,14 @@ The current entrypoint contained here has a lot of dependence on x86_64 system i
 
 #### KLibc
 
-Most of the rest of the kernel subsystems and interfaces, including memory management, syscalls, and the kernel services terminal. This will likely be renamed in the future, after userspace is established.
+Most of the rest of the kernel subsystems and interfaces, including memory management, syscalls, and the kernel services terminal. This will likely be renamed in the future, after userspace is established. It's not really a kernel "libc" (that's the libc folder), and rather just regular kernel API.
 
 Yet again, a good portion of this is x86_64 specific, and it's intermixed with things that are actually properly abstracted.
 
 #### x86_64
 
 This contains all x86_64 platform specific code, such as the post-bootloader booting code that sets up the environment for the kernel, as well as platform specific features such as the IDT and GDT.
+
 Any other platforms that end up supported in the future will end up in similarly titled folders alongside this.
 
 ### Libc
@@ -163,8 +170,8 @@ Pretty much the only things here that are even remotely optimized are `printf` a
 
 The ramfs is documented [here.](documentation/ramfs/ramfs.md)
 
-Basically, it's a 2MB (constant size), R/W (but writes aren't saved across reset, obviously), Fat12 filesystem that's appended to the end of the kernel at link time, and distributed as part of the `.bin`.
-It's designed to carry the *absolute minimum* required to get the system booted, which is really only a config (that doesn't even do anything) for now.
+Basically, it's a 2MB (constant size), Read only (my FAT12 driver only supports reads), Fat12 filesystem that's appended to the end of the kernel at link time, and distributed as part of the `.bin`.
+It's designed to carry the _absolute minimum_ required to get the system booted, which is really only a config (that doesn't even do anything) for now. When I get actual binary loading, this will likely be how optional drivers are distributed.
 
 ### ACPI
 
@@ -174,17 +181,20 @@ The driver more so acts like an abstraction layer, along with providing the Oper
 WallOS also has a built-in layer for [uACPI](https://github.com/uACPI/uACPI), along with an interface (which still needs a ton of work) that lets the OS not particularly care about which subsystem it was compiled with.
 
 There are advantages to both subsystems:
+
 - `uACPI`
-   - Significantly faster
-   - OS Layer is better implemented
-      - This is on me, ACPICA support is *much* older, and I've gained a ton of experience by the time I wrote this OSL.
+  - Significantly faster
+  - OS Layer is better implemented
+    - This is on me, ACPICA support is _much_ older, and I've gained a ton of experience by the time I wrote this OSL.
 - `ACPICA`
-   - "Reference" implementation by Intel
-   - Much easier to use for ACPI debugging
-   - Requires a lot less of the OSL to actually be implemented to work.
+  - "Reference" implementation by Intel
+  - Much easier to use for ACPI debugging
+  - Requires a lot less of the OSL to actually be implemented to work.
 
 It really doesn't interact with much of the OS by itself and is mostly a standalone module.
-In terms of structure, it sits somewhere between `klibc` and `kcore`. Whenever a robust interface for drivers is set up, this is likely to change.
+In terms of structure, it sits somewhere between `klibc` and `kcore`.
+It doesn't go through the normal driver interface though, leaving it in a weird place.
+There is an abstraction layer over the ACPI subsystem that the OS in general goes though, and the kernel/OS should never interact directly with the subsystem.
 
 ### Sys Calls
 
@@ -198,25 +208,30 @@ This will get its own proper dedicated documentation whenever I get around to ac
 
 All current documentation can be found [here.](documentation/README.md)
 
+I suck at documentation.
+I've been trying to be better about adding comments to interface layers, and the most important systems that drivers touch have been documented with doxygen, but I really need to sit down and actually write regular documentation for a lot of stuff.
+There's a lot of small quirks around basically every subsystem.
+
 ### Contributing Documentation
 
 All code that needs to be documented should be done so by following the rules of [doxygen](https://www.doxygen.nl/). It allows for JavaDoc like commenting, along with other common styles.
-> I'm a former Java dev, and heavily prefer the JavaDoc style `@tag` as opposed to the `\\tag`. If committing, please use the JavaDoc style tag.
+
+> I'm a former Java dev, and heavily perfer the JavaDoc style `@tag` as opposed to the `\\tag`. If commiting, please use the JavaDoc style tag.
 
 ```cpp
 /**
 * @brief This is example documentation.
-*  
+*
 * @param a - an integer doing xyz.
 * @return int - some integer.
 */
 int test(int a);
 ```
 
-For the record, I'm ***VERY*** bad at actually remembering to document things as I'm implementing them.
+For the record, I'm _**VERY**_ bad at actually remembering to document things as I'm implementing them.
 I tend to get into a flow state and just keep writing code without documenting it as I go, and future me hates me for it.
 
-This is okay for some things, as certain interfaces are self-explanatory, but other things need a lot more documentation (***cough*** PMM and SATA PIO ***cough***).
+This is okay for some things, as certain interfaces are self-explanatory, but other things need a lot more documentation (_**cough**_ PMM and SATA _**cough**_).
 
 ## Contributing
 
@@ -224,14 +239,14 @@ There are many ways to contribute to the project:
 
 - Simply report any bugs or make suggestions.
 - Look through `bug` and `feature-requests` tags in issues for something that interests you.
-   - I don't really use the `issues` tab much. Most of what I want implemented is marked with `TODO` in the code or earlier in this document in the [todo](#todo) section.
+  - I don't really use the `issues` tab much. Most of what I want implemented is marked with `TODO` in the code or earlier in this document in the [todo](#todo) section.
 - Review the codebase and changes to see if you find any bugs or potential optimizations.
-   - Keep in mind I actively choose to *not* optimize things at the expense of readability most of the time. There are some exceptions (graphics, for example), but generally, please favor readability above all else.
-     This OS is meant to be a learning experience for me (and others), not something that actually ends up being used in the real world.
-      - With this in mind, if you see something that is *actively* causing bad performance or making the OS unusable, don't feel bad about optimizing it. This is what I went through with framebuffer graphics and the PMM.
+  - Keep in mind I actively choose to _not_ optimize things at the expense of readability most of the time. There are some exceptions (graphics, for example), but generally, please favor readability above all else.
+    This OS is meant to be a learning experience for me (and others), not something that actually ends up being used in the real world.
+    - With this in mind, if you see something that is _actively_ causing bad performance or making the OS unusable, don't feel bad about optimizing it. This is what I went through with framebuffer graphics and the PMM.
 - Participate in the discussion board.
   - You can ask questions, help others out, talk about potential features, etc.
-  - I am *more than happy* to talk about anything to do with the OS (and can ramble for hours), don't be afraid to reach out.
+  - I am _more than happy_ to talk about anything to do with the OS (and can ramble for hours), don't be afraid to reach out.
 
 If you are interested in fixing issues, adding features, or otherwise contributing to the codebase, read the [contribution guide](documentation/General/contributing.md).
 
@@ -245,9 +260,11 @@ The only way to build this currently is using a gcc cross compiler. This can be 
 
 Currently, all build files require the usage of `x86_64-wallos-*` binaries. The process of building these is long and complex, and (as is a trend here) not documented.
 
-The build *can* be done using `x86_64-elf-*` options from binutils and gcc, but all of the makefiles will need to be changed (or aliased to `x86_64-wallos-*` but that's probably a bad idea).
+The build _can_ be done using `x86_64-elf-*` options from binutils and gcc, but all of the makefiles will need to be changed (or aliased to `x86_64-wallos-*` but that's probably a bad idea).
 
 I hope to distribute a `docker` image to remove the pain of building eventually, but the process of making `x86_64-wallos-*` binaries is nowhere near good enough for a Docker image yet.
+
+I also plan on implementing a small python CLI tool used to help clone/configure/build the required toolchain, but is merely a concept for now and is not on my list of things to do yet.
 
 ### Packages
 
@@ -260,17 +277,21 @@ I hope to distribute a `docker` image to remove the pain of building eventually,
   - This package has been completely different in the past, and might not even be the correct package.
   - We need `qemu-system-x86_64`, you can look it up if `qemu-system` doesn't install it.
 
+There is a multitude of GRUB packages needed.
+
+- `grub-efi-amd64-bin`
+  - This is only required for UEFI builds.
+
 #### pacman
 
 I have built WallOS on Arch before... I didn't keep track of the packages...
 
-If I end up building it on Arch again, I will put all the packages here (or if someone else does, I'd appreciate a pull request for this list...).
+If I end up building it on Arch again I will put all the packages here (or if someone else does I'd appreciate a pull request for this list...).
 
 ## Testing
 
 This OS gets tested thoroughly in `qemu-system-x86_64`, both in regular BIOS mode and UEFI. This is the main way I do development.
 
-With that said, I take great pride in the fact that this OS runs on real hardware, and I routinely test on several systems. 
+With that said, I take great pride in the fact that this OS runs on real hardware, and I routinely test on several systems.
 
 [There is a dedicated section to real hardware testing in the docs](documentation/Testing/testing.md).
-

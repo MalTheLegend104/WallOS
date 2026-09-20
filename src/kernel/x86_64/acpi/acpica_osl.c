@@ -9,6 +9,8 @@
 #include <stdint.h>
 #include <stdarg.h>
 
+#include <system/timer.h>
+
 #include <klibc/logger.h>
 #include <drivers/serial.h>	
 #include <memory/virtual_mem.h>
@@ -18,6 +20,26 @@
 // All of these are just stubs for ACPICA.
 // For the purposes of what we're doing right now, it shouldn't need these.
 // We only really use the ACPICA subsystem for table parsing right now.
+
+void acpi_vlogger(LogType type, const char* fmt, va_list args) {
+	switch (type) {
+		case LOG: 	printf("[ACPICA][LOG] ");	vprintf_color(PRINT_COLOR_DARK_GREY, PRINT_DEFAULT_BG, fmt, args); 	break;
+		case INFO: 	printf("[ACPICA][INFO] ");	vprintf_color(PRINT_COLOR_CYAN, PRINT_DEFAULT_BG, fmt, args); 		break;
+		case WARN: 	printf("[ACPICA][WARN] ");	vprintf_color(PRINT_COLOR_YELLOW, PRINT_DEFAULT_BG, fmt, args); 	break;
+		case ERROR: printf("[ACPICA][ERROR] ");	vprintf_color(PRINT_COLOR_LIGHT_RED, PRINT_DEFAULT_BG, fmt, args); 	break;
+		case FATAL: printf("[ACPICA][FATAL] ");	vprintf_color(PRINT_COLOR_RED, PRINT_DEFAULT_BG, fmt, args); 		break;
+
+		default: vprintf(fmt, args);	break;
+	}
+}
+#include <drivers/serial.h>
+void acpi_logger(LogType type, const char* fmt, ...) {
+	va_list args;
+	va_start(args, fmt);
+	vlogger(type, fmt, args);
+	// vprintf_serial(fmt, args);
+	va_end(args);
+}
 
 void acpica_failure(const char* str) {
 	const char* msg[] = { "ACPICA called a function stub: ", str };
@@ -29,21 +51,14 @@ void acpica_failure(const char* str) {
 	panic_sa(msg, 2);
 }
 
-ACPI_STATUS AcpiOsWritePciConfiguration(ACPI_PCI_ID* pciId, UINT32 reg, UINT64 value, UINT32 width) {
-	acpica_failure(__func__);
-	return 0;
-}
-
 ACPI_STATUS AcpiOsSignal(UINT32 function, void* info) {
 	acpica_failure(__func__);
 	return 0;
 }
 
 UINT64 AcpiOsGetTimer(void) {
-	// acpica_failure(__func__);
-	printf("ACPICA: %s called.\n", __func__);
-
-	return AE_NOT_IMPLEMENTED;
+	// ACPI wants 100-nanosecond units
+	return timer_uptime_no_interrupts() / 100;
 }
 
 ACPI_STATUS AcpiOsPhysicalTableOverride(ACPI_TABLE_HEADER* existingTable, ACPI_PHYSICAL_ADDRESS* newAddress, UINT32* newTableLength) {
@@ -55,7 +70,7 @@ ACPI_STATUS AcpiOsPhysicalTableOverride(ACPI_TABLE_HEADER* existingTable, ACPI_P
 
 ACPI_STATUS AcpiOsWritePort(ACPI_IO_ADDRESS Address, UINT32 Value, UINT32 Width) {
 	// Optional: Log for debugging
-	printf("ACPI_IO: Write 0x%X to Port 0x%llx\n", Value, (uint64_t) Address);
+	printf_serial("[ACPICA] ACPI_IO: Write 0x%X to Port 0x%llx\r\n", Value, (uint64_t) Address);
 
 	switch (Width) {
 		case 8:
@@ -91,44 +106,110 @@ ACPI_STATUS AcpiOsReadPort(ACPI_IO_ADDRESS Address, UINT32* Value, UINT32 Width)
 	}
 
 	// Optional: Log for debugging
-	printf("ACPI_IO: Read 0x%X from Port 0x%llx\n", *Value, (uint64_t) Address);
+	printf_serial("[ACPICA] ACPI_IO: Read 0x%X from Port 0x%llx\r\n", *Value, (uint64_t) Address);
+
+	return AE_OK;
+}
+
+ACPI_STATUS AcpiOsReadMemory(ACPI_PHYSICAL_ADDRESS address, UINT64* value, UINT32 width) {
+	if (!value) {
+		return AE_BAD_PARAMETER;
+	}
+
+	// Reuse AcpiOsMapMemory's logic
+	// handles the "already mapped" identity case and the oversized-request check for us too.
+	void* virt = AcpiOsMapMemory(address, width / 8);
+	if (!virt) {
+		return AE_NO_MEMORY;
+	}
+
+	switch (width) {
+		case 8:  *value = *(volatile UINT8*) virt; break;
+		case 16: *value = *(volatile UINT16*) virt; break;
+		case 32: *value = *(volatile UINT32*) virt; break;
+		case 64: *value = *(volatile UINT64*) virt; break;
+		default:
+			return AE_BAD_PARAMETER;
+	}
+
+	printf_serial("[ACPICA] ACPI_MEM: Read 0x%llx from Addr 0x%llx (width %u)\r\n", *value, (uint64_t) address, width);
 
 	return AE_OK;
 }
 
 ACPI_STATUS AcpiOsWriteMemory(ACPI_PHYSICAL_ADDRESS address, UINT64 value, UINT32 width) {
-	acpica_failure(__func__);
-	return 0;
+	void* virt = AcpiOsMapMemory(address, width / 8);
+	if (!virt) {
+		return AE_NO_MEMORY;
+	}
+
+	switch (width) {
+		case 8:  *(volatile UINT8*) virt = (UINT8) value; break;
+		case 16: *(volatile UINT16*) virt = (UINT16) value; break;
+		case 32: *(volatile UINT32*) virt = (UINT32) value; break;
+		case 64: *(volatile UINT64*) virt = value; break;
+		default: return AE_BAD_PARAMETER;
+	}
+
+	printf_serial("[ACPICA] ACPI_MEM: Write 0x%llx to Addr 0x%llx (width %u)\r\n", value, (uint64_t) address, width);
+
+	return AE_OK;
 }
 
-ACPI_STATUS AcpiOsReadMemory(ACPI_PHYSICAL_ADDRESS address, UINT64* value, UINT32 width) {
-	acpica_failure(__func__);
-	return 0;
-}
+#include <drivers/pci.h>
 
 ACPI_STATUS AcpiOsReadPciConfiguration(ACPI_PCI_ID* pciId, UINT32 reg, UINT64* value, UINT32 width) {
-	// Print out information about the request
-	printf("ACPI: Read PCI config\n");
-	printf("  Segment: %u\n", pciId->Segment);
-	printf("  Bus:     %u\n", pciId->Bus);
-	printf("  Device:  %u\n", pciId->Device);
-	printf("  Function:%u\n", pciId->Function);
-	printf("  Register:0x%X\n", reg);
-	printf("  Width:   %u bits\n", width);
+	if (!pciId || !value) {
+		return AE_BAD_PARAMETER;
+	}
 
-	printf_serial("ACPI: Read PCI config\r\n");
-	printf_serial("  Segment: %u\r\n", pciId->Segment);
-	printf_serial("  Bus:     %u\r\n", pciId->Bus);
-	printf_serial("  Device:  %u\r\n", pciId->Device);
-	printf_serial("  Function:%u\r\n", pciId->Function);
-	printf_serial("  Register:0x%X\r\n", reg);
-	printf_serial("  Width:   %u bits\r\n", width);
+	uint8_t bus = (uint8_t) pciId->Bus;
+	uint8_t slot = (uint8_t) pciId->Device;
+	uint8_t func = (uint8_t) pciId->Function;
+	uint8_t offset = (uint8_t) reg;
 
-	// Set *value to 0 to avoid undefined reads
-	if (value) *value = 0;
+	switch (width) {
+		case 8:
+			*value = pci_config_read8(bus, slot, func, offset);
+			break;
+		case 16:
+			*value = pci_config_read16(bus, slot, func, offset);
+			break;
+		case 32:
+			*value = pci_config_read32(bus, slot, func, offset);
+			break;
+		default:
+			return AE_BAD_PARAMETER;
+	}
 
-	// Tell ACPICA that this read is not actually implemented
-	return AE_NOT_IMPLEMENTED;
+	return AE_OK;
+}
+
+ACPI_STATUS AcpiOsWritePciConfiguration(ACPI_PCI_ID* pciId, UINT32 reg, UINT64 value, UINT32 width) {
+	if (!pciId) {
+		return AE_BAD_PARAMETER;
+	}
+
+	uint8_t bus = (uint8_t) pciId->Bus;
+	uint8_t slot = (uint8_t) pciId->Device;
+	uint8_t func = (uint8_t) pciId->Function;
+	uint8_t offset = (uint8_t) reg;
+
+	switch (width) {
+		case 8:
+			pci_config_write8(bus, slot, func, offset, (uint8_t) value);
+			break;
+		case 16:
+			pci_config_write16(bus, slot, func, offset, (uint16_t) value);
+			break;
+		case 32:
+			pci_config_write32(bus, slot, func, offset, (uint32_t) value);
+			break;
+		default:
+			return AE_BAD_PARAMETER;
+	}
+
+	return AE_OK;
 }
 
 
@@ -143,9 +224,7 @@ void AcpiOsVprintf(const char* format, va_list args) {
 	va_list args_copy;
 	va_copy(args_copy, args);
 
-	set_colors(VGA_COLOR_GREEN, VGA_DEFAULT_BG);
-	vprintf(format, args);
-	set_to_last();
+	vprintf_color(PRINT_COLOR_GREEN, PRINT_DEFAULT_BG, format, args);
 
 	printf_serial("\r\n");
 	vprintf_serial(format, args_copy);
@@ -160,9 +239,8 @@ void AcpiOsPrintf(const char* format, ...) {
 	va_start(arg, format);
 	va_copy(arg_copy, arg);
 
-	set_colors(VGA_COLOR_GREEN, VGA_DEFAULT_BG);
-	vprintf(format, arg);
-	set_to_last();
+	vprintf_color(PRINT_COLOR_GREEN, PRINT_DEFAULT_BG, format, arg);
+
 	printf_serial("\r\n");
 	vprintf_serial(format, arg_copy);
 
@@ -171,7 +249,7 @@ void AcpiOsPrintf(const char* format, ...) {
 }
 
 ACPI_STATUS AcpiOsInitialize() {
-	logger(INFO, "ACPICA called OS init.\n");
+	acpi_logger(INFO, "ACPICA called OS init.\n");
 	return AE_OK;
 }
 
@@ -199,28 +277,123 @@ ACPI_STATUS AcpiOsTableOverride(ACPI_TABLE_HEADER* ExistingTable, ACPI_TABLE_HEA
 }
 
 // Memory
+
+/* This is designed to match the uACPI OSL for this.
+ * I've found that ACPICA has at least O(n^2) calls to this based on how many tables there are.
+ * Because I wasn't de-allocating the virtual pages, ACPICA was essentially trying to map ~1.5GB of virtual kernel pages, which is space we didn't have.
+ */
+#define ACPI_MAP_PAGE_SIZE  PAGE_2MB_SIZE
+#define ACPI_MAP_PAGE_MASK  (~(ACPI_PHYSICAL_ADDRESS)(ACPI_MAP_PAGE_SIZE - 1))
+
+// This should be more than plenty
+#define ACPI_MAP_CACHE_SLOTS 1024
+
+typedef struct {
+	ACPI_PHYSICAL_ADDRESS phys_base; // page-aligned base physical address
+	ACPI_SIZE mapped_len; // page-aligned total length passed to the VMM
+	void* virt_base; // what mapKernelLocation returned
+	uint32_t refcount; // how many live AcpiOsMapMemory calls reference this
+} acpi_map_cache_entry_t;
+
+static acpi_map_cache_entry_t _acpi_map_cache[ACPI_MAP_CACHE_SLOTS];
+static uint32_t _acpi_map_cache_used = 0;
+
+// Same mixing function as the uACPI OSL's cache
+static inline uint32_t _acpi_map_hash(ACPI_PHYSICAL_ADDRESS phys_base, ACPI_SIZE mapped_len) {
+	uint64_t v = (uint64_t) phys_base ^ ((uint64_t) mapped_len << 32);
+	v ^= v >> 33;
+	v *= 0xff51afd7ed558ccdULL;
+	v ^= v >> 33;
+	return (uint32_t) (v & (ACPI_MAP_CACHE_SLOTS - 1));
+}
+
+// Returns the cache slot for (phys_base, mapped_len), or -1 if not found
+static int _acpi_map_cache_find(ACPI_PHYSICAL_ADDRESS phys_base, ACPI_SIZE mapped_len) {
+	uint32_t slot = _acpi_map_hash(phys_base, mapped_len);
+	for (uint32_t i = 0; i < ACPI_MAP_CACHE_SLOTS; i++) {
+		uint32_t idx = (slot + i) & (ACPI_MAP_CACHE_SLOTS - 1);
+		acpi_map_cache_entry_t* e = &_acpi_map_cache[idx];
+		if (!e->virt_base) return -1;  // empty slot => not present
+		if (e->phys_base == phys_base && e->mapped_len == mapped_len) return (int) idx;
+	}
+	return -1;
+}
+
+static int _acpi_map_cache_insert(ACPI_PHYSICAL_ADDRESS phys_base, ACPI_SIZE mapped_len, void* virt_base) {
+	if (_acpi_map_cache_used >= ACPI_MAP_CACHE_SLOTS) {
+		printf_serial("[ACPICA][MAP_CACHE] WARNING: cache full (%u slots), cannot insert phys=0x%llx\r\n",
+			ACPI_MAP_CACHE_SLOTS, (uint64_t) phys_base);
+		return -1;
+	}
+	uint32_t slot = _acpi_map_hash(phys_base, mapped_len);
+	for (uint32_t i = 0; i < ACPI_MAP_CACHE_SLOTS; i++) {
+		uint32_t idx = (slot + i) & (ACPI_MAP_CACHE_SLOTS - 1);
+		if (!_acpi_map_cache[idx].virt_base) {
+			_acpi_map_cache[idx].phys_base = phys_base;
+			_acpi_map_cache[idx].mapped_len = mapped_len;
+			_acpi_map_cache[idx].virt_base = virt_base;
+			_acpi_map_cache[idx].refcount = 1;
+			_acpi_map_cache_used++;
+			return (int) idx;
+		}
+	}
+	return -1;
+}
+
 void* AcpiOsMapMemory(ACPI_PHYSICAL_ADDRESS PhysicalAddress, ACPI_SIZE Length) {
 	if (PhysicalAddress >= KERNEL_VIRTUAL_BASE) return (void*) PhysicalAddress; // It's already mapped.
 
+	// Compute the true page-aligned region we need the VMM to map.
+	ACPI_PHYSICAL_ADDRESS page_offset = PhysicalAddress & (ACPI_MAP_PAGE_SIZE - 1);
+	ACPI_PHYSICAL_ADDRESS phys_base = PhysicalAddress & ACPI_MAP_PAGE_MASK;
+	ACPI_SIZE aligned_len = (Length + page_offset + ACPI_MAP_PAGE_SIZE - 1) & ACPI_MAP_PAGE_MASK;
+
+	// Cache lookup
+	int idx = _acpi_map_cache_find(phys_base, aligned_len);
+	if (idx >= 0) {
+		_acpi_map_cache[idx].refcount++;
+		return (void*) ((uintptr_t) _acpi_map_cache[idx].virt_base + page_offset);
+	}
+
 	// Arbitrary Cutoff, 256 continuous MB.
-	if (Length > 0x200000 * 128) {
+	if (aligned_len > 0x200000 * 128) {
 		// Map only the requested location, get the table header, return 0.
 		char* magic = (char*) mapKernelLocation(PhysicalAddress, 0x24);
-		printf("ACPICA: Target Signature: \"%c%c%c%c\"\n", magic[0], magic[1], magic[2], magic[3]);
+		acpi_logger(WARN, "Very long memory map request. \n\t\tTarget Signature: \"%c%c%c%c\"\n", magic[0], magic[1], magic[2], magic[3]);
 		return 0;
 	}
 
-	void* ret = (void*) mapKernelLocation(PhysicalAddress, Length);
+	// Cache miss.
+	void* virt_base = (void*) mapKernelLocation(phys_base, aligned_len);
+	if (!virt_base) {
+		return 0;
+	}
 
-	// printf_serial("\r\nMAP REQUEST:\r\n\tRequest PHYS: 0x%llx\r\n\tRequest LEN:  0x%llx\r\n\tMapped Return: 0x%llx\r\n", PhysicalAddress, Length, ret);
-	// printf("\nMAP REQUEST:\n\tRequest PHYS: 0x%llx\n\tRequest LEN:  0x%llx\n\tMapped Return: 0x%llx\n", PhysicalAddress, Length, ret);
+	_acpi_map_cache_insert(phys_base, aligned_len, virt_base);
 
-	return ret;
+	return (void*) ((uintptr_t) virt_base + page_offset);
 }
 
 void AcpiOsUnmapMemory(void* where, ACPI_SIZE length) {
-	// I dont really care about unmapping right now. 
-	// printf_serial("UNMAP:\r\n\tMem Addr: 0x%llx\r\n\tLen: 0x%llx\r\n", where, length);
+	if ((uintptr_t) where >= KERNEL_VIRTUAL_BASE) return;  // identity-mapped, nothing to do
+
+	// We don't have the original physical address here, so we match on virt.
+	ACPI_SIZE page_offset = (uintptr_t) where & (ACPI_MAP_PAGE_SIZE - 1);
+	void* virt_base = (void*) ((uintptr_t) where & ACPI_MAP_PAGE_MASK);
+	ACPI_SIZE aligned_len = (length + page_offset + ACPI_MAP_PAGE_SIZE - 1) & ACPI_MAP_PAGE_MASK;
+
+	for (uint32_t i = 0; i < ACPI_MAP_CACHE_SLOTS; i++) {
+		acpi_map_cache_entry_t* e = &_acpi_map_cache[i];
+		if (!e->virt_base) continue;
+		if (e->virt_base == virt_base && e->mapped_len == aligned_len) {
+			if (e->refcount > 0) e->refcount--;
+			// Even with refcount 0, there's a very high chance ACPICA will want to remap the same location
+			return;
+		}
+	}
+	// Not found in cache
+	// This is basically a no-op. 
+	// I really need to rewrite the damn VMM
 }
 
 ACPI_STATUS AcpiOsGetPhysicalAddress(void* LogicalAddress, ACPI_PHYSICAL_ADDRESS* PhysicalAddress) {
@@ -232,7 +405,7 @@ ACPI_STATUS AcpiOsGetPhysicalAddress(void* LogicalAddress, ACPI_PHYSICAL_ADDRESS
 
 void* AcpiOsAllocate(ACPI_SIZE Size) {
 	void* ptr = kalloc(Size);
-	//logger(INFO, "ACPICA called OS Allocate for size: 0x%llx. Returning pointer: 0x%llx\n", Size, ptr);
+	//acpi_logger(INFO, "ACPICA called OS Allocate for size: 0x%llx. Returning pointer: 0x%llx\n", Size, ptr);
 
 	return ptr;
 }
@@ -259,18 +432,46 @@ ACPI_THREAD_ID AcpiOsGetThreadId() {
 	return 1;
 }
 
+typedef struct {
+	ACPI_OSD_EXEC_CALLBACK function;
+	void* context;
+} acpi_deferred_work_t;
+
+#define ACPI_DEFERRED_QUEUE_SIZE 16
+static acpi_deferred_work_t deferred_queue[ACPI_DEFERRED_QUEUE_SIZE];
+static volatile uint32_t deferred_head = 0;
+static volatile uint32_t deferred_tail = 0;
+
 ACPI_STATUS AcpiOsExecute(ACPI_EXECUTE_TYPE Type, ACPI_OSD_EXEC_CALLBACK Function, void* Context) {
-	acpica_failure(__func__);
+	uint32_t next = (deferred_tail + 1) % ACPI_DEFERRED_QUEUE_SIZE;
+	if (next == deferred_head) {
+		return AE_NO_MEMORY; // queue full
+	}
+	deferred_queue[deferred_tail].function = Function;
+	deferred_queue[deferred_tail].context = Context;
+	deferred_tail = next;
 	return AE_OK;
 }
 
-#include <system/timing.h>
+void acpi_process_deferred_work(void) {
+	while (deferred_head != deferred_tail) {
+		acpi_deferred_work_t work = deferred_queue[deferred_head];
+		deferred_head = (deferred_head + 1) % ACPI_DEFERRED_QUEUE_SIZE;
+		if (work.function) work.function(work.context);
+	}
+}
+
 void AcpiOsSleep(UINT64 Milliseconds) {
-	sleep(Milliseconds);
+	busy_wait_ms(Milliseconds);
 }
 
 void AcpiOsStall(UINT32 Microseconds) {
-	acpica_failure(__func__);
+	uint64_t start_ns = timer_uptime_no_interrupts();
+	uint64_t wait_ns = Microseconds * 1000ull;
+
+	while ((timer_uptime_no_interrupts() - start_ns) < wait_ns) {
+		__asm__ volatile ("pause");
+	}
 }
 
 ACPI_STATUS AcpiOsEnterSleep(UINT8 SleepState, UINT32 RegaValue, UINT32 RegbValue) {
@@ -301,24 +502,27 @@ ACPI_STATUS AcpiOsEnterSleep(UINT8 SleepState, UINT32 RegaValue, UINT32 RegbValu
 	return AE_OK;
 }
 
-// // Mutexes and Spinlocks
-// ACPI_STATUS AcpiOsCreateMutex(ACPI_MUTEX* OutHandle) {
-// 	acpica_failure(__func__);
-// 	return AE_OK;
-// }
+// Mutexes and Spinlocks
+// Mutexes (using the Semaphore primitives)
+ACPI_STATUS AcpiOsCreateMutex(ACPI_MUTEX* OutHandle) {
+	// A Mutex is a semaphore with Max 1, Initial 1
+	return AcpiOsCreateSemaphore(1, 1, (ACPI_SEMAPHORE*) OutHandle);
+}
 
-// void AcpiOsDeleteMutex(ACPI_MUTEX Handle) {
-// 	acpica_failure(__func__);
-// }
+void AcpiOsDeleteMutex(ACPI_MUTEX Handle) {
+	// Directly use the semaphore delete logic
+	AcpiOsDeleteSemaphore((ACPI_SEMAPHORE) Handle);
+}
 
-// ACPI_STATUS AcpiOsAcquireMutex(ACPI_MUTEX Handle, UINT16 Timeout) {
-// 	acpica_failure(__func__);
-// 	return AE_OK;
-// }
+ACPI_STATUS AcpiOsAcquireMutex(ACPI_MUTEX Handle, UINT16 Timeout) {
+	// Mutexes always wait for 1 unit
+	return AcpiOsWaitSemaphore((ACPI_SEMAPHORE) Handle, 1, Timeout);
+}
 
-// void AcpiOsReleaseMutex(ACPI_MUTEX Handle) {
-// 	acpica_failure(__func__);
-// }
+void AcpiOsReleaseMutex(ACPI_MUTEX Handle) {
+	// Signal 1 unit back to the semaphore
+	AcpiOsSignalSemaphore((ACPI_SEMAPHORE) Handle, 1);
+}
 
 #include <memory/semaphore.h>
 
@@ -343,8 +547,6 @@ ACPI_STATUS AcpiOsDeleteSemaphore(ACPI_SEMAPHORE Handle) {
 }
 
 ACPI_STATUS AcpiOsWaitSemaphore(ACPI_SEMAPHORE Handle, UINT32 Units, UINT16 Timeout) {
-	// TODO: remove this after testing.
-	//return AE_OK;
 	if (Handle == NULL) return AE_BAD_PARAMETER;
 
 	uint64_t time = Timeout;
@@ -391,15 +593,168 @@ void AcpiOsReleaseLock(ACPI_SPINLOCK Handle, ACPI_CPU_FLAGS Flags) {
 	spinlock_unlock(Handle);
 }
 
-// Interrupt Handling
-ACPI_STATUS AcpiOsInstallInterruptHandler(UINT32 InterruptLevel, ACPI_OSD_HANDLER Handler, void* Context) {
-	acpica_failure(__func__);
+
+
+// ------------------------------------------------------------------------------------------------
+// ------------------------------------------------------------------------------------------------
+// Interrupts
+// ------------------------------------------------------------------------------------------------
+// ------------------------------------------------------------------------------------------------
+#include <acpi.h>
+#include <system/idt.h>
+#include <klibc/logger.h>
+
+#define MAX_ACPI_IRQS        16
+#define MAX_HANDLERS_PER_IRQ 8
+
+struct acpi_irq_handler {
+	ACPI_OSD_HANDLER handler;
+	void* ctx;
+};
+
+struct acpi_irq_info {
+	bool installed;
+	size_t count;
+	struct acpi_irq_handler handlers[MAX_HANDLERS_PER_IRQ];
+};
+
+static struct acpi_irq_info acpi_irq_table[MAX_ACPI_IRQS];
+
+// This one is left here, not as a macro, just so it's obvious as to what it's doing.
+WALLOS_INTERRUPT_HANDLER void acpi_irq_wrapper_0(struct interrupt_frame* frame) {
+	(void) frame;
+	bool handled = false;
+
+	struct acpi_irq_info* irq = &acpi_irq_table[0];
+
+	for (size_t i = 0; i < irq->count; i++) {
+		if (irq->handlers[i].handler(irq->handlers[i].ctx) == ACPI_INTERRUPT_HANDLED) handled = true;
+	}
+
+	(void) handled; // why did we ever have this?
+
+	/* EOI once, after all handlers. This one doesn't need to send anything to the slave PIC. */
+	interrupt_eoi(0);
+}
+
+#define DEFINE_ACPI_IRQ_WRAPPER(n) WALLOS_INTERRUPT_HANDLER void acpi_irq_wrapper_##n(struct interrupt_frame *frame) { (void) frame; bool handled = false; struct acpi_irq_info *irq = &acpi_irq_table[n]; for (size_t i = 0; i < irq->count; i++) { if (irq->handlers[i].handler(irq->handlers[i].ctx) == ACPI_INTERRUPT_HANDLED) { handled = true; }} (void) handled;interrupt_eoi(n); }
+DEFINE_ACPI_IRQ_WRAPPER(1)
+DEFINE_ACPI_IRQ_WRAPPER(2)
+DEFINE_ACPI_IRQ_WRAPPER(3)
+DEFINE_ACPI_IRQ_WRAPPER(4)
+DEFINE_ACPI_IRQ_WRAPPER(5)
+DEFINE_ACPI_IRQ_WRAPPER(6)
+DEFINE_ACPI_IRQ_WRAPPER(7)
+DEFINE_ACPI_IRQ_WRAPPER(8)
+DEFINE_ACPI_IRQ_WRAPPER(9)
+DEFINE_ACPI_IRQ_WRAPPER(10)
+DEFINE_ACPI_IRQ_WRAPPER(11)
+DEFINE_ACPI_IRQ_WRAPPER(12)
+DEFINE_ACPI_IRQ_WRAPPER(13)
+DEFINE_ACPI_IRQ_WRAPPER(14)
+DEFINE_ACPI_IRQ_WRAPPER(15)
+
+static void (*acpi_irq_wrappers[])(struct interrupt_frame*) = {
+	acpi_irq_wrapper_0,
+	acpi_irq_wrapper_1,
+	acpi_irq_wrapper_2,
+	acpi_irq_wrapper_3,
+	acpi_irq_wrapper_4,
+	acpi_irq_wrapper_5,
+	acpi_irq_wrapper_6,
+	acpi_irq_wrapper_7,
+	acpi_irq_wrapper_8,
+	acpi_irq_wrapper_9,
+	acpi_irq_wrapper_10,
+	acpi_irq_wrapper_11,
+	acpi_irq_wrapper_12,
+	acpi_irq_wrapper_13,
+	acpi_irq_wrapper_14,
+	acpi_irq_wrapper_15,
+};
+
+ACPI_STATUS AcpiOsInstallInterruptHandler(UINT32 irq, ACPI_OSD_HANDLER handler, void* ctx) {
+	if (irq >= MAX_ACPI_IRQS || !handler) {
+		acpi_logger(ERROR, "ACPICA: Invalid IRQ %u\n", irq);
+		return AE_BAD_PARAMETER;
+	}
+
+	struct acpi_irq_info* info = &acpi_irq_table[irq];
+
+	if (info->count >= MAX_HANDLERS_PER_IRQ) {
+		acpi_logger(ERROR, "ACPICA: Too many handlers for IRQ %u\n", irq);
+		return AE_LIMIT;
+	}
+
+	/* Install IDT handler once */
+	if (!info->installed) {
+		uint8_t vector = 0x20 + irq;
+
+
+		acpi_logger(INFO, "ACPICA: Installing IRQ %u (vector 0x%x)\n", irq, vector);
+		// printf_serial("ACPICA: Installing IRQ %u (vector 0x%x)\r\n", irq, vector);
+
+		add_interrupt_handler(vector, acpi_irq_wrappers[irq], 0, 0x8E);
+		irq_enable(irq);
+		if (irq == 9) {
+			irq_set_level_triggered(9);
+		}
+		info->installed = true;
+	}
+
+	info->handlers[info->count++] = (struct acpi_irq_handler){
+		.handler = handler,
+		.ctx = ctx
+	};
+
 	return AE_OK;
 }
 
-ACPI_STATUS AcpiOsRemoveInterruptHandler(UINT32 InterruptNumber, ACPI_OSD_HANDLER Handler) {
-	acpica_failure(__func__);
+ACPI_STATUS AcpiOsRemoveInterruptHandler(UINT32 irq, ACPI_OSD_HANDLER handler) {
+	if (irq >= MAX_ACPI_IRQS || !handler) {
+		acpi_logger(ERROR, "ACPICA: Invalid IRQ remove\n");
+		return AE_BAD_PARAMETER;
+	}
+
+	struct acpi_irq_info* info = &acpi_irq_table[irq];
+
+	for (size_t i = 0; i < info->count; i++) {
+		if (info->handlers[i].handler == handler) {
+
+			memmove(&info->handlers[i],
+				&info->handlers[i + 1],
+				(info->count - i - 1) *
+				sizeof(struct acpi_irq_handler));
+
+			info->count--;
+			break;
+		}
+	}
+
+	/* Disable IRQ if no handlers remain */
+	if (info->count == 0 && info->installed) {
+		uint8_t vector = 0x20 + irq;
+
+		acpi_logger(INFO, "ACPICA: Removing IRQ %u\n", irq);
+
+		irq_disable(irq);
+		remove_interrupt_handler(vector);
+		info->installed = false;
+	}
+
 	return AE_OK;
 }
+
+
+// // Interrupt Handling
+// ACPI_STATUS AcpiOsInstallInterruptHandler(UINT32 InterruptLevel, ACPI_OSD_HANDLER Handler, void* Context) {
+// 	acpica_failure(__func__);
+// 	return AE_OK;
+// }
+
+// ACPI_STATUS AcpiOsRemoveInterruptHandler(UINT32 InterruptNumber, ACPI_OSD_HANDLER Handler) {
+// 	acpica_failure(__func__);
+// 	return AE_OK;
+// }
 
 #endif //WALLOS_USE_ACPICA

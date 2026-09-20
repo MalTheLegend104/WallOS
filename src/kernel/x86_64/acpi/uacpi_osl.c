@@ -1,3 +1,4 @@
+#ifdef WALLOS_USE_UACPI
 #include <uacpi/acpi.h>
 #include <uacpi/kernel_api.h>
 
@@ -12,6 +13,8 @@
 #include <drivers/serial.h>	
 #include <memory/virtual_mem.h>
 #include <cpu_io.h>
+
+#include <system/timer.h>
 
 // There's a lot of unused params in here
 #pragma GCC diagnostic ignored "-Wunused-parameter" 
@@ -32,9 +35,7 @@ void uacpi_failure(const char* str) {
 }
 
 void uacpi_printf(vga_color color, const char* fmt, const char* str) {
-	set_colors(color, VGA_DEFAULT_BG);
-	printf(fmt, str);
-	set_to_last();
+	printf_color(color, PRINT_DEFAULT_BG, fmt, str);
 }
 
 // Returns the PHYSICAL address of the RSDP structure via *out_rsdp_address.
@@ -70,44 +71,197 @@ uacpi_status uacpi_kernel_get_rsdp(uacpi_phys_addr* out_rsdp_address) {
  *              resulting virtual address 0xF000 + 0xABC => 0xFABC. Return it
  *              to uACPI.
  */
-void* uacpi_kernel_map(uacpi_phys_addr addr, uacpi_size len) {
-	// printf_serial("[UACPI] uacpi_kernel_map(0x%llx, 0x%llx) called\r\n", addr, len);
+// void* uacpi_kernel_map(uacpi_phys_addr addr, uacpi_size len) {
+// 	// printf_serial("[UACPI] uacpi_kernel_map(0x%llx, 0x%llx) called\r\n", addr, len);
 
-	if (addr >= KERNEL_VIRTUAL_BASE) {
-		printf_serial("[UACPI] uacpi_kernel_map() - already mapped, returning 0x%llx\r\n", addr);
-		return (void*) addr; // It's already mapped.
-	}
+// 	if (addr >= KERNEL_VIRTUAL_BASE) {
+// 		printf_serial("[UACPI] uacpi_kernel_map() - already mapped, returning 0x%llx\r\n", addr);
+// 		return (void*) addr; // It's already mapped.
+// 	}
 
-	// Arbitrary Cutoff, 256 continuous MB.
-	if (len > 0x200000 * 128) {
-		printf_serial("[UACPI] uacpi_kernel_map() - length too large, checking signature\r\n");
-		// Map only the requested location, get the table header, return 0.
-		char* magic = (char*) mapKernelLocation(addr, 0x24);
-		printf("ACPICA: Target Signature: \"%c%c%c%c\"\n", magic[0], magic[1], magic[2], magic[3]);
-		printf_serial("[UACPI] uacpi_kernel_map() - returning NULL due to size\r\n");
-		return 0;
-	}
+// 	static uint64_t total_maps = 0;
+// 	total_maps++;
+// 	if (total_maps % 1000 == 0) serial_printf("Total ACPI Maps: %llu\r\n", total_maps);
 
-	void* ret = (void*) mapKernelLocation(addr, len);
-	// printf_serial("[UACPI] uacpi_kernel_map() - returning 0x%llx\r\n", (uint64_t) ret);
+// 	// Arbitrary Cutoff, 256 continuous MB.
+// 	if (len > 0x200000 * 128) {
+// 		printf_serial("[UACPI] uacpi_kernel_map() - length too large, checking signature\r\n");
+// 		// Map only the requested location, get the table header, return 0.
+// 		char* magic = (char*) mapKernelLocation(addr, 0x24);
+// 		printf("ACPICA: Target Signature: \"%c%c%c%c\"\n", magic[0], magic[1], magic[2], magic[3]);
+// 		printf_serial("[UACPI] uacpi_kernel_map() - returning NULL due to size\r\n");
+// 		return 0;
+// 	}
 
-	// printf_serial("\r\nMAP REQUEST:\r\n\tRequest PHYS: 0x%llx\r\n\tRequest LEN:  0x%llx\r\n\tMapped Return: 0x%llx\r\n", PhysicalAddress, Length, ret);
-	// printf("\nMAP REQUEST:\n\tRequest PHYS: 0x%llx\n\tRequest LEN:  0x%llx\n\tMapped Return: 0x%llx\n", PhysicalAddress, Length, ret);
+// 	void* ret = (void*) mapKernelLocation(addr, len);
+// 	// printf_serial("[UACPI] uacpi_kernel_map() - returning 0x%llx\r\n", (uint64_t) ret);
 
-	return ret;
+// 	// printf_serial("\r\nMAP REQUEST:\r\n\tRequest PHYS: 0x%llx\r\n\tRequest LEN:  0x%llx\r\n\tMapped Return: 0x%llx\r\n", PhysicalAddress, Length, ret);
+// 	// printf("\nMAP REQUEST:\n\tRequest PHYS: 0x%llx\n\tRequest LEN:  0x%llx\n\tMapped Return: 0x%llx\n", PhysicalAddress, Length, ret);
+
+// 	return ret;
+// }
+
+// /*
+//  * Unmap a virtual memory range at 'addr' with a length of 'len' bytes.
+//  *
+//  * NOTE: 'addr' may be misaligned, see the comment above 'uacpi_kernel_map'.
+//  *       Similar steps to uacpi_kernel_map can be taken to retrieve the
+//  *       virtual address originally returned by the VMM for this mapping
+//  *       as well as its true length.
+//  */
+// void uacpi_kernel_unmap(void* addr, uacpi_size len) {
+// 	// printf_serial("[UACPI] uacpi_kernel_unmap(0x%llx, 0x%llx) called (no-op)\r\n", (uint64_t) addr, len);
+// 	// I dont really care about unmapping right now. 
+// }
+
+// ------------------------------------------------------------------------------------------------
+// Physical -> Virtual mapping cache
+// Prevents redundant VMM allocations when uACPI re-maps the same physical
+// regions (e.g. re-reading table headers, sub-region probes on the SSDT, etc.)
+// ------------------------------------------------------------------------------------------------
+#define PAGE_SIZE       0x1000
+#define PAGE_MASK       (~(uacpi_phys_addr)(PAGE_SIZE - 1))
+
+// Power-of-two so we can mask instead of modulo. 1024 slots handles a large
+// server SSDT comfortably; bump to 2048 if you ever see cache-full warnings.
+#define MAP_CACHE_SLOTS 1024
+
+typedef struct {
+	uacpi_phys_addr phys_base;   // page-aligned base physical address
+	uacpi_size      mapped_len;  // page-aligned total length passed to VMM
+	void* virt_base;   // what mapKernelLocation returned
+	uint32_t        refcount;    // how many live uacpi_kernel_map calls reference this
+} map_cache_entry_t;
+
+static map_cache_entry_t _map_cache[MAP_CACHE_SLOTS];
+static uint32_t          _map_cache_used = 0;
+
+// FNV-1a hash, fast and good enough for physical page numbers
+static inline uint32_t _map_hash(uacpi_phys_addr phys_base, uacpi_size mapped_len) {
+	uint64_t v = (uint64_t) phys_base ^ ((uint64_t) mapped_len << 32);
+	v ^= v >> 33;
+	v *= 0xff51afd7ed558ccdULL;
+	v ^= v >> 33;
+	return (uint32_t) (v & (MAP_CACHE_SLOTS - 1));
 }
 
-/*
- * Unmap a virtual memory range at 'addr' with a length of 'len' bytes.
- *
- * NOTE: 'addr' may be misaligned, see the comment above 'uacpi_kernel_map'.
- *       Similar steps to uacpi_kernel_map can be taken to retrieve the
- *       virtual address originally returned by the VMM for this mapping
- *       as well as its true length.
- */
+// Returns the cache slot for (phys_base, mapped_len), or -1 if not found.
+static int _map_cache_find(uacpi_phys_addr phys_base, uacpi_size mapped_len) {
+	uint32_t slot = _map_hash(phys_base, mapped_len);
+	// Linear probing
+	for (uint32_t i = 0; i < MAP_CACHE_SLOTS; i++) {
+		uint32_t idx = (slot + i) & (MAP_CACHE_SLOTS - 1);
+		map_cache_entry_t* e = &_map_cache[idx];
+		if (!e->virt_base) return -1;  // empty slot => not present
+		if (e->phys_base == phys_base && e->mapped_len == mapped_len)
+			return (int) idx;
+	}
+	return -1;
+}
+
+// Inserts a new entry. Call only after _map_cache_find returned -1.
+static int _map_cache_insert(uacpi_phys_addr phys_base, uacpi_size mapped_len, void* virt_base) {
+	if (_map_cache_used >= MAP_CACHE_SLOTS) {
+		printf_serial("[UACPI][MAP_CACHE] WARNING: cache full (%u slots), cannot insert phys=0x%llx\r\n",
+			MAP_CACHE_SLOTS, (uint64_t) phys_base);
+		return -1;
+	}
+	uint32_t slot = _map_hash(phys_base, mapped_len);
+	for (uint32_t i = 0; i < MAP_CACHE_SLOTS; i++) {
+		uint32_t idx = (slot + i) & (MAP_CACHE_SLOTS - 1);
+		if (!_map_cache[idx].virt_base) {
+			_map_cache[idx].phys_base = phys_base;
+			_map_cache[idx].mapped_len = mapped_len;
+			_map_cache[idx].virt_base = virt_base;
+			_map_cache[idx].refcount = 1;
+			_map_cache_used++;
+			return (int) idx;
+		}
+	}
+	return -1;
+}
+
+// ------------------------------------------------------------------------------------------------
+// uacpi_kernel_map / uacpi_kernel_unmap
+// ------------------------------------------------------------------------------------------------
+void* uacpi_kernel_map(uacpi_phys_addr addr, uacpi_size len) {
+	// Already in virtual address space — identity return.
+	if (addr >= KERNEL_VIRTUAL_BASE)
+		return (void*) addr;
+
+	// Compute the true page-aligned region we need the VMM to map.
+	uacpi_phys_addr page_offset = addr & (PAGE_SIZE - 1);       // offset within first page
+	uacpi_phys_addr phys_base = addr & PAGE_MASK;              // round base down
+	uacpi_size      aligned_len = (len + page_offset + PAGE_SIZE - 1) & PAGE_MASK; // round len up
+
+	// --- Cache lookup ---
+	int idx = _map_cache_find(phys_base, aligned_len);
+	if (idx >= 0) {
+		_map_cache[idx].refcount++;
+		printf_serial("[UACPI][MAP_CACHE] HIT  phys=0x%llx len=0x%llx refcount=%u\r\n",
+			(uint64_t) phys_base, (uint64_t) aligned_len, _map_cache[idx].refcount);
+// Return the cached virtual base plus the original intra-page offset.
+		return (void*) ((uintptr_t) _map_cache[idx].virt_base + page_offset);
+	}
+
+	// --- Sanity check: refuse absurdly large requests ---
+	if (aligned_len > 0x200000 * 128) {
+		printf_serial("[UACPI][MAP_CACHE] WARN: oversized map request 0x%llx bytes at phys 0x%llx\r\n",
+			(uint64_t) aligned_len, (uint64_t) phys_base);
+// Peek at the table signature to aid debugging, then bail.
+		void* peek = (void*) mapKernelLocation(phys_base, 0x24);
+		if (peek) {
+			char* sig = (char*) peek + page_offset;
+			printf_serial("[UACPI][MAP_CACHE] Signature at target: '%c%c%c%c'\r\n",
+				sig[0], sig[1], sig[2], sig[3]);
+		}
+		return NULL;
+	}
+
+	// --- Cache miss: call the VMM ---
+	void* virt_base = (void*) mapKernelLocation(phys_base, aligned_len);
+	if (!virt_base) {
+		printf_serial("[UACPI][MAP_CACHE] VMM returned NULL for phys=0x%llx len=0x%llx\r\n",
+			(uint64_t) phys_base, (uint64_t) aligned_len);
+		return NULL;
+	}
+
+	_map_cache_insert(phys_base, aligned_len, virt_base);
+	printf_serial("[UACPI][MAP_CACHE] MISS phys=0x%llx len=0x%llx -> virt=0x%llx (cache %u/%u)\r\n",
+		(uint64_t) phys_base, (uint64_t) aligned_len, (uint64_t) virt_base,
+		_map_cache_used, MAP_CACHE_SLOTS);
+
+	return (void*) ((uintptr_t) virt_base + page_offset);
+}
+
 void uacpi_kernel_unmap(void* addr, uacpi_size len) {
-	// printf_serial("[UACPI] uacpi_kernel_unmap(0x%llx, 0x%llx) called (no-op)\r\n", (uint64_t) addr, len);
-	// I dont really care about unmapping right now. 
+	if ((uintptr_t) addr >= KERNEL_VIRTUAL_BASE)
+		return;  // identity-mapped, nothing to do
+
+	// Reconstruct the page-aligned key so we can find the cache entry.
+	// We don't have the original physical address here, so we match on virt.
+	uacpi_size page_offset = (uintptr_t) addr & (PAGE_SIZE - 1);
+	void* virt_base = (void*) ((uintptr_t) addr & PAGE_MASK);
+	uacpi_size aligned_len = (len + page_offset + PAGE_SIZE - 1) & PAGE_MASK;
+
+	for (uint32_t i = 0; i < MAP_CACHE_SLOTS; i++) {
+		map_cache_entry_t* e = &_map_cache[i];
+		if (!e->virt_base) continue;
+		// Match on virtual base + length (both were derived the same way).
+		if (e->virt_base == virt_base && e->mapped_len == aligned_len) {
+			if (e->refcount > 0) e->refcount--;
+			// Leave the mapping alive even at refcount 0 — the VMM mapping is
+			// cheap to keep and uACPI may legitimately re-map the same region.
+			// If you ever want to actually free: call your VMM unmap here when
+			// refcount hits 0 and zero out the slot + _map_cache_used--.
+			printf_serial("[UACPI][MAP_CACHE] UNMAP virt=0x%llx len=0x%llx refcount=%u (kept)\r\n",
+				(uint64_t) virt_base, (uint64_t) aligned_len, e->refcount);
+			return;
+		}
+	}
+
+	printf_serial("[UACPI][MAP_CACHE] UNMAP virt=0x%llx not in cache (ignoring)\r\n", (uint64_t) addr);
 }
 
 void uacpi_kernel_log(uacpi_log_level lvl, const uacpi_char* str) {
@@ -148,12 +302,12 @@ uacpi_status uacpi_kernel_initialize(uacpi_init_level current_init_lvl);
 void uacpi_kernel_deinitialize(void);
 #endif
 
+#include <drivers/pci.h>
+
 /*
  * Open a PCI device at 'address' for reading & writing.
  *
- * Note that this must be able to open any arbitrary PCI device, not just those
- * detected during kernel PCI enumeration, since the following pattern is
- * relatively common in AML firmware:
+ * Note that this must be able to open any arbitrary PCI device, since the following pattern is relatively common in AML firmware:
  *    Device (THC0)
  *    {
  *        // Device at 00:10.06
@@ -179,50 +333,88 @@ void uacpi_kernel_deinitialize(void);
  * configuration space of the device.
  */
 uacpi_status uacpi_kernel_pci_device_open(uacpi_pci_address address, uacpi_handle* out_handle) {
-	printf_serial("[UACPI] uacpi_kernel_pci_device_open() called\r\n");
-	// uacpi_failure(__func__);
-	return UACPI_STATUS_UNIMPLEMENTED;
+	// Your current PCI API does not support PCI segments (domains)
+	// We dont support segments ("domains")
+	if (address.segment != 0) {
+		return UACPI_STATUS_INVALID_ARGUMENT;
+	}
+
+	// Pack the bus, slot, and function into the void* handle
+	uintptr_t packed_address = (address.bus << 16) | (address.device << 8) | address.function;
+	*out_handle = (uacpi_handle) packed_address;
+
+	return UACPI_STATUS_OK;
 }
-void uacpi_kernel_pci_device_close(uacpi_handle) {
-	printf_serial("[UACPI] uacpi_kernel_pci_device_close() called\r\n");
-	// uacpi_failure(__func__);
+
+void uacpi_kernel_pci_device_close(uacpi_handle handle) {
+	(void) handle;
+	// Nothing to free since we didn't allocate memory!
 }
 
 uacpi_status kernel_pci_read(uacpi_handle device, uacpi_size offset, void* value, size_t bitwidth) {
-	printf_serial("[UACPI] kernel_pci_read() called\r\n");
-	return UACPI_STATUS_UNIMPLEMENTED;
+	uintptr_t val = (uintptr_t) device;
+	uint8_t func = val & 0xFF;
+	uint8_t slot = (val >> 8) & 0xFF;
+	uint8_t bus = (val >> 16) & 0xFF;
+
+	if (bitwidth == 8) {
+		*(uacpi_u8*) value = pci_config_read8(bus, slot, func, offset);
+	} else if (bitwidth == 16) {
+		*(uacpi_u16*) value = pci_config_read16(bus, slot, func, offset);
+	} else if (bitwidth == 32) {
+		*(uacpi_u32*) value = pci_config_read32(bus, slot, func, offset);
+	} else {
+		return UACPI_STATUS_INVALID_ARGUMENT;
+	}
+
+	return UACPI_STATUS_OK;
 }
+
 uacpi_status kernel_pci_write(uacpi_handle device, uacpi_size offset, size_t value, size_t bitwidth) {
-	printf_serial("[UACPI] kernel_pci_write() called\r\n");
-	return UACPI_STATUS_UNIMPLEMENTED;
+	uintptr_t val = (uintptr_t) device;
+	uint8_t func = val & 0xFF;
+	uint8_t slot = (val >> 8) & 0xFF;
+	uint8_t bus = (val >> 16) & 0xFF;
+
+	if (bitwidth == 8) {
+		pci_config_write8(bus, slot, func, offset, (uint8_t) value);
+	} else if (bitwidth == 16) {
+		pci_config_write16(bus, slot, func, offset, (uint16_t) value);
+	} else if (bitwidth == 32) {
+		pci_config_write32(bus, slot, func, offset, (uint32_t) value);
+	} else {
+		return UACPI_STATUS_INVALID_ARGUMENT;
+	}
+
+	return UACPI_STATUS_OK;
 }
 
 /*
  * Read & write the configuration space of a previously open PCI device.
  */
 uacpi_status uacpi_kernel_pci_read8(uacpi_handle device, uacpi_size offset, uacpi_u8* value) {
-	printf_serial("[UACPI] uacpi_kernel_pci_read8() called\r\n");
+	// printf_serial("[UACPI] uacpi_kernel_pci_read8() called\r\n");
 	return kernel_pci_read(device, offset, value, 8);
 }
 uacpi_status uacpi_kernel_pci_read16(uacpi_handle device, uacpi_size offset, uacpi_u16* value) {
-	printf_serial("[UACPI] uacpi_kernel_pci_read16() called\r\n");
+	// printf_serial("[UACPI] uacpi_kernel_pci_read16() called\r\n");
 	return kernel_pci_read(device, offset, value, 16);
 }
 uacpi_status uacpi_kernel_pci_read32(uacpi_handle device, uacpi_size offset, uacpi_u32* value) {
-	printf_serial("[UACPI] uacpi_kernel_pci_read32() called\r\n");
+	// printf_serial("[UACPI] uacpi_kernel_pci_read32() called\r\n");
 	return kernel_pci_read(device, offset, value, 32);
 }
 
 uacpi_status uacpi_kernel_pci_write8(uacpi_handle device, uacpi_size offset, uacpi_u8 value) {
-	printf_serial("[UACPI] uacpi_kernel_pci_write8() called\r\n");
+	// printf_serial("[UACPI] uacpi_kernel_pci_write8() called\r\n");
 	return kernel_pci_write(device, offset, value, 8);
 }
 uacpi_status uacpi_kernel_pci_write16(uacpi_handle device, uacpi_size offset, uacpi_u16 value) {
-	printf_serial("[UACPI] uacpi_kernel_pci_write16() called\r\n");
+	// printf_serial("[UACPI] uacpi_kernel_pci_write16() called\r\n");
 	return kernel_pci_write(device, offset, value, 16);
 }
 uacpi_status uacpi_kernel_pci_write32(uacpi_handle device, uacpi_size offset, uacpi_u32 value) {
-	printf_serial("[UACPI] uacpi_kernel_pci_write32() called\r\n");
+	// printf_serial("[UACPI] uacpi_kernel_pci_write32() called\r\n");
 	return kernel_pci_write(device, offset, value, 32);
 }
 
@@ -240,12 +432,14 @@ uacpi_status uacpi_kernel_io_map(uacpi_io_addr base, uacpi_size len, uacpi_handl
 	// For now, just use the base port as the handle
 	*out_handle = (uacpi_handle) (uintptr_t) base;
 	// printf_serial("[UACPI] uacpi_kernel_io_map() - returning handle 0x%llx\r\n", (uint64_t) *out_handle);
+	// printf_color(PRINT_COLOR_LIGHT_GREY, PRINT_DEFAULT_BG, "[UACPI] uacpi_kernel_io_map() - returning handle 0x%llx\r\n", (uint64_t) *out_handle);
 	return UACPI_STATUS_OK;
 }
 
 void uacpi_kernel_io_unmap(uacpi_handle handle) {
 	// printf_serial("[UACPI] uacpi_kernel_io_unmap(0x%llx) called (no-op)\r\n", (uint64_t) handle);
 	// Nothing to do for now; ports don't require unmapping
+	// printf_color(PRINT_COLOR_LIGHT_GREY, PRINT_DEFAULT_BG, "[UACPI] uacpi_kernel_io_unmap(0x%llx) called (no-op)\r\n", (uint64_t) handle);
 	(void) handle;
 }
 
@@ -262,40 +456,42 @@ void uacpi_kernel_io_unmap(uacpi_handle handle) {
  */
 uacpi_status kernel_io_read(uacpi_handle port, uacpi_size offset, void* out_value, size_t width) {
 	printf_serial("[UACPI] kernel_io_read(0x%llx, 0x%llx, %d bits) called\r\n", (uint64_t) port, offset, width);
+	// printf_color(PRINT_COLOR_LIGHT_GREY, PRINT_DEFAULT_BG, "[UACPI] kernel_io_read(0x%llx, 0x%llx, %d bits) called\r\n", (uint64_t) port, offset, width);
 	switch (width) {
 		case 8:
-			*((uacpi_u8*) out_value) = inb((uint16_t) (port + offset));
+			*((uacpi_u8*) out_value) = inb((uint16_t) ((uintptr_t) port + (uint16_t) offset));
 			break;
 		case 16:
-			*((uacpi_u16*) out_value) = inw((uint16_t) (port + offset));
+			*((uacpi_u16*) out_value) = inw((uint16_t) ((uintptr_t) port + (uint16_t) offset));
 			break;
 		case 32:
-			*((uacpi_u32*) out_value) = inl((uint16_t) (port + offset));
+			*((uacpi_u32*) out_value) = inl((uint16_t) ((uintptr_t) port + (uint16_t) offset));
 			break;
 		default:
 			printf_serial("[UACPI] kernel_io_read() - invalid width\r\n");
 			return UACPI_STATUS_INVALID_ARGUMENT;
 	}
-	printf_serial("[UACPI] kernel_io_read() - success\r\n");
+	// printf_serial("[UACPI] kernel_io_read() - success\r\n");
 	return UACPI_STATUS_OK;
 }
 uacpi_status kernel_io_write(uacpi_handle port, uacpi_size offset, size_t in_value, size_t width) {
 	printf_serial("[UACPI] kernel_io_write(0x%llx, 0x%llx, 0x%llx, %d bits) called\r\n", (uint64_t) port, offset, in_value, width);
+	// printf_color(PRINT_COLOR_LIGHT_GREY, PRINT_DEFAULT_BG, "[UACPI] kernel_io_write(0x%llx, 0x%llx, 0x%llx, %d bits) called\n", (uint64_t) port, offset, in_value, width);
 	switch (width) {
 		case 8:
-			outb((uint16_t) (port + offset), (uint8_t) in_value);
+			outb((uint16_t) ((uintptr_t) port + (uint16_t) offset), (uint8_t) in_value);
 			break;
 		case 16:
-			outw((uint16_t) (port + offset), (uint16_t) in_value);
+			outw((uint16_t) ((uintptr_t) port + (uint16_t) offset), (uint16_t) in_value);
 			break;
 		case 32:
-			outl((uint16_t) (port + offset), (uint32_t) in_value);
+			outl((uint16_t) ((uintptr_t) port + (uint16_t) offset), (uint32_t) in_value);
 			break;
 		default:
 			printf_serial("[UACPI] kernel_io_write() - invalid width\r\n");
 			return UACPI_STATUS_INVALID_ARGUMENT;
 	}
-	printf_serial("[UACPI] kernel_io_write() - success\r\n");
+	// printf_serial("[UACPI] kernel_io_write() - success\r\n");
 	return UACPI_STATUS_OK;
 }
 
@@ -338,20 +534,20 @@ void uacpi_kernel_free(void* mem) {
 	kfree(mem);
 }
 
-#include <system/timing.h>
-
 /*
  * Returns the number of nanosecond ticks elapsed since boot,
  * strictly monotonic.
  */
 uacpi_u64 uacpi_kernel_get_nanoseconds_since_boot(void) {
-	printf_serial("[UACPI] uacpi_kernel_get_nanoseconds_since_boot() called\r\n");
+	// printf_serial("[UACPI] uacpi_kernel_get_nanoseconds_since_boot() called\r\n");
 	// uacpi_failure(__func__);
 	// return UACPI_STATUS_UNIMPLEMENTED;
 	// ms -> us -> ns
 	// We only have ms accuracy
-	uacpi_u64 result = get_system_up_time() * 1000 * 1000;
-	printf_serial("[UACPI] uacpi_kernel_get_nanoseconds_since_boot() - returning %llu\r\n", result);
+	uacpi_u64 result = timer_uptime_ms() * 1000 * 1000;
+	// printf_serial("[UACPI] uacpi_kernel_get_nanoseconds_since_boot() - returning %llu\r\n", result);
+	// printf_color(PRINT_COLOR_LIGHT_GREY, PRINT_DEFAULT_BG, "[UACPI] uacpi_kernel_get_nanoseconds_since_boot() - returning %llu\n", result);
+
 	return result;
 }
 
@@ -359,19 +555,21 @@ uacpi_u64 uacpi_kernel_get_nanoseconds_since_boot(void) {
  * Spin for N microseconds.
  */
 void uacpi_kernel_stall(uacpi_u8 usec) {
-	printf_serial("[UACPI] uacpi_kernel_stall(%u) called\r\n", usec);
-	uacpi_failure(__func__);
-	// return UACPI_STATUS_UNIMPLEMENTED;
-}
+	uint64_t start_ns = timer_uptime_no_interrupts();
+	uint64_t wait_ns = (uint64_t) usec * 1000ull;
 
-#include <system/timing.h>
+	while ((timer_uptime_no_interrupts() - start_ns) < wait_ns) {
+		__asm__ volatile ("pause");
+	}
+}
 /*
  * Sleep for N milliseconds.
  */
 void uacpi_kernel_sleep(uacpi_u64 msec) {
-	printf_serial("[UACPI] uacpi_kernel_sleep(%llu) called\r\n", msec);
-	sleep(msec);
-	printf_serial("[UACPI] uacpi_kernel_sleep() - complete\r\n");
+	// printf_serial("[UACPI] uacpi_kernel_sleep(%llu) called\r\n", msec);
+	// printf_color(PRINT_COLOR_LIGHT_GREY, PRINT_DEFAULT_BG, "[UACPI] uacpi_kernel_sleep(%llu) called\n", msec);
+	busy_wait_ms(msec);
+	// printf_serial("[UACPI] uacpi_kernel_sleep() - complete\r\n");
 }
 
 #include <memory/semaphore.h>
@@ -383,6 +581,7 @@ void uacpi_kernel_sleep(uacpi_u64 msec) {
  */
 uacpi_status uacpi_kernel_handle_firmware_request(uacpi_firmware_request* req) {
 	printf_serial("[UACPI] uacpi_kernel_handle_firmware_request() called\r\n");
+	// printf_color(PRINT_COLOR_LIGHT_GREY, PRINT_DEFAULT_BG, "[UACPI] uacpi_kernel_handle_firmware_request() called\n");
 	if (!req) return UACPI_STATUS_INVALID_ARGUMENT;
 
 	switch (req->type) {
@@ -429,34 +628,31 @@ struct uacpi_irq_info {
 static struct uacpi_irq_info uacpi_irq_table[MAX_UACPI_IRQS];
 
 // This first one is identical to the rest. This one is the "example" so you can actually see what's happening.
-__attribute__((interrupt)) __attribute__((__target__("general-regs-only"))) void uacpi_irq_wrapper_0(struct interrupt_frame* frame) {
+WALLOS_INTERRUPT_HANDLER void uacpi_irq_wrapper_0(struct interrupt_frame* frame) {
 	if (uacpi_irq_table[0].in_use && uacpi_irq_table[0].handler) {
 		   /* Call the uACPI handler */
 		(void) uacpi_irq_table[0].handler(uacpi_irq_table[0].ctx);
 		/* uACPI returns HANDLED or UNHANDLED (and we don't really care about the status), but we still need to send EOI */
 	}
 	/* Send EOI to PIC(s) */
-	if (uacpi_irq_table[0].irq >= 8) {
-		outb(0xA0, 0x20); /* Send EOI to slave PIC first */
-	}
-	outb(0x20, 0x20); /* Send EOI to master PIC */
+	interrupt_eoi(0);
 }
 
-__attribute__((interrupt)) __attribute__((__target__("general-regs-only"))) void uacpi_irq_wrapper_1(struct interrupt_frame* frame) { if (uacpi_irq_table[1].in_use && uacpi_irq_table[1].handler) { (void) uacpi_irq_table[1].handler(uacpi_irq_table[1].ctx); } if (uacpi_irq_table[1].irq >= 8) { outb(0xA0, 0x20); } outb(0x20, 0x20); }
-__attribute__((interrupt)) __attribute__((__target__("general-regs-only"))) void uacpi_irq_wrapper_2(struct interrupt_frame* frame) { if (uacpi_irq_table[2].in_use && uacpi_irq_table[2].handler) { (void) uacpi_irq_table[2].handler(uacpi_irq_table[2].ctx); } if (uacpi_irq_table[2].irq >= 8) { outb(0xA0, 0x20); } outb(0x20, 0x20); }
-__attribute__((interrupt)) __attribute__((__target__("general-regs-only"))) void uacpi_irq_wrapper_3(struct interrupt_frame* frame) { if (uacpi_irq_table[3].in_use && uacpi_irq_table[3].handler) { (void) uacpi_irq_table[3].handler(uacpi_irq_table[3].ctx); } if (uacpi_irq_table[3].irq >= 8) { outb(0xA0, 0x20); } outb(0x20, 0x20); }
-__attribute__((interrupt)) __attribute__((__target__("general-regs-only"))) void uacpi_irq_wrapper_4(struct interrupt_frame* frame) { if (uacpi_irq_table[4].in_use && uacpi_irq_table[4].handler) { (void) uacpi_irq_table[4].handler(uacpi_irq_table[4].ctx); } if (uacpi_irq_table[4].irq >= 8) { outb(0xA0, 0x20); } outb(0x20, 0x20); }
-__attribute__((interrupt)) __attribute__((__target__("general-regs-only"))) void uacpi_irq_wrapper_5(struct interrupt_frame* frame) { if (uacpi_irq_table[5].in_use && uacpi_irq_table[5].handler) { (void) uacpi_irq_table[5].handler(uacpi_irq_table[5].ctx); } if (uacpi_irq_table[5].irq >= 8) { outb(0xA0, 0x20); } outb(0x20, 0x20); }
-__attribute__((interrupt)) __attribute__((__target__("general-regs-only"))) void uacpi_irq_wrapper_6(struct interrupt_frame* frame) { if (uacpi_irq_table[6].in_use && uacpi_irq_table[6].handler) { (void) uacpi_irq_table[6].handler(uacpi_irq_table[6].ctx); } if (uacpi_irq_table[6].irq >= 8) { outb(0xA0, 0x20); } outb(0x20, 0x20); }
-__attribute__((interrupt)) __attribute__((__target__("general-regs-only"))) void uacpi_irq_wrapper_7(struct interrupt_frame* frame) { if (uacpi_irq_table[7].in_use && uacpi_irq_table[7].handler) { (void) uacpi_irq_table[7].handler(uacpi_irq_table[7].ctx); } if (uacpi_irq_table[7].irq >= 8) { outb(0xA0, 0x20); } outb(0x20, 0x20); }
-__attribute__((interrupt)) __attribute__((__target__("general-regs-only"))) void uacpi_irq_wrapper_8(struct interrupt_frame* frame) { if (uacpi_irq_table[8].in_use && uacpi_irq_table[8].handler) { (void) uacpi_irq_table[8].handler(uacpi_irq_table[8].ctx); } if (uacpi_irq_table[8].irq >= 8) { outb(0xA0, 0x20); } outb(0x20, 0x20); }
-__attribute__((interrupt)) __attribute__((__target__("general-regs-only"))) void uacpi_irq_wrapper_9(struct interrupt_frame* frame) { if (uacpi_irq_table[9].in_use && uacpi_irq_table[9].handler) { (void) uacpi_irq_table[9].handler(uacpi_irq_table[9].ctx); } if (uacpi_irq_table[9].irq >= 8) { outb(0xA0, 0x20); } outb(0x20, 0x20); }
-__attribute__((interrupt)) __attribute__((__target__("general-regs-only"))) void uacpi_irq_wrapper_10(struct interrupt_frame* frame) { if (uacpi_irq_table[10].in_use && uacpi_irq_table[10].handler) { (void) uacpi_irq_table[10].handler(uacpi_irq_table[10].ctx); } if (uacpi_irq_table[10].irq >= 8) { outb(0xA0, 0x20); } outb(0x20, 0x20); }
-__attribute__((interrupt)) __attribute__((__target__("general-regs-only"))) void uacpi_irq_wrapper_11(struct interrupt_frame* frame) { if (uacpi_irq_table[11].in_use && uacpi_irq_table[11].handler) { (void) uacpi_irq_table[11].handler(uacpi_irq_table[11].ctx); } if (uacpi_irq_table[11].irq >= 8) { outb(0xA0, 0x20); } outb(0x20, 0x20); }
-__attribute__((interrupt)) __attribute__((__target__("general-regs-only"))) void uacpi_irq_wrapper_12(struct interrupt_frame* frame) { if (uacpi_irq_table[12].in_use && uacpi_irq_table[12].handler) { (void) uacpi_irq_table[12].handler(uacpi_irq_table[12].ctx); } if (uacpi_irq_table[12].irq >= 8) { outb(0xA0, 0x20); } outb(0x20, 0x20); }
-__attribute__((interrupt)) __attribute__((__target__("general-regs-only"))) void uacpi_irq_wrapper_13(struct interrupt_frame* frame) { if (uacpi_irq_table[13].in_use && uacpi_irq_table[13].handler) { (void) uacpi_irq_table[13].handler(uacpi_irq_table[13].ctx); } if (uacpi_irq_table[13].irq >= 8) { outb(0xA0, 0x20); } outb(0x20, 0x20); }
-__attribute__((interrupt)) __attribute__((__target__("general-regs-only"))) void uacpi_irq_wrapper_14(struct interrupt_frame* frame) { if (uacpi_irq_table[14].in_use && uacpi_irq_table[14].handler) { (void) uacpi_irq_table[14].handler(uacpi_irq_table[14].ctx); } if (uacpi_irq_table[14].irq >= 8) { outb(0xA0, 0x20); } outb(0x20, 0x20); }
-__attribute__((interrupt)) __attribute__((__target__("general-regs-only"))) void uacpi_irq_wrapper_15(struct interrupt_frame* frame) { if (uacpi_irq_table[15].in_use && uacpi_irq_table[15].handler) { (void) uacpi_irq_table[15].handler(uacpi_irq_table[15].ctx); } if (uacpi_irq_table[15].irq >= 8) { outb(0xA0, 0x20); } outb(0x20, 0x20); }
+WALLOS_INTERRUPT_HANDLER void uacpi_irq_wrapper_1(struct interrupt_frame* frame) { if (uacpi_irq_table[1].in_use && uacpi_irq_table[1].handler) { (void) uacpi_irq_table[1].handler(uacpi_irq_table[1].ctx); } interrupt_eoi(1); }
+WALLOS_INTERRUPT_HANDLER void uacpi_irq_wrapper_2(struct interrupt_frame* frame) { if (uacpi_irq_table[2].in_use && uacpi_irq_table[2].handler) { (void) uacpi_irq_table[2].handler(uacpi_irq_table[2].ctx); } interrupt_eoi(2); }
+WALLOS_INTERRUPT_HANDLER void uacpi_irq_wrapper_3(struct interrupt_frame* frame) { if (uacpi_irq_table[3].in_use && uacpi_irq_table[3].handler) { (void) uacpi_irq_table[3].handler(uacpi_irq_table[3].ctx); } interrupt_eoi(3); }
+WALLOS_INTERRUPT_HANDLER void uacpi_irq_wrapper_4(struct interrupt_frame* frame) { if (uacpi_irq_table[4].in_use && uacpi_irq_table[4].handler) { (void) uacpi_irq_table[4].handler(uacpi_irq_table[4].ctx); } interrupt_eoi(4); }
+WALLOS_INTERRUPT_HANDLER void uacpi_irq_wrapper_5(struct interrupt_frame* frame) { if (uacpi_irq_table[5].in_use && uacpi_irq_table[5].handler) { (void) uacpi_irq_table[5].handler(uacpi_irq_table[5].ctx); } interrupt_eoi(5); }
+WALLOS_INTERRUPT_HANDLER void uacpi_irq_wrapper_6(struct interrupt_frame* frame) { if (uacpi_irq_table[6].in_use && uacpi_irq_table[6].handler) { (void) uacpi_irq_table[6].handler(uacpi_irq_table[6].ctx); } interrupt_eoi(6); }
+WALLOS_INTERRUPT_HANDLER void uacpi_irq_wrapper_7(struct interrupt_frame* frame) { if (uacpi_irq_table[7].in_use && uacpi_irq_table[7].handler) { (void) uacpi_irq_table[7].handler(uacpi_irq_table[7].ctx); } interrupt_eoi(7); }
+WALLOS_INTERRUPT_HANDLER void uacpi_irq_wrapper_8(struct interrupt_frame* frame) { if (uacpi_irq_table[8].in_use && uacpi_irq_table[8].handler) { (void) uacpi_irq_table[8].handler(uacpi_irq_table[8].ctx); } interrupt_eoi(8); }
+WALLOS_INTERRUPT_HANDLER void uacpi_irq_wrapper_9(struct interrupt_frame* frame) { if (uacpi_irq_table[9].in_use && uacpi_irq_table[9].handler) { (void) uacpi_irq_table[9].handler(uacpi_irq_table[9].ctx); } interrupt_eoi(9); }
+WALLOS_INTERRUPT_HANDLER void uacpi_irq_wrapper_10(struct interrupt_frame* frame) { if (uacpi_irq_table[10].in_use && uacpi_irq_table[10].handler) { (void) uacpi_irq_table[10].handler(uacpi_irq_table[10].ctx); } interrupt_eoi(10); }
+WALLOS_INTERRUPT_HANDLER void uacpi_irq_wrapper_11(struct interrupt_frame* frame) { if (uacpi_irq_table[11].in_use && uacpi_irq_table[11].handler) { (void) uacpi_irq_table[11].handler(uacpi_irq_table[11].ctx); } interrupt_eoi(11); }
+WALLOS_INTERRUPT_HANDLER void uacpi_irq_wrapper_12(struct interrupt_frame* frame) { if (uacpi_irq_table[12].in_use && uacpi_irq_table[12].handler) { (void) uacpi_irq_table[12].handler(uacpi_irq_table[12].ctx); } interrupt_eoi(12); }
+WALLOS_INTERRUPT_HANDLER void uacpi_irq_wrapper_13(struct interrupt_frame* frame) { if (uacpi_irq_table[13].in_use && uacpi_irq_table[13].handler) { (void) uacpi_irq_table[13].handler(uacpi_irq_table[13].ctx); } interrupt_eoi(13); }
+WALLOS_INTERRUPT_HANDLER void uacpi_irq_wrapper_14(struct interrupt_frame* frame) { if (uacpi_irq_table[14].in_use && uacpi_irq_table[14].handler) { (void) uacpi_irq_table[14].handler(uacpi_irq_table[14].ctx); } interrupt_eoi(14); }
+WALLOS_INTERRUPT_HANDLER void uacpi_irq_wrapper_15(struct interrupt_frame* frame) { if (uacpi_irq_table[15].in_use && uacpi_irq_table[15].handler) { (void) uacpi_irq_table[15].handler(uacpi_irq_table[15].ctx); } interrupt_eoi(15); }
 
 
 // Array of wrapper function pointers
@@ -524,6 +720,10 @@ uacpi_status uacpi_kernel_install_interrupt_handler(uacpi_u32 irq, uacpi_interru
 	// Enable the IRQ in the PIC
 	irq_enable(irq);
 
+	if (irq == 9) {
+		irq_set_level_triggered(9);
+	}
+
 	// Return the slot index as the handle
 	*out_irq_handle = (uacpi_handle) (uintptr_t) slot;
 
@@ -575,6 +775,7 @@ uacpi_status uacpi_kernel_uninstall_interrupt_handler(uacpi_interrupt_handler ha
  * Create/free an opaque non-recursive kernel mutex object.
  */
 uacpi_handle uacpi_kernel_create_mutex(void) {
+	// printf_color(PRINT_COLOR_LIGHT_GREY, PRINT_DEFAULT_BG, "[UACPI] uacpi_kernel_create_mutex() called\n");
 	// printf_serial("[UACPI] uacpi_kernel_create_mutex() called\r\n");
 	semaphore_t* sem = semaphore_create(1, 1);
 	// printf_serial("[UACPI] uacpi_kernel_create_mutex() - returning 0x%llx\r\n", (uint64_t) sem);
@@ -582,6 +783,7 @@ uacpi_handle uacpi_kernel_create_mutex(void) {
 }
 
 void uacpi_kernel_free_mutex(uacpi_handle handle) {
+	// printf_color(PRINT_COLOR_LIGHT_GREY, PRINT_DEFAULT_BG, "[UACPI] uacpi_kernel_free_mutex() called\n");
 	// printf_serial("[UACPI] uacpi_kernel_free_mutex(0x%llx) called\r\n", (uint64_t) handle);
 	if (!handle) return;
 	semaphore_destroy((semaphore_t*) handle);
@@ -591,14 +793,18 @@ void uacpi_kernel_free_mutex(uacpi_handle handle) {
  * Create/free an opaque kernel (semaphore-like) event object.
  */
 uacpi_handle uacpi_kernel_create_event(void) {
-	printf_serial("[UACPI] uacpi_kernel_create_event() called\r\n");
+
+	// printf_color(PRINT_COLOR_LIGHT_GREY, PRINT_DEFAULT_BG, "[UACPI] uacpi_kernel_create_event() called\n");
+	// printf_serial("[UACPI] uacpi_kernel_create_event() called\r\n");
 	uacpi_handle evt = semaphore_create(UINT32_MAX, 0); // Start at 0
-	printf_serial("[UACPI] uacpi_kernel_create_event() - returning 0x%llx\r\n", (uint64_t) evt);
+	// printf_serial("[UACPI] uacpi_kernel_create_event() - returning 0x%llx\r\n", (uint64_t) evt);
 	return evt;
 }
 
 void uacpi_kernel_free_event(uacpi_handle handle) {
-	printf_serial("[UACPI] uacpi_kernel_free_event(0x%llx) called\r\n", (uint64_t) handle);
+	// printf_color(PRINT_COLOR_LIGHT_GREY, PRINT_DEFAULT_BG, "[UACPI] uacpi_kernel_free_event() called\n");
+
+	// printf_serial("[UACPI] uacpi_kernel_free_event(0x%llx) called\r\n", (uint64_t) handle);
 	if (!handle) return;
 	semaphore_destroy((semaphore_t*) handle);
 }
@@ -635,18 +841,27 @@ uacpi_thread_id uacpi_kernel_get_thread_id(void) {
 uacpi_status uacpi_kernel_acquire_mutex(uacpi_handle handle, uacpi_u16 timeout_ms) {
 	// printf_serial("[UACPI] uacpi_kernel_acquire_mutex(0x%llx, %u) called\r\n", (uint64_t) handle, timeout_ms);
 	if (!handle) return UACPI_STATUS_INTERNAL_ERROR;
+
+	// printf_color(PRINT_COLOR_LIGHT_GREY, PRINT_DEFAULT_BG, "[UACPI] uacpi_kernel_acquire_mutex() called\n");
+
+
 	uint64_t timeout = (timeout_ms == 0xFFFF) ? UINT64_MAX : timeout_ms;
 	int status = semaphore_wait((semaphore_t*) handle, 1, timeout);
+
+	int ret = UACPI_STATUS_OK;
+
 	if (status == SEMAPHORE_TIMEOUT) {
 		// printf_serial("[UACPI] uacpi_kernel_acquire_mutex() - timeout\r\n");
-		return UACPI_STATUS_TIMEOUT;
+		ret = UACPI_STATUS_TIMEOUT;
 	}
-	// printf_serial("[UACPI] uacpi_kernel_acquire_mutex() - success\r\n");
-	return UACPI_STATUS_OK;
+	// printf_serial("[UACPI] uacpi_kernel_acquire_mutex() - %s\r\n", ret == UACPI_STATUS_OK ? "STATUS_OK" : "STATUS_TIMEOUT");
+	return ret;
 }
 
 void uacpi_kernel_release_mutex(uacpi_handle handle) {
 	// printf_serial("[UACPI] uacpi_kernel_release_mutex(0x%llx) called\r\n", (uint64_t) handle);
+	// printf_color(PRINT_COLOR_LIGHT_GREY, PRINT_DEFAULT_BG, "[UACPI] uacpi_kernel_release_mutex() called\n");
+
 	if (!handle) return;
 	semaphore_signal((semaphore_t*) handle, 1);
 }
@@ -660,11 +875,13 @@ void uacpi_kernel_release_mutex(uacpi_handle handle) {
  */
 uacpi_bool uacpi_kernel_wait_for_event(uacpi_handle handle, uacpi_u16 timeout_ms) {
 	printf_serial("[UACPI] uacpi_kernel_wait_for_event(0x%llx, %u) called\r\n", (uint64_t) handle, timeout_ms);
+	// printf_color(PRINT_COLOR_LIGHT_GREY, PRINT_DEFAULT_BG, "[UACPI] uacpi_kernel_wait_for_event(0x%llx, %u) called\n", (uint64_t) handle, timeout_ms);
+
 	if (!handle) return 0;
 	uint64_t timeout = (timeout_ms == 0xFFFF) ? UINT64_MAX : timeout_ms;
 	int status = semaphore_wait((semaphore_t*) handle, 1, timeout);
 	uacpi_bool result = status == SEMAPHORE_SUCCESS ? 1 : 0;
-	printf_serial("[UACPI] uacpi_kernel_wait_for_event() - returning %d\r\n", result);
+	// printf_serial("[UACPI] uacpi_kernel_wait_for_event() - returning %d\r\n", result);
 	return result;
 }
 
@@ -674,7 +891,9 @@ uacpi_bool uacpi_kernel_wait_for_event(uacpi_handle handle, uacpi_u16 timeout_ms
  * This function may be used in interrupt contexts.
  */
 void uacpi_kernel_signal_event(uacpi_handle handle) {
-	printf_serial("[UACPI] uacpi_kernel_signal_event(0x%llx) called\r\n", (uint64_t) handle);
+	// printf_serial("[UACPI] uacpi_kernel_signal_event(0x%llx) called\r\n", (uint64_t) handle);
+
+	// printf_color(PRINT_COLOR_LIGHT_GREY, PRINT_DEFAULT_BG, "[UACPI] uacpi_kernel_signal_event(0x%llx) called\n", (uint64_t) handle);
 	if (!handle) return;
 	semaphore_signal((semaphore_t*) handle, 1);
 }
@@ -684,11 +903,12 @@ void uacpi_kernel_signal_event(uacpi_handle handle) {
  * Reset the event counter to 0.
  */
 void uacpi_kernel_reset_event(uacpi_handle handle) {
-	printf_serial("[UACPI] uacpi_kernel_reset_event(0x%llx) called\r\n", (uint64_t) handle);
+	// printf_serial("[UACPI] uacpi_kernel_reset_event(0x%llx) called\r\n", (uint64_t) handle);
+	// printf_color(PRINT_COLOR_LIGHT_GREY, PRINT_DEFAULT_BG, "[UACPI] uacpi_kernel_reset_event(0x%llx) called\r\n", (uint64_t) handle);
 	if (!handle) return;
 	// Consume all available units in semaphore
 	while (semaphore_wait((semaphore_t*) handle, 1, 0) == SEMAPHORE_SUCCESS);
-	printf_serial("[UACPI] uacpi_kernel_reset_event() - complete\r\n");
+	// printf_serial("[UACPI] uacpi_kernel_reset_event() - complete\r\n");
 }
 
 
@@ -699,10 +919,13 @@ void uacpi_kernel_reset_event(uacpi_handle handle) {
  */
 uacpi_handle uacpi_kernel_create_spinlock(void) {
 	// printf_serial("[UACPI] uacpi_kernel_create_spinlock() called\r\n");
+	// printf_color(PRINT_COLOR_LIGHT_GREY, PRINT_DEFAULT_BG, "[UACPI] uacpi_kernel_create_spinlock() called\n");
 	return spinlock_create();
 }
 void uacpi_kernel_free_spinlock(uacpi_handle handle) {
 	// printf_serial("[UACPI] uacpi_kernel_unlock_spinlock(0x%llx) called\r\n", (uint64_t) handle);
+	// printf_color(PRINT_COLOR_LIGHT_GREY, PRINT_DEFAULT_BG, "[UACPI] uacpi_kernel_unlock_spinlock() called\n");
+
 	spinlock_destroy(handle);
 }
 
@@ -716,24 +939,62 @@ void uacpi_kernel_free_spinlock(uacpi_handle handle) {
  * Note that lock is infalliable.
  */
 uacpi_cpu_flags uacpi_kernel_lock_spinlock(uacpi_handle handle) {
+	// printf_color(PRINT_COLOR_LIGHT_GREY, PRINT_DEFAULT_BG, "[UACPI] uacpi_kernel_lock_spinlock() called\n");
 	if (!handle) return 0;
 	spinlock_lock((spinlock_t*) handle);
 	return 0; // Flags are ignored in single-core for now
 }
 
 void uacpi_kernel_unlock_spinlock(uacpi_handle handle, uacpi_cpu_flags flags) {
+	// printf_color(PRINT_COLOR_LIGHT_GREY, PRINT_DEFAULT_BG, "[UACPI] uacpi_kernel_unlock_spinlock() called\n");
+
 	if (!handle) return;
 	spinlock_unlock((spinlock_t*) handle);
 }
 
-/*
- * Schedules deferred work for execution.
- * Might be invoked from an interrupt context.
- */
+#include <uacpi/kernel_api.h>
+#include <uacpi/types.h>
+
+typedef struct {
+	uacpi_work_handler function;
+	uacpi_handle context;
+} uacpi_deferred_work_t;
+
+#define UACPI_DEFERRED_QUEUE_SIZE 16
+static uacpi_deferred_work_t deferred_queue[UACPI_DEFERRED_QUEUE_SIZE];
+static volatile uint32_t deferred_head = 0;
+static volatile uint32_t deferred_tail = 0;
+
+#include <arch.h>
+
 uacpi_status uacpi_kernel_schedule_work(uacpi_work_type type, uacpi_work_handler handler, uacpi_handle ctx) {
-	printf_serial("[UACPI] uacpi_kernel_schedule_work(type=%d) called\r\n", type);
-	printf("[UACPI] Warning: schedule_work called but not implemented\n");
-	return UACPI_STATUS_UNIMPLEMENTED;
+	(void) type; // We don't strictly need to differentiate work types for a basic queue
+
+	uint32_t next = (deferred_tail + 1) % UACPI_DEFERRED_QUEUE_SIZE;
+	if (next == deferred_head) {
+		return UACPI_STATUS_OUT_OF_MEMORY; // Queue full
+	}
+
+	deferred_queue[deferred_tail].function = handler;
+	deferred_queue[deferred_tail].context = ctx;
+
+	// Prevent compiler from reordering the tail update before the payload write
+	cpu_compiler_barrier();
+
+	deferred_tail = next;
+	return UACPI_STATUS_OK;
+}
+
+void acpi_process_deferred_work(void) {
+	while (deferred_head != deferred_tail) {
+		uacpi_deferred_work_t work = deferred_queue[deferred_head];
+
+		deferred_head = (deferred_head + 1) % UACPI_DEFERRED_QUEUE_SIZE;
+
+		if (work.function) {
+			work.function(work.context);
+		}
+	}
 }
 
 
@@ -745,10 +1006,10 @@ uacpi_status uacpi_kernel_schedule_work(uacpi_work_type type, uacpi_work_handler
  * Note that the waits must be done in this order specifically.
  */
 uacpi_status uacpi_kernel_wait_for_work_completion(void) {
-	printf("[UACPI] Warning: wait_for_work_completion called but not implemented\n");
+	// printf("[UACPI] Warning: wait_for_work_completion called but not implemented\n");
 	printf_serial("[UACPI] uacpi_kernel_wait_for_work_completion() called\r\n");
 
 	return UACPI_STATUS_UNIMPLEMENTED;
 }
-
+#endif // UACPI_BAREBONES_MODE
 #endif // WALLOS_USE_UACPI

@@ -1,6 +1,11 @@
 MAKEFLAGS=-s
 .DEFAULT_GOAL := all
 
+# Some systems require sudo to use MKFS
+# I'd recommend exporting MKFS_SUDO=1 in .bashrc (or equivalent) if your system needs it.
+MKFS_SUDO ?= 0
+MKFS_CMD := $(if $(filter 1,$(MKFS_SUDO)),sudo mkfs.fat,mkfs.fat)
+
 # Compiler and Linker Settings
 WALLOS_C_COMPILER 	?= x86_64-wallos-gcc
 WALLOS_CXX_COMPILER	?= x86_64-wallos-g++
@@ -94,7 +99,7 @@ image: build_projects
 	@echo "$(COLOR_CYAN)Creating FAT12 image $(IMAGE_NAME) from $(OUTPUT_DIR)$(END_COLOR)"
 	@mkdir -p "$(CURDIR)/dist"
 	@dd if=/dev/zero of="$(IMAGE_FILE)" bs=1M count=$(IMAGE_SIZE_MB)
-	@mkfs.fat -F 12 "$(IMAGE_FILE)"
+	@$(MKFS_CMD) -F 12 "$(IMAGE_FILE)"
 	@mcopy -i "$(IMAGE_FILE)" -s $(CURRENT_DIR)$(OUTPUT_DIR)/* ::
 	@cp "$(IMAGE_FILE)" "$(CURDIR)/targets/x86_64/iso/boot/initrd.img"
 	@echo "$(COLOR_GREEN)FAT12 image created at $(IMAGE_FILE)$(END_COLOR)"
