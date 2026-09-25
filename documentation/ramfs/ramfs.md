@@ -11,7 +11,12 @@ This ramfs supports several types of other buildsystems:
 
 ## Filesystem
 
-The ramfs is formatted with FAT, but the type may vary (12 or 16 is the most likely). Currently the filesystem doesn't load the drive automatically (which it really should, I'm just lazy). To access the ramfs, you must run `drive mount 0`, and then access it using `drive <command> 0:<path>`. This will all change eventually when a virtual filesystem is added, along with support for anything other than PIO drives.
+The ramfs is formatted with FAT, but the type may vary (12 or 16 is the most likely).
+
+My FAT12/16 driver is read-only. Keep this in mind.
+
+> In theory, it's supposed to be mounted on boot. This isn't always the case.
+> Might need to mount manually with `mount /initrd 0`
 
 ## Exports
 
@@ -28,7 +33,7 @@ The ramfs buildsystem supports many nice exports (that you should 100% use to en
 
 > It is expected that everything uses these exports.
 > If you do not use these exports, make sure you are 100% certain it's configured correctly.
-> You ***can not*** just use the regular system GCC or Binutils.
+> You _**can not**_ just use the regular system GCC or Binutils.
 > Building for WallOS requires the use of a cross compiler, which the above exports provide access to.
 
 ## Make

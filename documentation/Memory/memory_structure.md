@@ -2,13 +2,13 @@
 
 WallOS has a three layer approach to memory.
 
-```
+```plaintext
 ╔═════════════════╗    ╔════════════════╗     ╔═════════════════════╗
 ║ Physical Memory ╠════╣ Virtual Memory ╠══╦══╣   Kernel Allocator  ║
 ╚═════════════════╝    ╚════════════════╝  ║  ╚═════════════════════╝
                                            ║  ╔═════════════════════╗
                                            ╚══╣ Userspace Allocator ║
-					      ╚═════════════════════╝
+                                              ╚═════════════════════╝
 ```
 
 ### Physical Memory

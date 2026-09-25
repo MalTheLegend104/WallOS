@@ -1,5 +1,8 @@
 # Code Style
 
+> Most of this file is outdated. There is a `.clang-format` file in the root directory, that should be applied to all files being committed.
+> It does contain some fields that require LLVM 23, so ensure that your `clang-format` is up to date.
+
 ## Table of Contents
 
 - [Assembly Code](#assembly)
@@ -9,11 +12,12 @@
 - [Alignment and Grouping](#alignment-and-grouping)
 
 ## Assembly
-- All assembly code *that is in its own source file*, should use [NASM](https://github.com/netwide-assembler/nasm) syntax. 
+
+- All assembly code _that is in its own source file_, should use [NASM](https://github.com/netwide-assembler/nasm) syntax.
   - NASM syntax is essentially the `intel` syntax, with a few additional keywords.
-  - If something *must* be compiled with [`gas`](https://en.wikipedia.org/wiki/GNU_Assembler), use the AT&T syntax.
+  - If something _must_ be compiled with [`gas`](https://en.wikipedia.org/wiki/GNU_Assembler), use the AT&T syntax.
     - NASM should be able to handle virtually everything we need asm for. The only exception is the `CRTI` & `CRTEND` needed by GCC.
-- All *inline* assembly must be in the AT&T syntax, as that's what `gas` expects.
+- All _inline_ assembly must be in the AT&T syntax, as that's what `gas` expects.
   - Technically you can force inline asm to be intel syntax, but changing that now would cause a major refactoring.
 
 ## Indentation
@@ -39,6 +43,7 @@ WallOS uses tabs.
 - snake_case or camelCase
   - Anything that may be referenced by C++ code must be camelCase
   - Function "overloads", must use snake_case:
+
     ```C
     // panic "string"
     void panic_s(const char* buf);
@@ -65,6 +70,7 @@ WallOS uses tabs.
 
 - Depending on context:
   - PascalCase if name is one word, makes sense as "object"
+
     ```C
     typedef struct {
         int (*mainCommand)(int argc, char** argv);
@@ -78,7 +84,7 @@ WallOS uses tabs.
     - This is "like an object" because it gets passed as a function, contains function pointers, and static variables.
 
     > If the struct is a C++ struct, it counts as an object.
-    >
+
   - snake_case
     - Every other scenario.
 - Internals of `enum` should be in SCREAMING_SNAKE_CASE
@@ -142,6 +148,7 @@ int exampleFunction2() { return 5; }
 - Same as a function definition, the starting brace is on the same line as the definition, with a space before it.
 - The name and any attributes should come after the closing brace, which is aligned with the definition.
   - In some cases, it's required to put the name before the opening brace:
+
     ```C
     typedef struct Block {
         uintptr_t pointer;
@@ -151,7 +158,6 @@ int exampleFunction2() { return 5; }
     ```
 
     > This linked list needs to know what a Block is before it would be defined.
-    >
 
 ```C
 typedef struct {
@@ -172,6 +178,7 @@ typedef enum {
     Make sure to put only the necessary members before the private ones, and everything where it would normally go.
 - Private and public labels, along with the closing brace, should be on the same indentation level as the definition.
 - Constructors and Deconstructors should be treated like functions.
+
 ```C++
 class ExampleClass{
 private:
@@ -219,6 +226,7 @@ if (expression) {
 
 - Single line if/else without braces are allowed, only if each contains one statement only.
   - If the `if` part only contains one statement, but the `else` contains more, both should have braces.
+
     ```C
     if (expression) return;
     // or
@@ -235,9 +243,9 @@ if (expression) {
 
     > In the last case above, the `else` contains two statements, therefore the `if` part must also have braces.
     > This goes both ways, if the `else` only has one statement but the `if` has more, both must have braces.
-    >
 
 ### Switch Case
+
 - Starting brace on the same line as the definition.
 - A space should follow the closing parenthesis.
 - Case labels should be indented a level in from the switch statement.
@@ -262,8 +270,9 @@ switch (expression) {
 
 ### Labels
 
-- `Labels` and `goto` should be used in a last case scenario, or for a ***very*** good reason.
-- `Labels` should be one indentation level *behind* the surrounding code.
+- `Labels` and `goto` should be used in a last case scenario, or for a _**very**_ good reason.
+- `Labels` should be one indentation level _behind_ the surrounding code.
+
 ```C
 void example() {
     for (int i = 0; i < 3; i++) {
@@ -287,12 +296,14 @@ exitLoops:
 ## Alignment and Grouping
 
 In chunks of code that are closely related, it's often easier to read if they are aligned & grouped together.
+
 - Take this chunk of code from `virtual_mem.hpp`:
+
   ```C
   #define KERNEL_VIRTUAL_BASE 0xFFFFFFFF80000000ULL
   // The first 52 bytes of memory: 0b1111111111111111111111111111111111111111000000000000
   #define PAGE_FRAME 0xFFFFFFFFFF000ULL
-  #define TABLE_ENTRIES 512 
+  #define TABLE_ENTRIES 512
 
   /* Macros to make page modification not magic. */
   #define GET_PML4_INDEX(page)         (((page) >> 39) & 0x1FF)
@@ -328,63 +339,65 @@ In chunks of code that are closely related, it's often easier to read if they ar
   #define SET_BIT_WRITE(page)        (page = (page | BIT_WRITE))
   #define SET_BIT_PRESENT(page)      (page = (page | BIT_PRESENT))
 
-  #define PAGE_4KB_SIZE 0x1000 
+  #define PAGE_4KB_SIZE 0x1000
   #define PAGE_2MB_SIZE 0x200000   // 512 * 4096
   #define PAGE_1GB_SIZE 0x40000000 // 512 * 512 * 4096
   ```
+
   > This example shows both alignment and grouping.
-  > 
+  >
   > The group of defines for `BIT_*` are all grouped together, with space above and below them.
-  > The same can be said for the `SET_BIT_*` macros. 
-  > 
+  > The same can be said for the `SET_BIT_*` macros.
+  >
   > Both of these groups have their macros aligned too, so you can go down in a straight line and compare them
   - This doesn't apply to just `#define`, this can apply to groups of functions, variables, classes, etc.
 
 - Things don't always look good or are easy to read if directly next to each other, regardless of if they are related or not.
   - Take these structs for example:
-	```C
-	typedef struct {
-	    int (*mainCommand)(int argc, char** argv);
-	    int (*helpCommand)(int argc, char** argv);
-	    const char* commandName;
-	    const char** aliases;
-	    size_t aliases_count;
-	} Command;
-	
-	typedef struct {
-	    const char* commandName;
-	    const char* description;
-	    const char** commands;
-	    const int commands_count;
-	    const char** aliases;
-	    const int aliases_count;
-	} HelpEntryGeneral;
-	
-	typedef struct {
-	    const char* commandName;
-	    const char* description;
-	    const char** required;
-	    const int required_count;
-	    const char** optional;
-	    const int optional_count;
-	} HelpEntry;
-	```
+    ```C
+    typedef struct {
+        int (*mainCommand)(int argc, char** argv);
+        int (*helpCommand)(int argc, char** argv);
+        const char* commandName;
+        const char** aliases;
+        size_t aliases_count;
+    } Command;
+
+    typedef struct {
+        const char* commandName;
+        const char* description;
+        const char** commands;
+        const int commands_count;
+        const char** aliases;
+        const int aliases_count;
+    } HelpEntryGeneral;
+
+    typedef struct {
+        const char* commandName;
+        const char* description;
+        const char** required;
+        const int required_count;
+        const char** optional;
+        const int optional_count;
+    } HelpEntry;
+    ```
     > If all these structs were mingled together, it would be harder to read them
 
 ## Pull Request Denial
 
 - You can have a pull request be denied for improper code styling. This isn't a big deal and isn't meant to hurt feelings.
-- If you get a pull request denied for improper code styling, fix it and resubmit your pull request. 
+- If you get a pull request denied for improper code styling, fix it and resubmit your pull request.
 
 > If you feel you were improperly denied, **cite this document.** This document isn't perfect, there may be errors.
-  The reviewer could also improperly interpret something. Be polite. 
-> 
+> The reviewer could also improperly interpret something. Be polite.
+>
 > If it's decided that:
+>
 > 1. You were wrong.
->     - Fix it and resubmit your pull request.
+>    - Fix it and resubmit your pull request.
 > 2. The reviewer was wrong.
->     - As long as the rest of the pull request looked good, it will be accepted. 
->     - If there were other issues, it will still be denied until they are fixed.
+>    - As long as the rest of the pull request looked good, it will be accepted.
+>    - If there were other issues, it will still be denied until they are fixed.
 > 3. This document was wrong.
->     - This document will be properly updated.
->     - Your pull request will be looked at again.
+>    - This document will be properly updated.
+>    - Your pull request will be looked at again.

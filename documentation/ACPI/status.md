@@ -1,105 +1,76 @@
-# ACPICA OS Layer Implementation Status
+# ACPI Status
 
-Most of this page is courtesy of [this osedev.wiki page.](https://osdev.wiki/wiki/ACPICA)
+The OSL (operating system layer) for both [uACPI](https://github.com/uACPI/uACPI) and [ACPICA](https://www.intel.com/content/www/us/en/developer/topic-technology/open/acpica/overview.html).
 
-> ACPICA provides a ACPI parser that allows you to get information from the tables without doing much else. it *shouldn't* rely on anything below. this is really what we care about the most right now. A lot of these are just going to be stubs, and we'll print a message and hlt when they called.
+Both of these are relatively out of date, at least as to the versions I have included in this repository. The ACPICA version is a release from 2024, and the uACPI is a full major release version out of date (at the time of writing).
+I do not plan on updating these unless necessary, both are plenty of performant and work well on all systems I have. I have tried to update to the latest version of uACPI, but had problems and abandoned the idea, as I didn't want to put more effort into it.
 
-## Table of Contents
+## ACPI API
 
-- [Env](#env)
-- [Memory](#memory)
-- [Multithreading](#multithreading)
-- [Mutexes and Spinlocks](#mutual-exclusion-and-synchronization)
-- [Interrupt Handling](#interrupt-handling)
+There is an abstracted ACPI layer in the OS so that all other subsystems can interact with a common layer and not rely on the OS being built with a particular ACPI subsystem.
+The API provides common formats for important ACPI tables, as well as some common required functions.
+It also provides a small interface for dealing with power states (although this is mostly shutdown and restart only).
 
-## Env
+### Adding to the API
 
-- [ ] `ACPI_STATUS AcpiOsInitialize()`
-  - This is called during ACPICA Initialization. It gives the possibility to the OSL to initialize itself. Generally it should do nothing.
-- [ ] `ACPI_STATUS AcpiOsTerminate()`
-  - This is called during ACPICA Shutdown (which is not the computer shutdown, just the ACPI). Here you can free any memory which was allocated in AcpiOsInitialize.
-  - This will do absolutely nothing on WallOS.
-- [ ] `ACPI_PHYSICAL_ADDRESS AcpiOsGetRootPointer()`
-  - ACPICA leaves to you the job of finding the RSDP for platform compatibility.
-  - This can be done using AcpiFindRootPointer(), but we also get the RSDP from GRUB.
-- [ ] `ACPI_STATUS AcpiOsPredefinedOverride(const ACPI_PREDEFINED_NAMES *PredefinedObject, ACPI_STRING *NewValue)`
-  - This function allows the host to override the predefined objects in the ACPI namespace. It is called when a new object is found in the ACPI namespace. However you can just put NULL in *NewValue and return.
-- [ ] `ACPI_STATUS AcpiOsTableOverride(ACPI_TABLE_HEADER *ExistingTable, ACPI_TABLE_HEADER **NewTable)`
-  - The same of AcpiOsPredefinedOverride but for entire ACPI tables. You can replace them. Just put NULL in *NewTable and return.
+#### ACPI Table
 
-## Memory
+All new ACPI generic ACPI tables should be added to `src\kernel\klibc\include\acpi\acpi_generic_tables.h` (and the corresponding `.c` file).
+The getter functions should be in `src\kernel\klibc\include\acpi\acpi_api.h`.
 
-- [ ] `void *AcpiOsMapMemory(ACPI_PHYSICAL_ADDRESS PhysicalAddress, ACPI_SIZE Length)`
-  - This is not really easy. ACPICA is asking you to map a physical address in the virtual address space. If you don't use paging, just return PhysicalAddress. You need:
-      1. To round Length up to the size of a page (Length can be 2, 1024 for example)
-      2. Find a range of virtual addresses where map the physical frames.
-      3. Map the physical frames to the virtual addresses chosen.
-      4. Return the virtual address plus the page offset of the physical address. (Eg. If you where asked to map 0x40E you have to return 0xF000040E and not just 0xF0000000)
-- [ ] `void AcpiOsUnmapMemory(void *where, ACPI_SIZE length)`
-  - Unmap pages mapped using AcpiOsMapMemory. Where is the Virtual address returned in AcpiOsMapMemory and length is equal to the length of the same function. Just remove the virtual address form the page directory and set that virtual address as reusable. Note: for the last two functions you might need a separated heap.
-- [ ] `ACPI_STATUS AcpiOsGetPhysicalAddress(void *LogicalAddress, ACPI_PHYSICAL_ADDRESS *PhysicalAddress)`
-  - Get the physical address pointed by LogicalAddress and put it in `*PhysicalAddress`. If you do not use paging just put LogicalAddress in `*PhysicalAddress`
-- [ ] `void *AcpiOsAllocate(ACPI_SIZE Size);`
-  - literally just `return malloc(size)` (although it'll be kalloc)
-- [ ] `void AcpiOsFree(void *Memory);`
-  - literally just call kfree
-- [ ] `BOOLEAN AcpiOsReadable(void *Memory, ACPI_SIZE Length)`
-  - in theory never used. mostly asking that the memory + length doesn't overrun a page boundary and is readable
-- [ ] `BOOLEAN AcpiOsWritable(void *Memory, ACPI_SIZE Length)`
-  - Same as the last one, but with writable. ACPICA is running in the kernel, it is always writable if readable.
-- [ ] caches
-  - We have the option of using our own caches. we wont.
+The structures should be generic, and ideally should not require `__attribute__((packed))`.
+They should include all fields that are in the ACPI spec (for spec defined tables), including unused or reserved fields.
 
-  ```c
-  #define ACPI_CACHE_T                ACPI_MEMORY_LIST
-  #define ACPI_USE_LOCAL_CACHE        1
-  ```
+When adding to the `.c` file, you should add a public getter function to follow the rest, and a private (static) function to retrieve the table from the ACPI subsystem if it's not already been populated.
 
-## Multithreading
+There should only be one instance of a table for most tables.
+Very few ACPI tables are allowed to have multiple copies, and those that do typically aren't mean to be interacted with directly.
+Things like the `SSDT` would require special handling if the kernel ever needs to interact with then, but it shouldn't.
 
-We wont get here for a long time. We'll probably still need stubs.
+### Using the API
 
-- [ ] `ACPI_THREAD_ID AcpiOsGetThreadId()`
-  - Does what it says. behaves like `pthread_self()`;
-- [ ] `ACPI_STATUS AcpiOsExecute(ACPI_EXECUTE_TYPE Type, ACPI_OSD_EXEC_CALLBACK Function, void *Context)`
-  - Create a new thread (or process) with entry point at Function using parameter Context. Type is not really useful. When the scheduler chooses this thread it has to pass in Context to the first argument (RDI for x86-64, stack for x86-32 (using System V ABI) to have something like: `Function(Context);`
-- [ ] `void AcpiOsSleep(UINT64 Milliseconds)`
-  - typical sleep function
-- [ ] `void AcpiOsStall(UINT32 Microseconds)`
-  - like sleep but doesn't put the thread in the queue. should just loop the thread.
+Simply include `<acpi\acpi_api.h>`. This will pull in `acpi_generic_tables.h` as well.
 
-## Mutual Exclusion and Synchronization
+#### Tables
 
-same as above. probably need stubs, don't know about usage.
+If getting a table, a `NULL` should imply that the system does not have the table, and never will.
+Callers should not modify the fields of the tables.
+If, for some reason, a field needs to be changed, it should create a copy of the table provided by the API.
 
-- [ ] `ACPI_STATUS AcpiOsCreateMutex(ACPI_MUTEX *OutHandle)`
-  - Create space for a new Mutex using malloc (or eventually new) and put the address of the Mutex in *OutHandle, return AE_NO_MEMORY if malloc or new return NULL. Else return AE_OK like in most other functions.
-- [ ] `void AcpiOsDeleteMutex(ACPI_MUTEX Handle)`
-- [ ] `ACPI_STATUS AcpiOsAcquireMutex(ACPI_MUTEX Handle, UINT16 Timeout)`
-  - This would be silly too if not for the Timeout parameter. Timeout can be one of:  
-    0: acquire the Mutex if it is free, but do not wait if it is not  
-    1 - +inf: acquire the Mutex if it is free, but wait for Timeout milliseconds if it is not  
-    -1 (0xFFFF): acquire the Mutex if it is free, or wait until it became free, then return
-- [ ] `void AcpiOsReleaseMutex(ACPI_MUTEX Handle)`
-- [ ] `ACPI_STATUS AcpiOsCreateSemaphore(UINT32 MaxUnits, UINT32 InitialUnits, ACPI_SEMAPHORE *OutHandle)`
-- Create a new Semaphore with the counter initialized to InitialUnits and put its address in *OutHandle. I don't know how tu use MaxUnits. The spec says: The maximum number of units this Semaphore will be required to accept.
-However you should be ok if you ignore this.
-- [ ] `ACPI_STATUS AcpiOsDeleteSemaphore(ACPI_SEMAPHORE Handle)`
-- [ ] `ACPI_STATUS AcpiOsWaitSemaphore(ACPI_SEMAPHORE Handle, UINT32 Units, UINT16 Timeout)`
-  - Just like AcpiOsAcquireMutex, same logic for Timeout. Units isn't used in the linux implementation. However it should be the number of times you have to call sem_wait. I'm not sure about this.
-- [ ] `ACPI_STATUS AcpiOsSignalSemaphore(ACPI_SEMAPHORE Handle, UINT32 Units)`
-  - Opposite of Wait. Units: number of times you should call sem_post.
-- [ ] `ACPI_STATUS AcpiOsCreateLock(ACPI_SPINLOCK *OutHandle)`
-  - Create a new spinlock and put its address in *OutHandle. Spinlock should disable interrupts on the current CPU to avoid scheduling and make sure that no other CPU will access the reserved area.
-- [ ] `void AcpiOsDeleteLock(ACPI_HANDLE Handle)`
-- [ ] `ACPI_CPU_FLAGS AcpiOsAcquireLock(ACPI_SPINLOCK Handle)`
-  - Lock the spinlock and return a value that will be used as parameter for ReleaseLock. It is mainly used for the status of interrupts before the lock was acquired.
-- [ ] `void AcpiOsReleaseLock(ACPI_SPINLOCK Handle, ACPI_CPU_FLAGS Flags)`
-  - Release the lock. Flags is the return value of AcquireLock. If you used this to store the interrupt state, now is the moment to use it.
+#### Functions
 
-## Interrupt Handling
+There are functions to get general information about the ACPI subsystem (determine which one it is, if it's been initialized yet, etc.).
 
-- [ ] `ACPI_STATUS AcpiOsInstallInterruptHandler(UINT32 InterruptLevel, ACPI_OSD_HANDLER Handler, void *Context)`
-- ACPI sometimes fires interrupt. ACPICA will take care of them. InterruptLevel is the IRQ number that ACPI will use. Handler is an internal function of ACPICA which handles interrupts. Context is the parameter to be past to the Handler. If you're lucky, your IRQ manager uses handlers of this form: `uint32_t handler(void *);` (WallOS doesn't. We'll cross this road when we get there.)
-- [ ] `ACPI_STATUS AcpiOsRemoveInterruptHandler(UINT32 InterruptNumber, ACPI_OSD_HANDLER Handler)`
-  - Just UnregisterIrq (InterruptNumber). Handler is provided in case you have an IRQ manager which can have many handlers for one IRQ. This would let you know which handler on that IRQ you have to remove. (basically just unregister the interrupt. WallOS doesn't allow multiple IRQs per number.)
+- `acpi_get_subsystem()` returns which subsystem the kernel was built with (`ACPICA`, `uACPI`, or `NONE`). Most callers shouldn't need this directly, it's mainly here for logging/debugging and the rare case where subsystem-specific behavior actually matters.
+- `acpi_is_present()` reports whether an ACPI root table was found by the bootloader. Everything else in the API assumes this is `true`. Callers should check it before relying on ACPI at all.
+- `acpi_setup_complete()` / `acpi_set_setup_completed()` track whether ACPI init has finished. Subsystems that depend on ACPI being fully brought up (tables parsed, namespace loaded, etc.) should check the former before touching anything else in this API, and the ACPI init path is responsible for calling the latter exactly once, when it's actually done.
+
+##### Power State Functions
+
+These wrap the underlying subsystem's sleep/reset calls so the rest of the kernel doesn't need to know which one is in use.
+
+- `acpi_shutdown()` transitions the system into S5 (soft off). It preps the sleep state, disables interrupts, then enters it. This is a `noreturn` function. It will never return, on the system being started again after this, it will go through the normal startup path.
+- `acpi_reboot()` restarts the system, also `noreturn`. It tries, in order: the ACPI reset register, an 8042 keyboard controller reset, and finally a deliberate triple fault as a last resort.
+- `acpi_sleep(uint8_t state)` is intended for entering the other, non-terminal sleep states (S1–S4). (Declared but currently unimplemented.)
+
+Both `acpi_shutdown()` and `acpi_reboot()` currently share a `shutdown_failed`/hang path and are marked with a TODO to revisit once SMP is finished. On a multi-core system, every CPU needs to be halted, not just the one that called these functions. Don't rely on the current single-CPU hang behavior sticking around.
+
+On failure to properly shutdown/restart, `acpi_shutdown` and `acpi_reboot` will print a message telling the user it's safe to force shutdown the computer.
+This is very similar to the WIN95/WIN98 shutdown screen. Neither of these functions will ever return.
+
+##### Device Functions
+
+- `acpi_find_devices(wallos_acpi_dev_t type, acpi_handle_t* out_handles, size_t* count)` walks the ACPI namespace for devices matching `type`, filling `out_handles` and reporting how many were found in `count`. Callers should be prepared for zero matches, not every device type exists on every system.
+- `acpi_identify_handle(const acpi_handle_t handle)` does the reverse: given a handle, it identifies which `wallos_acpi_dev_t` it corresponds to. Useful when walking the namespace generically and dispatching based on device type.
+
+##### Resource Functions
+
+- `acpi_get_resources(const acpi_handle_t handle, acpi_mem_resource_t* mem, size_t* mem_count, acpi_irq_resource_t* irq, size_t* irq_count)` retrieves the memory and IRQ resources associated with a device handle (from its `_CRS`, effectively). As with tables, callers should not assume every device has both memory and IRQ resources, check the counts.
+- `acpi_get_pci_routing(const acpi_handle_t pci_root, acpi_pci_route_t* routes, size_t* route_count)` retrieves the PCI interrupt routing table (`_PRT`) for a given PCI root bridge handle. This is how the kernel figures out which legacy IRQ (or GSI) each PCI device's interrupt pin is routed to.
+
+##### Debug Functions
+
+- `acpi_dump_namespace()` prints the full ACPI namespace, mainly useful when bringing up ACPI support on new hardware or diagnosing why a device isn't being found.
+- `acpi_dump_tables()` prints the set of ACPI tables the subsystem has found. Handy alongside `acpi_dump_namespace()` when a table seems to be missing or malformed.
+
+Both dump functions are debugging aids and are not expected to be called as part of normal kernel operation.
