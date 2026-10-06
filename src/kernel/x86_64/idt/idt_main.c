@@ -1,16 +1,16 @@
-#include <stdint.h>
-#include <stdlib.h>
-#include <stdio.h>
-#include <panic.h>
-#include <klibc/logger.h>
-#include <system/idt.h>
-#include <stdbool.h>
+#include <cpu_io.h>
 #include <drivers/keyboard.h>
 #include <drivers/serial.h>
-#include <cpu_io.h>
+#include <klibc/logger.h>
+#include <panic.h>
+#include <stdbool.h>
+#include <stdint.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <system/idt.h>
 
 // I aint touching the interrupt frame on 99% of these but it's required by gcc.
-#pragma GCC diagnostic ignored "-Wunused-parameter" 
+#pragma GCC diagnostic ignored "-Wunused-parameter"
 
 // Define the structure of an IDT entry
 struct idt_entry {
@@ -58,6 +58,61 @@ void interrupt_eoi(uint8_t irq_number) {
 	}
 }
 
+// ------------------------------------------------------------------------------------------------
+// ------------------------------------------------------------------------------------------------
+// IRQ handling
+// Bringing up other APs means we need to keep track of how we use the legacy PIC.
+// ------------------------------------------------------------------------------------------------
+// ------------------------------------------------------------------------------------------------
+#include <x86_64/ioapic.h>
+
+extern void pic_irq_enable(uint8_t irq);
+extern void pic_irq_disable(uint8_t irq);
+
+#define IRQ_LEGACY_COUNT 16
+#define IRQ_CASCADE      2 /* PIC master->slave link, no meaning on an IOAPIC */
+#define IRQ_VECTOR_BASE  32 /* ISA IRQ n arrives on vector 32 + n */
+
+static volatile uint16_t irq_enabled_mask; /* bit n = ISA IRQ n is wanted */
+static volatile uint32_t irq_dest_apic; /* LAPIC id that receives IOAPIC-routed IRQs */
+
+bool irq_is_enabled(uint8_t irq) {
+	if (irq >= IRQ_LEGACY_COUNT) return false;
+	return (__atomic_load_n(&irq_enabled_mask, __ATOMIC_ACQUIRE) >> irq) & 1u;
+}
+
+void irq_enable(uint8_t irq) {
+	if (irq >= IRQ_LEGACY_COUNT) return;
+	__atomic_fetch_or(&irq_enabled_mask, (uint16_t) (1u << irq), __ATOMIC_ACQ_REL);
+
+	if (!pic_disabled) pic_irq_enable(irq);
+	else if (irq != IRQ_CASCADE) ioapic_route_irq(irq, IRQ_VECTOR_BASE + irq, irq_dest_apic, false);
+}
+
+void irq_disable(uint8_t irq) {
+	if (irq >= IRQ_LEGACY_COUNT) return;
+	__atomic_fetch_and(&irq_enabled_mask, (uint16_t) ~(1u << irq), __ATOMIC_ACQ_REL);
+
+	if (!pic_disabled) pic_irq_disable(irq);
+	else if (irq != IRQ_CASCADE) ioapic_mask_irq(irq);
+}
+
+void irq_route_enabled_to_ioapic(uint32_t dest_apic_id) {
+	irq_dest_apic = dest_apic_id;
+
+	for (uint8_t irq = 0; irq < IRQ_LEGACY_COUNT; irq++) {
+		if (irq == IRQ_CASCADE || !irq_is_enabled(irq)) continue;
+		ioapic_route_irq(irq, IRQ_VECTOR_BASE + irq, dest_apic_id, false);
+		printf_serial(
+			"[IOAPIC] IRQ %u routed to vector %u on APIC %u\r\n",
+			irq,
+			IRQ_VECTOR_BASE + irq,
+			dest_apic_id
+		);
+	}
+}
+
+
 /* A few IRQs are required to be level triggered rather than edge triggered.
  * This is currently only used by ACPI but I want this abstraction in case I need it again.
  */
@@ -93,24 +148,24 @@ void irq_set_edge_triggered(uint8_t irq) {
 // ------------------------------------------------------------------------------------------------
 // ------------------------------------------------------------------------------------------------
 #define DEFINE_IRQ_HANDLER(num) \
-    __attribute__((interrupt)) void irq##num(struct interrupt_frame* frame) { \
-        printf("irq %d called\n", num); \
-        asm volatile("cli"); \
-        asm volatile("hlt"); \
-    }
+	__attribute__((interrupt)) void irq##num(struct interrupt_frame* frame) { \
+		printf("irq %d called\n", num); \
+		asm volatile("cli"); \
+		asm volatile("hlt"); \
+	}
 
 // Generate handlers in groups of 10
 #define EXPAND_IRQS_X0_X9(base) \
-    DEFINE_IRQ_HANDLER(base##0) \
-    DEFINE_IRQ_HANDLER(base##1) \
-    DEFINE_IRQ_HANDLER(base##2) \
-    DEFINE_IRQ_HANDLER(base##3) \
-    DEFINE_IRQ_HANDLER(base##4) \
-    DEFINE_IRQ_HANDLER(base##5) \
-    DEFINE_IRQ_HANDLER(base##6) \
-    DEFINE_IRQ_HANDLER(base##7) \
-    DEFINE_IRQ_HANDLER(base##8) \
-    DEFINE_IRQ_HANDLER(base##9)
+	DEFINE_IRQ_HANDLER(base##0) \
+	DEFINE_IRQ_HANDLER(base##1) \
+	DEFINE_IRQ_HANDLER(base##2) \
+	DEFINE_IRQ_HANDLER(base##3) \
+	DEFINE_IRQ_HANDLER(base##4) \
+	DEFINE_IRQ_HANDLER(base##5) \
+	DEFINE_IRQ_HANDLER(base##6) \
+	DEFINE_IRQ_HANDLER(base##7) \
+	DEFINE_IRQ_HANDLER(base##8) \
+	DEFINE_IRQ_HANDLER(base##9)
 
 // Generate all 256 interrupt handlers (0-255)
 EXPAND_IRQS_X0_X9()       // 0-9
@@ -147,6 +202,7 @@ DEFINE_IRQ_HANDLER(254)
 DEFINE_IRQ_HANDLER(255)
 
 // Generates all the stub handlers
+// clang pragma: off 
 void (*isr_stub_table[256])(struct interrupt_frame*) = {
 	irq0, irq1, irq2, irq3, irq4, irq5, irq6, irq7, irq8, irq9,
 	irq10, irq11, irq12, irq13, irq14, irq15, irq16, irq17, irq18, irq19,
@@ -175,6 +231,7 @@ void (*isr_stub_table[256])(struct interrupt_frame*) = {
 	irq240, irq241, irq242, irq243, irq244, irq245, irq246, irq247, irq248, irq249,
 	irq250, irq251, irq252, irq253, irq254, irq255
 };
+// clang pragma: on
 
 // ------------------------------------------------------------------------------------------------
 // ------------------------------------------------------------------------------------------------
@@ -204,10 +261,7 @@ __attribute__((interrupt)) void general_protection_fault_handler(struct interrup
 	printf("Error code: %llu\n", error_code);
 	printf("  Selector: %u\n", selector);
 	printf("  Selector index: %u\n", index);
-	printf("  Table: %s\n",
-		ti == 0 ? "GDT" :
-		ti == 1 ? "IDT" :
-		ti == 2 ? "LDT" : "IDT");
+	printf("  Table: %s\n", ti == 0 ? "GDT" : ti == 1 ? "IDT" : ti == 2 ? "LDT" : "IDT");
 	printf("  External: %s\n", ext ? "yes" : "no");
 
 	printf("\nCPU state:\n");
@@ -218,10 +272,10 @@ __attribute__((interrupt)) void general_protection_fault_handler(struct interrup
 	printf("  SS:     0x%llx\n", frame->ss);
 
 	uint64_t cr0, cr2, cr3, cr4;
-	asm volatile ("mov %%cr0, %0" : "=r"(cr0));
-	asm volatile ("mov %%cr2, %0" : "=r"(cr2));
-	asm volatile ("mov %%cr3, %0" : "=r"(cr3));
-	asm volatile ("mov %%cr4, %0" : "=r"(cr4));
+	asm volatile("mov %%cr0, %0" : "=r"(cr0));
+	asm volatile("mov %%cr2, %0" : "=r"(cr2));
+	asm volatile("mov %%cr3, %0" : "=r"(cr3));
+	asm volatile("mov %%cr4, %0" : "=r"(cr4));
 
 	printf("\nControl registers:\n");
 	printf("  CR0: 0x%llx\n", cr0);
@@ -229,9 +283,8 @@ __attribute__((interrupt)) void general_protection_fault_handler(struct interrup
 	printf("  CR3: 0x%llx\n", cr3);
 	printf("  CR4: 0x%llx\n", cr4);
 
-	asm volatile ("cli");
-	for (;;)
-		asm volatile ("hlt");
+	asm volatile("cli");
+	for (;;) asm volatile("hlt");
 }
 __attribute__((interrupt)) void x87_fpu_floating_point_error_handler(struct interrupt_frame* frame) { panic_s("x87 FPU Floating-Point Error Exception has occurred."); }
 __attribute__((interrupt)) void alignment_check_handler(struct interrupt_frame* frame, uword_t error_code) { panic_s("Alignment Check Exception has occurred."); }
@@ -242,7 +295,7 @@ __attribute__((interrupt)) void control_protection_exception_handler(struct inte
 
 __attribute__((interrupt)) void page_fault_handler(struct interrupt_frame* frame, uword_t error_code) {
 	unsigned long cr2;
-	asm volatile ("movq %%cr2, %0" : "=r" (cr2));
+	asm volatile("movq %%cr2, %0" : "=r"(cr2));
 
 	// unsigned long error_code;
 	// asm volatile ("pop %0" : "=r" (error_code));
@@ -267,14 +320,12 @@ __attribute__((interrupt)) void page_fault_handler(struct interrupt_frame* frame
 	// Log the information
 	logger(ERROR, "Page fault Error Code: %s\n", err);
 	logger(ERROR, "Page fault at address (CR2): 0x%llx\n", cr2);
-	logger(ERROR, "Present: %d, Write: %d, User Mode: %d, Reserved: %d, Instruction Fetch: %d, Protection: %d, Shadow Stack: %d, SGX: %d\n",
-		present, write, user_mode, reserved, instruction_fetch, protection_key, shadow_stack, sgx);
+	logger(ERROR, "Present: %d, Write: %d, User Mode: %d, Reserved: %d, Instruction Fetch: %d, Protection: %d, Shadow Stack: %d, SGX: %d\n", present, write, user_mode, reserved, instruction_fetch, protection_key, shadow_stack, sgx);
 	logger(ERROR, "Code that caused it: 0x%llx", frame->ip);
 
 	printf_serial("Page fault Error Code: %s\r\n", err);
 	printf_serial("Page fault at address (CR2): 0x%llx\r\n", cr2);
-	printf_serial("Present: %d, Write: %d, User Mode: %d, Reserved: %d, Instruction Fetch: %d, Protection: %d, Shadow Stack: %d, SGX: %d\r\n",
-		present, write, user_mode, reserved, instruction_fetch, protection_key, shadow_stack, sgx);
+	printf_serial("Present: %d, Write: %d, User Mode: %d, Reserved: %d, Instruction Fetch: %d, Protection: %d, Shadow Stack: %d, SGX: %d\r\n", present, write, user_mode, reserved, instruction_fetch, protection_key, shadow_stack, sgx);
 	printf_serial("Code that caused it: 0x%llx\r\n", frame->ip);
 	asm volatile("hlt");
 }
@@ -365,7 +416,6 @@ void set_idt_entry_err(struct idt_entry* entry, void (*handler)(struct interrupt
 extern void idt_load(struct idt_descriptor* idt_desc);
 extern void disablePIC();
 extern void enablePS2();
-extern void reEnableIRQ1();
 
 /**
  * @brief Add an interrupt handler to the IDT. You *must* compile the handler with "-mgeneral-regs-only".
@@ -387,7 +437,7 @@ bool add_interrupt_handler(uint8_t entry, void (*handler)(struct interrupt_frame
 	return true;
 }
 
-bool add_interrupt_handler_asm(uint8_t entry, void(*handler)(), uint8_t ist, uint8_t type_attr) {
+bool add_interrupt_handler_asm(uint8_t entry, void (*handler)(), uint8_t ist, uint8_t type_attr) {
 	if (entry <= 32) return false;
 	set_idt_entry(&idt[entry], handler, ist, type_attr);
 	return true;
@@ -440,8 +490,8 @@ void initIDT() {
 
 	// We need to disable the PIC
 	disablePIC();
-	//enableAPIC();
-	//enablePS2();
+	// enableAPIC();
+	// enablePS2();
 	// Call the external assembly function to load the IDT
 	idt_load(&idt_desc);
 }

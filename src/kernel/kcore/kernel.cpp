@@ -1,4 +1,3 @@
-#include <drivers/usb/usb_core.h>
 #include <print_type.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -9,10 +8,13 @@
 
 #include <acpi/acpi_init.h>
 
+#include <scheduler/arch.h>
+
 #include <drivers/keyboard.h>
 #include <drivers/pci.h>
 #include <drivers/sata/pio.h>
 #include <drivers/serial.h>
+#include <drivers/usb/usb_core.h>
 
 #include <klibc/cpuid_calls.h>
 #include <klibc/display.h>
@@ -28,6 +30,7 @@
 #include <system/cpuid.h>
 #include <system/idt.h>
 #include <system/timer.h>
+#include <system/poll.h>
 
 #include <terminal/wall_shell.h>
 #include <x86_64/timing.h>
@@ -36,6 +39,7 @@
 #include <terminal/terminal.h>
 
 #include <filesystem/filesystems.h>
+
 
 // #include <ff.h>
 
@@ -173,12 +177,6 @@ void init_pat() {
 	asm volatile("wrmsr" : : "a"(low), "d"(high), "c"(0x277));
 }
 
-#include <scheduler/scheduler.h>
-int temp_cmd(int, char**) {
-	arch_init_cpus();
-	return 0;
-}
-
 extern "C" void setup_serial_interrupts();
 extern "C" int virt_mem_cli(int argc, char** argv);
 
@@ -262,7 +260,16 @@ extern "C" {
 
 	// extern const ws_command_argument_t virt_mem_cli_args[];
 	// extern const size_t virt_mem_cli_args_count;
+
 	extern const ws_command_t kilo_cmd;
+
+	extern int cpu_info(int argc, char** argv);
+
+	// extern const ws_command_argument_t sched_test_args[];
+	// extern const size_t sched_test_args_count;
+	// extern int sched_test(int argc, char** argv);
+
+	void system_poll_start(void);
 }
 
 void setup_commands() {
@@ -326,6 +333,13 @@ void setup_commands() {
 	cpu_command.arguments_count = cpu_info_args_count;
 	ws_registerCommand(cpu_command);
 
+	// ws_command_t sched_test_command = {};
+	// sched_test_command.main_func = sched_test;
+	// sched_test_command.command_name = "sched";
+	// sched_test_command.arguments = sched_test_args;
+	// sched_test_command.arguments_count = sched_test_args_count;
+	// ws_registerCommand(sched_test_command);
+
 	ws_command_t driver_command = {};
 	driver_command.main_func = driver_cli;
 	driver_command.command_name = "driver";
@@ -334,14 +348,6 @@ void setup_commands() {
 	ws_registerCommand(driver_command);
 
 	ws_registerCommand(kilo_cmd);
-}
-
-#include <drivers/usb/class/hid/hid_common.h>
-// This here so things that take over control of the system after the kernel entry is done can poll as needed
-// This also serves as a good candidate for things that need to be actually properly taken care of when we get SMP
-extern "C" void system_poll_loop(void) {
-	hid_keyboard_poll_all();
-	acpi_poll_events();
 }
 
 void kernel_main(unsigned int magic, multiboot_info* mbt_info) {
@@ -490,6 +496,13 @@ void kernel_main(unsigned int magic, multiboot_info* mbt_info) {
 	// Rather than figuring out the root cause, we just do it twice
 	printf_color(PRINT_COLOR_GREEN, PRINT_DEFAULT_BG, "Global driver binding pass two...\n");
 	dm_bind_all_registered();
+
+	// ------------------------------------------------------------------------------------------------
+	// CPU Init
+	// Also starts the scheduler. The BSP inherits this code path.
+	// ------------------------------------------------------------------------------------------------
+	arch_init_cpus();
+	system_poll_start(); // this is a task that polls for subsystems that require it. it's a P1 task.
 
 	// ------------------------------------------------------------------------------------------------
 	// ------------------------------------------------------------------------------------------------

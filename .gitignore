@@ -23,3 +23,7 @@ compile_commands.json
 disk.img
 fat32_2.img
 targets/x86_64/iso/boot/initrd.img
+
+# This is a very crude test suite I wrote
+# I don't really want it committed, it shouldn't be part of the kernel
+src/kernel/klibc/scheduler/scheduler_test.c

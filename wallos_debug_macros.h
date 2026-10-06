@@ -15,9 +15,6 @@
 /* Meant for simple GDB debugging. Advance over this using `set $pc += 2`, then you can step through execution. */
 #define WALLOS_BREAKPOINT() WALLOS_CLI(); WALLOS_HLT()
 
-/* All interrupt handlers must be marked with both these attributes, and it's incredibly ugly to have them decorated normally. */
-#define WALLOS_INTERRUPT_HANDLER __attribute__((interrupt)) __attribute__((__target__("general-regs-only")))
-
 /* I find myself constantly needing to user this for debugging in libraries. */
 #define WALLOS_RET_ADDR() __builtin_return_address(0)
 

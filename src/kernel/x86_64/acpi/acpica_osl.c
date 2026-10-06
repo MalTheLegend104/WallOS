@@ -1,21 +1,21 @@
 #ifdef WALLOS_USE_ACPICA
-#include <panic.h>
 #include <acpi.h>
+#include <panic.h>
 
 #include <actypes.h>
 
+#include <stdarg.h>
+#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
-#include <stdint.h>
-#include <stdarg.h>
 
 #include <system/timer.h>
 
+#include <drivers/serial.h>
 #include <klibc/logger.h>
-#include <drivers/serial.h>	
 #include <memory/virtual_mem.h>
 
-#pragma GCC diagnostic ignored "-Wunused-parameter" 
+#pragma GCC diagnostic ignored "-Wunused-parameter"
 
 // All of these are just stubs for ACPICA.
 // For the purposes of what we're doing right now, it shouldn't need these.
@@ -23,13 +23,28 @@
 
 void acpi_vlogger(LogType type, const char* fmt, va_list args) {
 	switch (type) {
-		case LOG: 	printf("[ACPICA][LOG] ");	vprintf_color(PRINT_COLOR_DARK_GREY, PRINT_DEFAULT_BG, fmt, args); 	break;
-		case INFO: 	printf("[ACPICA][INFO] ");	vprintf_color(PRINT_COLOR_CYAN, PRINT_DEFAULT_BG, fmt, args); 		break;
-		case WARN: 	printf("[ACPICA][WARN] ");	vprintf_color(PRINT_COLOR_YELLOW, PRINT_DEFAULT_BG, fmt, args); 	break;
-		case ERROR: printf("[ACPICA][ERROR] ");	vprintf_color(PRINT_COLOR_LIGHT_RED, PRINT_DEFAULT_BG, fmt, args); 	break;
-		case FATAL: printf("[ACPICA][FATAL] ");	vprintf_color(PRINT_COLOR_RED, PRINT_DEFAULT_BG, fmt, args); 		break;
+		case LOG:
+			printf("[ACPICA][LOG] ");
+			vprintf_color(PRINT_COLOR_DARK_GREY, PRINT_DEFAULT_BG, fmt, args);
+			break;
+		case INFO:
+			printf("[ACPICA][INFO] ");
+			vprintf_color(PRINT_COLOR_CYAN, PRINT_DEFAULT_BG, fmt, args);
+			break;
+		case WARN:
+			printf("[ACPICA][WARN] ");
+			vprintf_color(PRINT_COLOR_YELLOW, PRINT_DEFAULT_BG, fmt, args);
+			break;
+		case ERROR:
+			printf("[ACPICA][ERROR] ");
+			vprintf_color(PRINT_COLOR_LIGHT_RED, PRINT_DEFAULT_BG, fmt, args);
+			break;
+		case FATAL:
+			printf("[ACPICA][FATAL] ");
+			vprintf_color(PRINT_COLOR_RED, PRINT_DEFAULT_BG, fmt, args);
+			break;
 
-		default: vprintf(fmt, args);	break;
+		default: vprintf(fmt, args); break;
 	}
 }
 #include <drivers/serial.h>
@@ -42,7 +57,7 @@ void acpi_logger(LogType type, const char* fmt, ...) {
 }
 
 void acpica_failure(const char* str) {
-	const char* msg[] = { "ACPICA called a function stub: ", str };
+	const char* msg[] = {"ACPICA called a function stub: ", str};
 
 	printf("ACPICA called stub function %s\n", str);
 
@@ -282,8 +297,8 @@ ACPI_STATUS AcpiOsTableOverride(ACPI_TABLE_HEADER* ExistingTable, ACPI_TABLE_HEA
  * I've found that ACPICA has at least O(n^2) calls to this based on how many tables there are.
  * Because I wasn't de-allocating the virtual pages, ACPICA was essentially trying to map ~1.5GB of virtual kernel pages, which is space we didn't have.
  */
-#define ACPI_MAP_PAGE_SIZE  PAGE_2MB_SIZE
-#define ACPI_MAP_PAGE_MASK  (~(ACPI_PHYSICAL_ADDRESS)(ACPI_MAP_PAGE_SIZE - 1))
+#define ACPI_MAP_PAGE_SIZE PAGE_2MB_SIZE
+#define ACPI_MAP_PAGE_MASK (~(ACPI_PHYSICAL_ADDRESS) (ACPI_MAP_PAGE_SIZE - 1))
 
 // This should be more than plenty
 #define ACPI_MAP_CACHE_SLOTS 1024
@@ -322,7 +337,8 @@ static int _acpi_map_cache_find(ACPI_PHYSICAL_ADDRESS phys_base, ACPI_SIZE mappe
 static int _acpi_map_cache_insert(ACPI_PHYSICAL_ADDRESS phys_base, ACPI_SIZE mapped_len, void* virt_base) {
 	if (_acpi_map_cache_used >= ACPI_MAP_CACHE_SLOTS) {
 		printf_serial("[ACPICA][MAP_CACHE] WARNING: cache full (%u slots), cannot insert phys=0x%llx\r\n",
-			ACPI_MAP_CACHE_SLOTS, (uint64_t) phys_base);
+					  ACPI_MAP_CACHE_SLOTS,
+					  (uint64_t) phys_base);
 		return -1;
 	}
 	uint32_t slot = _acpi_map_hash(phys_base, mapped_len);
@@ -392,7 +408,7 @@ void AcpiOsUnmapMemory(void* where, ACPI_SIZE length) {
 		}
 	}
 	// Not found in cache
-	// This is basically a no-op. 
+	// This is basically a no-op.
 	// I really need to rewrite the damn VMM
 }
 
@@ -405,13 +421,13 @@ ACPI_STATUS AcpiOsGetPhysicalAddress(void* LogicalAddress, ACPI_PHYSICAL_ADDRESS
 
 void* AcpiOsAllocate(ACPI_SIZE Size) {
 	void* ptr = kalloc(Size);
-	//acpi_logger(INFO, "ACPICA called OS Allocate for size: 0x%llx. Returning pointer: 0x%llx\n", Size, ptr);
+	// acpi_logger(INFO, "ACPICA called OS Allocate for size: 0x%llx. Returning pointer: 0x%llx\n", Size, ptr);
 
 	return ptr;
 }
 
 void AcpiOsFree(void* Memory) {
-	//printf("ACPICA called OS Free.\n");
+	// printf("ACPICA called OS Free.\n");
 	kfree(Memory);
 }
 
@@ -428,7 +444,7 @@ BOOLEAN AcpiOsWritable(void* Memory, ACPI_SIZE Length) {
 // Multithreading
 ACPI_THREAD_ID AcpiOsGetThreadId() {
 	// This just made me mad so it's commented
-	//printf_serial("[WARN] ACPICA requested ThreadID.\r\n");
+	// printf_serial("[WARN] ACPICA requested ThreadID.\r\n");
 	return 1;
 }
 
@@ -470,13 +486,13 @@ void AcpiOsStall(UINT32 Microseconds) {
 	uint64_t wait_ns = Microseconds * 1000ull;
 
 	while ((timer_uptime_no_interrupts() - start_ns) < wait_ns) {
-		__asm__ volatile ("pause");
+		__asm__ volatile("pause");
 	}
 }
 
 ACPI_STATUS AcpiOsEnterSleep(UINT8 SleepState, UINT32 RegaValue, UINT32 RegbValue) {
 
-	// Log what's happening 
+	// Log what's happening
 	printf_serial("Entering sleep state S%u (PM1a=0x%X, PM1b=0x%X)\n", SleepState, RegaValue, RegbValue);
 
 	// Sleep state should be one of these
@@ -527,7 +543,7 @@ void AcpiOsReleaseMutex(ACPI_MUTEX Handle) {
 #include <memory/semaphore.h>
 
 ACPI_STATUS AcpiOsCreateSemaphore(UINT32 MaxUnits, UINT32 InitialUnits, ACPI_SEMAPHORE* OutHandle) {
-	//printf_serial("ACPICA requested semaphore.\r\n");
+	// printf_serial("ACPICA requested semaphore.\r\n");
 	if (OutHandle == NULL) {
 		return AE_BAD_PARAMETER;
 	}
@@ -601,8 +617,9 @@ void AcpiOsReleaseLock(ACPI_SPINLOCK Handle, ACPI_CPU_FLAGS Flags) {
 // ------------------------------------------------------------------------------------------------
 // ------------------------------------------------------------------------------------------------
 #include <acpi.h>
-#include <system/idt.h>
 #include <klibc/logger.h>
+#include <system/idt.h>
+#include <wallos_attributes.h>
 
 #define MAX_ACPI_IRQS        16
 #define MAX_HANDLERS_PER_IRQ 8
@@ -637,7 +654,17 @@ WALLOS_INTERRUPT_HANDLER void acpi_irq_wrapper_0(struct interrupt_frame* frame) 
 	interrupt_eoi(0);
 }
 
-#define DEFINE_ACPI_IRQ_WRAPPER(n) WALLOS_INTERRUPT_HANDLER void acpi_irq_wrapper_##n(struct interrupt_frame *frame) { (void) frame; bool handled = false; struct acpi_irq_info *irq = &acpi_irq_table[n]; for (size_t i = 0; i < irq->count; i++) { if (irq->handlers[i].handler(irq->handlers[i].ctx) == ACPI_INTERRUPT_HANDLED) { handled = true; }} (void) handled;interrupt_eoi(n); }
+#define DEFINE_ACPI_IRQ_WRAPPER(n) \
+	WALLOS_INTERRUPT_HANDLER void acpi_irq_wrapper_##n(struct interrupt_frame* frame) { \
+		(void) frame; \
+		bool handled = false; \
+		struct acpi_irq_info* irq = &acpi_irq_table[n]; \
+		for (size_t i = 0; i < irq->count; i++) { \
+			if (irq->handlers[i].handler(irq->handlers[i].ctx) == ACPI_INTERRUPT_HANDLED) { handled = true; } \
+		} \
+		(void) handled; \
+		interrupt_eoi(n); \
+	}
 DEFINE_ACPI_IRQ_WRAPPER(1)
 DEFINE_ACPI_IRQ_WRAPPER(2)
 DEFINE_ACPI_IRQ_WRAPPER(3)
@@ -702,7 +729,7 @@ ACPI_STATUS AcpiOsInstallInterruptHandler(UINT32 irq, ACPI_OSD_HANDLER handler, 
 		info->installed = true;
 	}
 
-	info->handlers[info->count++] = (struct acpi_irq_handler){
+	info->handlers[info->count++] = (struct acpi_irq_handler) {
 		.handler = handler,
 		.ctx = ctx
 	};
@@ -722,9 +749,8 @@ ACPI_STATUS AcpiOsRemoveInterruptHandler(UINT32 irq, ACPI_OSD_HANDLER handler) {
 		if (info->handlers[i].handler == handler) {
 
 			memmove(&info->handlers[i],
-				&info->handlers[i + 1],
-				(info->count - i - 1) *
-				sizeof(struct acpi_irq_handler));
+					&info->handlers[i + 1],
+					(info->count - i - 1) * sizeof(struct acpi_irq_handler));
 
 			info->count--;
 			break;
@@ -757,4 +783,4 @@ ACPI_STATUS AcpiOsRemoveInterruptHandler(UINT32 irq, ACPI_OSD_HANDLER handler) {
 // 	return AE_OK;
 // }
 
-#endif //WALLOS_USE_ACPICA
+#endif // WALLOS_USE_ACPICA

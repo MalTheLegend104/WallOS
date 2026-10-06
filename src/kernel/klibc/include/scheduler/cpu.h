@@ -1,79 +1,93 @@
-#ifndef SCHEDULER_CPU_H
-#define SCHEDULER_CPU_H
-
-#include <stdint.h>
-#include <memory/spinlock.h>
+#ifndef WALLOS_SCHEDULER_CPU_H
+#define WALLOS_SCHEDULER_CPU_H
+/*
+ * WFES per-CPU state.
+ */
+#include <scheduler/arch.h>
 #include <scheduler/task.h>
+#include <stdbool.h>
+#include <stddef.h>
+#include <stdint.h>
+
 
 #ifdef __cplusplus
 extern "C" {
-#endif 
 
-	typedef struct runqueue {
+#ifndef _Static_assert
+#define _Static_assert static_assert
+#endif
+#endif
+
+	typedef struct {
+		volatile uint32_t v;
+	} sched_lock_t;
+
+	typedef struct {
 		task_t* head;
 		task_t* tail;
-		uint32_t count;
-	} runqueue_t;
+		uint32_t len;
+	} task_list_t;
 
-	typedef struct cpu {
-		uint32_t id;
+	struct cpu {
+		/* MUST stay first. The x86_64 implementation reads these through a CPU register. */
+		cpu_t* self;                       /* offset 0                                    */
+		uint32_t id;                       /* offset 8: logical id (index in system_cpus) */
+		uint32_t hw_id;                    /* hardware id (APIC id on x86)                */
+
+		volatile bool online;
+		volatile bool started;             /* scheduling loop entered                     */
+		struct arch_cpu arch;              /* port-specific                               */
+
+		/* Runqueues (rq_lock protects lists, counters are atomic)                        */
+		sched_lock_t rq_lock;
+		task_list_t rq[SCHED_PRIO_LEVELS];
+		task_list_t kq;                    /* kernel tasks                                */
+		volatile uint32_t nr_tasks;        /* user tasks queued (including blocked)       */
+		volatile uint32_t nr_unpinned;     /* tasks of which affinity == NONE             */
+		volatile uint32_t takeover;        /* >0 while a takeover kernel task exists      */
+
+		/* owner-CPU-only state                                                           */
 		task_t* current;
-		task_t* idle_task;
-		runqueue_t* run_queue;
-		spinlock_t rq_lock;
-	} cpu_t;
+		task_t* idle;
+		task_t* preempted;                /* task displaced by a kernel preemption        */
+		task_t* zombies;                  /* destroyed, awaiting free on next entry       */
+		task_t idle_task;
 
-	typedef void (*task_entry_t)(void);
+		uint8_t phase;                    /* 0 = P0 slot, 1 = P1 slot, 2 = normal         */
+		uint8_t rr_next;                  /* next level to try, offset from P2            */
+		uint8_t burst_prio;
+		uint8_t burst_left;               /* remaining back-to-back runs                  */
+		bool kint_used;                   /* interleaved kernel task ran this cycle       */
 
-	// These are all architecture dependant.
+		uint64_t slice_start_us;
+		uint32_t slice_len_us;            /* 0 = no timer (run to completion)             */
 
-	/**
-	 * @brief Create a task with the given entry point.
-	 *
-	 * Due to the context switching being platform dependant, we need this to be platform dependant.
-	 *
-	 * @param entry_point Pointer to the entry function.
-	 * @param is_user True if it's a user task, false otherwise.
-	 * @return task_t* Pointer to the new task, NULL if it couldn't be created for some reason.
-	 */
-	task_t* task_create(task_entry_t* entry_point, bool is_user);
+		uint32_t steal_failures;
+		uint64_t cooldown_until_us;
+		uint64_t next_balance_us;
 
-	/**
-	 * @brief Get the handle the CURRENT cpu
-	 *
-	 * @return cpu_t* handle to the CPU
-	 */
-	cpu_t* cpu_current(void);
+		uint64_t ctx_switches;
+		uint64_t timer_irqs;
+	};
 
-	/**
-	 * @brief Default "task 0" that runs when the CPU has absolutely nothing else to do.
-	 * It's just a while (true) { hlt(); }
-	 *
-	 */
-	void idle_task_main(void);
+	// These must be here so that CPUs can access this via registers
+	// Mostly an x86 thing but greatly improves hot path stuff since they can be read using a mov
+	_Static_assert(offsetof(cpu_t, self) == 0, "cpu_t.self must be at offset 0");
+	_Static_assert(offsetof(cpu_t, id) == 8, "cpu_t.id must be at offset 8");
 
-	/**
-	 * @brief Tells the architecture implementation to "initialize" all the CPUs.
-	 * This should be called before all other calls to any other cpu_* functions.
-	 *
-	 * It is expected that this only "loads" the CPUs, which includes:
-	 * Setting up each CPU to a state where it can be loaded with a task.
-	 * Should be in a "waiting" state.
-	 */
-	void arch_init_cpus();
+	// Really shouldnt be used externally, still exposed if absolutely needed.
+	extern cpu_t system_cpus[WALLOS_SYSTEM_MAX_CPU];
 
-	/**
-	 * @brief CLI interface for the CPU subsystem.
-	 * Expected to at least have some form of debug information.
-	 *
-	 * @param argc Regular CLI argc
-	 * @param argv Regular CLI argv
-	 * @return int Return status
-	 */
-	int cpu_info(int argc, char** argv);
+	// cpu_current() is much nicer than having to do arch_cpu_self(). Just a convention thing.
+	static inline cpu_t* cpu_current(void) { return arch_cpu_self(); }
+
+	// Get a gpu given it's logical id
+	cpu_t* cpu_get(uint32_t logical_id);
+
+	// Count of current CPUs. Should be used to iterate over all CPUs when needed.
+	uint32_t cpu_count(void);
 
 #ifdef __cplusplus
 }
-#endif 
-
-#endif /* SCHEDULER_CPU_H */ // carlos was here - carlos
+#endif
+#endif // WALLOS_SCHEDULER_CPU_H

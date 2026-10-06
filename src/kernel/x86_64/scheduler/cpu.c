@@ -1,30 +1,23 @@
-#include <stdio.h>
 #include <stdarg.h>
+#include <stdio.h>
 #include <string.h>
 
 #include <scheduler/cpu.h>
+#include <scheduler/scheduler.h>
 
 #include <acpi/acpi_api.h>
-#include <x86_64/lapic.h>
-#include <system/idt.h>
-#include <memory/virtual_mem.h>
 #include <memory/kernel_alloc.h>
+#include <memory/virtual_mem.h>
+#include <system/idt.h>
+#include <x86_64/lapic.h>
 
+#include <system/timer.h>
 #include <x86_64/ioapic.h>
 #include <x86_64/timing.h>
-#include <system/timer.h>
 
-void idle_task_main() {
-	while (1) {
-		__asm__ volatile("hlt");
-	}
-}
-
-cpu_t system_cpus[WALLOS_SYSTEM_MAX_CPU];
-
-cpu_t* cpu_current(void) { return NULL; }
-cpu_t* cpu_get(uint32_t cpu_id) { (void) cpu_id; return NULL; }
-uint32_t cpu_count(void) { return 0; }
+/* A lot of stuff below is leftovers from the previous implementation of AP bringup.
+ * A lot of it isn't really used now. I left most of it because I will need some of this later on, especially safe prints.
+ */
 
 volatile int print_lock = 0;
 void safe_printf(const char* format, ...) {
@@ -63,96 +56,37 @@ volatile uint32_t ap_stack_locked = 0;
 volatile uint64_t bsp_tsc_freq;
 
 // This is just debug information
-volatile bool     lapic_timer_accuracy_mode = false;
-volatile bool     cpu_online[WALLOS_SYSTEM_MAX_CPU];
-volatile uint64_t lapic_freq_hz[WALLOS_SYSTEM_MAX_CPU];   // raw Hz
-uint32_t          cpu_apic_ids[WALLOS_SYSTEM_MAX_CPU];    // apic_id at logical index i
-uint32_t          cpu_online_count = 0;                   // final count after arch_init_cpus
-
-// This is temporary, and a very shitty way of doing this.
-uint64_t lapic_timer_ticks[WALLOS_SYSTEM_MAX_CPU];
-volatile uint64_t lapic_ticks_per_ms[WALLOS_SYSTEM_MAX_CPU];
-
-void ap_init_timer(uint8_t vector, uint64_t ticks_per_ms) {
-	// Set the divisor. 0x3 = Divide by 16.
-	// This makes the counter more manageable.
-	lapic_write(LAPIC_DIVIDE_CONFIG, 0x3);
-
-	// Set the LVT Timer Register
-	// Bit 17:18 = 01 for Periodic Mode (0x20000)
-	// Bits 0:7   = The interrupt vector
-	lapic_write(LAPIC_LVT_TIMER, vector | 0x20000);
-
-	// Set the Initial Count
-	// As soon this is written, the timer starts counting down.
-	lapic_write(LAPIC_INITIAL_COUNT, ticks_per_ms);
-
-	lapic_write(LAPIC_LVT_TIMER, vector | (1 << 17)); // periodic
-}
-
-#include <system/idt.h>
-WALLOS_INTERRUPT_HANDLER
-void lapic_timer_int(struct interrupt_frame* frame) {
-	(void) frame;
-	uint32_t apic_id = lapic_read(0x20) >> 24;
-	if (apic_id > WALLOS_SYSTEM_MAX_CPU) goto end;
-
-	lapic_timer_ticks[apic_id] += 1;
-
-	if (lapic_timer_accuracy_mode && lapic_timer_ticks[apic_id] % 1000 == 0)
-		safe_printf_serial(
-		"[AP%u] Timer: %llu ms (ticks/ms: %llu)\r\n",
-		apic_id,
-		lapic_timer_ticks[apic_id],
-		lapic_ticks_per_ms[apic_id]
-		);
-end:
-	lapic_write(LAPIC_EOI, 0);
-}
+volatile bool lapic_timer_accuracy_mode = false;
+uint32_t cpu_online_count = 0; // final count after arch_init_cpus
 
 #include <system/gdt.h>
 
 void x86_ap_main() {
-	// This signals to the BSP we *at least* consumed our stack.
-	// This doesn't necessarily mean we're ready to go.
-	// If we don't get to this point, the BSP will try to re-use the allocated stack space on the next AP.
 	__atomic_store_n(&ap_stack_locked, 0, __ATOMIC_SEQ_CST);
-
-	// Our base trampoline GDT is fine for bringup
-	// It breaks once we try to start our new IDT
-	// We also never set up a TSS for it.
 	set_ap_gdt_and_tss();
-
-	// This goes CLI -> LIDT -> STI
-	// We immediately disable interrupts during lapic init. 
 	ap_load_idt();
 	WALLOS_CLI();
-
 	ap_init_lapic();
+
 	uint32_t apic_id = lapic_read(LAPIC_ID) >> 24;
+	uint32_t logical = x86_percpu_ap_bind(apic_id); // GS now valid
+	cpu_t* self = cpu_current();
 
-	uint64_t local_lapic_freq = calibrate_lapic_timer_with_tsc(bsp_tsc_freq);
+	uint64_t hz = calibrate_lapic_timer_with_tsc(bsp_tsc_freq);
+	self->arch.lapic_freq_hz = hz;
+	self->arch.lapic_ticks_per_ms = hz / 1000;
+	safe_printf_serial("  [CPU %u / APIC %u] LAPIC %llu Hz\n", logical, apic_id, hz);
+	safe_printf("  [CPU %u] Online\n", logical);
 
-	lapic_freq_hz[apic_id] = local_lapic_freq;
-	cpu_online[apic_id] = true;
-
-	if (apic_id < WALLOS_SYSTEM_MAX_CPU) {
-		lapic_ticks_per_ms[apic_id] = local_lapic_freq / 1000;
-		safe_printf_serial("  [AP %d] LAPIC freq: %llu Hz (%llu ticks/ms)\n", apic_id, local_lapic_freq, lapic_ticks_per_ms[apic_id]);
-	}
-
-	safe_printf("  [AP %d] Hello\n", apic_id);
-	// We're started enough to let the other APs init.
 	__atomic_fetch_add(&ap_started_count, 1, __ATOMIC_SEQ_CST);
-
 	WALLOS_STI();
 
-	uint64_t tpm = (apic_id < WALLOS_SYSTEM_MAX_CPU) ? lapic_ticks_per_ms[apic_id] : lapic_ticks_per_ms[0];
-	ap_init_timer(0xFD, tpm);
+	sched_ap_entry(); // waits for sched_init(), then never returns
 
-	// Halt while waiting for interrupt.
-	// This should eventually probably go into a state waiting for an IPI, before we go to a scheduling loop.
-	while (1) WALLOS_HLT();
+	// Just in case we somehow get here, we don't want to leave this into unknown territory
+	while (true) {
+		WALLOS_CLI_HLT();
+	}
 }
 
 /**
@@ -163,16 +97,21 @@ void x86_ap_main() {
 void pic_disable(void) {
 	// Remap PIC to vectors 0xF0+ so stray interrupts don't hit CPU exceptions
 	// Master: vectors 0xF0-0xF7, Slave: 0xF8-0xFF
-	outb(0x20, 0x11); outb(0xA0, 0x11);  // ICW1: init
-	outb(0x21, 0xF0); outb(0xA1, 0xF8);  // ICW2: new vector offsets
-	outb(0x21, 0x04); outb(0xA1, 0x02);  // ICW3: cascade
-	outb(0x21, 0x01); outb(0xA1, 0x01);  // ICW4: 8086 mode
+	outb(0x20, 0x11);
+	outb(0xA0, 0x11);  // ICW1: init
+	outb(0x21, 0xF0);
+	outb(0xA1, 0xF8);  // ICW2: new vector offsets
+	outb(0x21, 0x04);
+	outb(0xA1, 0x02);  // ICW3: cascade
+	outb(0x21, 0x01);
+	outb(0xA1, 0x01);  // ICW4: 8086 mode
 
 	// Now mask everything on both PICs
 	outb(0x21, 0xFF);
 	outb(0xA1, 0xFF);
 }
 
+#include <wallos_attributes.h>
 WALLOS_INTERRUPT_HANDLER void lapic_spurious(struct interrupt_frame* f) {
 	(void) f;
 	lapic_write(LAPIC_EOI, 0);
@@ -197,7 +136,6 @@ void arch_init_cpus() {
 	// We just disable the PIC in general
 	// We use the PIT timer before we start the SMP setup
 	// After this we'll just use the APIC timer
-	// disablePIC();
 	pic_disable();
 
 	// We need to init the LOCAL APIC for the BSP before we can touch anything else.
@@ -212,6 +150,8 @@ void arch_init_cpus() {
 	printf_color(PRINT_COLOR_CYAN, PRINT_DEFAULT_BG, "TSC FREQ: %zu\n", tsc_freq);
 	printf_serial("[SMP] TSC Frequency calibrated: %zu Hz\r\n", tsc_freq);
 
+	x86_sched_arch_early_init(tsc_freq);
+
 	// Ideally we actually panic, this just gives me a better hint that something went wrong.
 	if (!tsc_freq) {
 		printf_serial("[SMP][BSP_INIT] FATAL: TSC Frequency is 0. Halting.\r\n");
@@ -222,15 +162,16 @@ void arch_init_cpus() {
 	printf_serial("[SMP] LAPIC Timer Freq: %zu\r\n", lapic_timer_freq);
 
 	uint32_t bsp_apic_id = lapic_read(LAPIC_ID) >> 24;
-	lapic_freq_hz[bsp_apic_id] = lapic_timer_freq;
-	lapic_ticks_per_ms[bsp_apic_id] = lapic_timer_freq / 1000;
-	cpu_online[bsp_apic_id] = true;
 
-	// uint64_t lapic_ticks_per_ms = lapic_timer_freq / 1000;
+	x86_percpu_bsp_bind(bsp_apic_id); // logical 0
+	cpu_t* bsp = cpu_current();
+	bsp->arch.lapic_freq_hz = lapic_timer_freq;
+	bsp->arch.lapic_ticks_per_ms = lapic_timer_freq / 1000;
 
 	// Add our LAPIC timer interrupt.
 	// We reuse the IDT in the APs, so we need to do this before they all get started.
-	add_interrupt_handler(0xFD, lapic_timer_int, 0, 0x8E);
+	// add_interrupt_handler(0xFD, lapic_timer_int, 0, 0x8E);
+	x86_sched_register_vectors();
 	add_interrupt_handler(SPURIOUS_VECTOR, lapic_spurious, 0, 0x8E);
 
 	// We have two variables that need to be set for AP setup
@@ -254,7 +195,6 @@ void arch_init_cpus() {
 	printf_color(PRINT_COLOR_LIGHT_GREY, PRINT_DEFAULT_BG, "BSP APIC ID: %d\n", bsp_apic_id);
 	printf_color(PRINT_COLOR_LIGHT_GREEN, PRINT_DEFAULT_BG, "MADT INFO:\n\tcount: %d\n", madt->entry_count);
 
-	uint32_t expected_count = 1;
 	bool reuse_stack = false;
 	for (uint32_t i = 0; i < madt->entry_count; i++) {
 		MADTEntry* e = &madt->entries[i];
@@ -329,7 +269,6 @@ void arch_init_cpus() {
 		while (__atomic_load_n(&ap_stack_locked, __ATOMIC_SEQ_CST) == 1 && wait_timeout > 0) {
 			__asm__ volatile("pause");
 			wait_timeout--;
-			// goto end_loop;
 		}
 
 		// Wait for AP to signal ready
@@ -339,11 +278,8 @@ void arch_init_cpus() {
 			timeout--;
 		}
 
-	// end_loop:
-
 		if (ap_started_count > previous_count) {
 			printf_color(PRINT_COLOR_GREEN, PRINT_DEFAULT_BG, "Processor %d: [OK]\n", ap_apic_id);
-			expected_count++;
 		} else {
 			safe_printf_serial("[SMP] AP %d failed to increment counter.\r\n", ap_apic_id);
 			printf_color(PRINT_COLOR_RED, PRINT_DEFAULT_BG, "Processor %d: [FAILED]\n", ap_apic_id);
@@ -360,10 +296,9 @@ void arch_init_cpus() {
 	// - LAPIC should also be set up for 1ms timing for scheduling purposes.
 
 	// Since we're currently still running terminal and stuff on BSP since we don't have a scheduler yet,
-	// we should keep routing keyboard interrupts and serial interrupts to BSP. 
+	// we should keep routing keyboard interrupts and serial interrupts to BSP.
 	// I need to "harden" a lot of the subsystems to have locks and atomic access interfaces.
 
-	// WALLOS_CLI();
 	ioapic_init(madt);
 
 	extern bool pic_disabled;
@@ -378,14 +313,9 @@ void arch_init_cpus() {
 	// This is *very* hit or miss if it's needed on a particular system or not.
 	i8042_flush();
 
-	ioapic_route_irq(1, 33, bsp_apic_id, false);
-	printf_serial("[IOAPIC] Keyboard routed to vector 33 on BSP\r\n");
-
-	// Route Serial COM1 (ISA IRQ 4)
-	ioapic_route_irq(4, 36, bsp_apic_id, false);
-	printf_serial("[IOAPIC] COM1 routed to vector 36 on BSP\r\n");
-
-	// We need to set the LAPIC timer to 1ms here.
+	// Everything that was enabled on the PIC keeps its old vector (32 + irq), so the existing IDT handlers still work.
+	// This keeps them routed to the BSP, which should be fine, but may want to distribute them out if it becomes a problem.
+	irq_route_enabled_to_ioapic(bsp_apic_id);
 
 	// Finally, enable interrupts on the BSP
 	WALLOS_STI();
@@ -393,6 +323,10 @@ void arch_init_cpus() {
 	pit_init(1000);
 
 	cpu_online_count = ap_started_count;
+
+	sched_init(cpu_online_count); // idle tasks, releases the waiting APs
+	sched_adopt_boot_task("kernel_entry"); // this code flow becomes a task. this will exit after the rest of kernel entry is done
+	sched_start_bsp(); // one-shot LAPIC timer armed on this CPU, preemption is live
 }
 
 // ------------------------------------------------------------------------------------------------
@@ -415,8 +349,8 @@ void cpu_print(uint8_t color, const char* fmt, ...) {
 
 void cpu_info_usage(void) {
 	cpu_print(PRINT_COLOR_LIGHT_CYAN, "Usage: cpu_info <command> [args]\r\n");
-	cpu_print(PRINT_COLOR_CYAN,
-		"  init              Initialize all APs (debug use only)\r\n"
+	cpu_print(
+		PRINT_COLOR_CYAN,
 		"  list                List all online CPUs\r\n"
 		"  freq                Show LAPIC timer frequency per CPU]\r\n"
 		"  ticks               Show current timer tick counts per CPU\r\n"
@@ -428,27 +362,26 @@ void cpu_info_usage(void) {
 void cpu_info_list(void) {
 	uint32_t bsp_apic_id = lapic_read(LAPIC_ID) >> 24;
 	cpu_print(PRINT_COLOR_LIGHT_GREEN, "[CPU] Online CPUs (%u total):\r\n", cpu_online_count);
-	for (uint32_t i = 0; i < WALLOS_SYSTEM_MAX_CPU; i++) {
-		if (!cpu_online[i]) continue;
-		cpu_print(PRINT_COLOR_GREEN, "\t[APIC %u]%s\r\n", i, (i == bsp_apic_id) ? " (BSP)" : " (AP)");
+	for (uint32_t i = 0; i < cpu_count(); i++) {
+		cpu_t* c = cpu_get(i);
+		cpu_print(PRINT_COLOR_GREEN, "\t[APIC %u]%s\r\n", c->hw_id, (i == bsp_apic_id) ? " (BSP)" : " (AP)");
 	}
 }
 
 void cpu_info_freq(void) {
 	cpu_print(PRINT_COLOR_PINK, "[CPU] LAPIC Timer Frequencies (divide-by-16):\r\n");
-	for (uint32_t i = 0; i < WALLOS_SYSTEM_MAX_CPU; i++) {
-		if (!cpu_online[i]) continue;
-		uint64_t freq = lapic_freq_hz[i];
-		cpu_print(PRINT_COLOR_PURPLE, "\t[APIC %u] %llu Hz  (~%llu MHz)  %llu ticks/ms\r\n", i, freq, freq / 1000000, lapic_ticks_per_ms[i]);
+	for (uint32_t i = 0; i < cpu_count(); i++) {
+		cpu_t* c = cpu_get(i);
+		uint64_t freq = c->arch.lapic_freq_hz;
+		cpu_print(PRINT_COLOR_PURPLE, "\t[APIC %u] %llu Hz  (~%llu MHz)  %llu ticks/ms\r\n", c->hw_id, freq, freq / 1000000, c->arch.lapic_ticks_per_ms);
 	}
 }
 
 void cpu_info_ticks(void) {
-	cpu_print(PRINT_COLOR_YELLOW, "[CPU] Timer Ticks (1 tick = ~1ms):\r\n");
-	for (uint32_t i = 0; i < WALLOS_SYSTEM_MAX_CPU; i++) {
-		if (!cpu_online[i]) continue;
-		uint64_t ticks = lapic_timer_ticks[i];
-		cpu_print(PRINT_COLOR_BROWN, "\t[APIC %u] %llu ticks  (~%llu ms / ~%llu sec)\r\n", i, ticks, ticks, ticks / 1000);
+	cpu_print(PRINT_COLOR_YELLOW, "[CPU] Timer IRQs:\r\n");
+	for (uint32_t i = 0; i < cpu_count(); i++) {
+		cpu_t* c = cpu_get(i);
+		cpu_print(PRINT_COLOR_BROWN, "\t[APIC %u] %llu IRQs \r\n", c->hw_id, c->timer_irqs);
 	}
 }
 
@@ -467,8 +400,8 @@ void cpu_info_status(void) {
 
 #include <terminal/terminal.h>
 const ws_command_argument_t cpu_info_args[] = {
-	{ WS_ARG_TYPE_GENERIC, false, "command", NULL, "One of: init, list, freq, ticks, status, accuracy." },
-	{ WS_ARG_TYPE_GENERIC, false, "value",   NULL, "'on' or 'off' (accuracy only)." },
+	{WS_ARG_TYPE_GENERIC, false, "command", NULL, "One of: init, list, freq, ticks, status, accuracy."},
+	{WS_ARG_TYPE_GENERIC, false, "value", NULL, "'on' or 'off' (accuracy only)."},
 };
 const size_t cpu_info_args_count = sizeof(cpu_info_args) / sizeof(cpu_info_args[0]);
 
@@ -482,9 +415,7 @@ int cpu_info(int argc, char** argv) {
 
 	const char* cmd = ws_get_generic(ctx, "command");
 
-	if (strcmp(cmd, "init") == 0) {
-		arch_init_cpus();
-	} else if (strcmp(cmd, "list") == 0) {
+	if (strcmp(cmd, "list") == 0) {
 		cpu_info_list();
 	} else if (strcmp(cmd, "freq") == 0) {
 		cpu_info_freq();
@@ -494,8 +425,7 @@ int cpu_info(int argc, char** argv) {
 		cpu_info_status();
 	} else if (strcmp(cmd, "accuracy") == 0) {
 		if (!ws_has_arg(ctx, "value")) {
-			cpu_print(PRINT_COLOR_LIGHT_GREEN, "[CPU] Accuracy mode is %s. Usage: cpu_info accuracy <on|off>\r\n",
-				lapic_timer_accuracy_mode ? "ON" : "OFF");
+			cpu_print(PRINT_COLOR_LIGHT_GREEN, "[CPU] Accuracy mode is %s. Usage: cpu_info accuracy <on|off>\r\n", lapic_timer_accuracy_mode ? "ON" : "OFF");
 			return 1;
 		}
 		const char* value = ws_get_generic(ctx, "value");

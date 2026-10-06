@@ -370,10 +370,9 @@ static void process_serial_byte(char c) {
 	}
 }
 
+#include <wallos_attributes.h>
 // ---------------------------------------------------------------------------
 // IRQ 4 handler (COM1)
-//
-//
 // ---------------------------------------------------------------------------
 WALLOS_INTERRUPT_HANDLER
 void serial_irq_handler(struct interrupt_frame* frame) {

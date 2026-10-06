@@ -15,8 +15,8 @@ PIT_CHANNEL0_PORT equ 0x40
 
 section .text
 global enablePS2
-global irq_enable
-global irq_disable
+global pic_irq_enable
+global pic_irq_disable
 global idt_load
 global disablePIC
 global enableAPIC
@@ -56,7 +56,7 @@ disablePIC:
 
 ; Currently the APIC hates me and I want keyboard support
 ; we are going to re-enable some things in the PIC
-irq_enable:
+pic_irq_enable:
     ; Move IRQ into cl.
     mov     rcx,    rdi
     ; Determine which PIC to update (<8 = master, else slave).
@@ -77,7 +77,7 @@ irq_enable:
         ; Recursively enable master IRQ2, or else slave IRQs will not work.
         push    rcx         ; Save original IRQ number (rcx) before the recursive call
         mov     rdi,    2   ; Recursively enable master IRQ2
-        call    irq_enable
+        call    pic_irq_enable
         pop     rcx          ; Restore original IRQ number
 
         ; Subtract 8 from the IRQ.
@@ -94,7 +94,7 @@ irq_enable:
         ret
 
 ; Disable IRQs if I ever get to the APIC
-irq_disable:
+pic_irq_disable:
     ; Move IRQ into cl.
     mov     rcx,    rdi
     ; Determine which PIC to update (<8 = master, else slave).
@@ -123,21 +123,6 @@ irq_disable:
         or      al,     dl
         out     0xa1,   al
         ret
-
-enablePS2:
-	ret
-
-global reEnableIRQ1
-reEnableIRQ1:
-	cli ; Clear interrupts
-    ; Call irq_enable with argument 1 to enable IRQ1
-    mov     rdi,    1
-    call    irq_enable
-    ; Map IRQ1 to interrupt vector 0x21 (interrupt offset 33).
-    ; mov     al,     0x21        ; ICW2: 0x21 = interrupt offset 33
-    ; out     0x21,   al 			; IRQ 1 is handled by the master pic
-	sti ; re-enable interrupts
-    ret
 
 idt_load:
 	cli ; clears the interrupts, kinda unecessary but whatever

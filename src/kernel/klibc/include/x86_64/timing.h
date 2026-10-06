@@ -1,12 +1,14 @@
 #ifndef X86_64_TIMER_H
 #define X86_64_TIMER_H
 
+#include <stdbool.h>
 #include <stdint.h>
 
 #ifdef __cplusplus
 extern "C" {
 #endif
 	void pit_init(uint32_t frequency_hz);
+	void pit_reset(uint32_t frequency_hz);
 	void pit_init_dev();
 	// This is called from the PIT IRQ
 	void pit_handle_tick(void);

@@ -1,17 +1,18 @@
 #include <stdint.h>
 #include <stdlib.h>
 
-#include <x86_64/lapic.h>
 #include <stddef.h>
+#include <wallos_attributes.h>
+#include <x86_64/lapic.h>
 
 static volatile uint64_t* lapic_base = NULL;
 static volatile uint64_t* lapic_phys = NULL;
 
-uint32_t lapic_read(uint32_t offset) {
+WALLOS_NO_CALLER_SAVED uint32_t lapic_read(uint32_t offset) {
 	return *(volatile uint32_t*) ((uintptr_t) lapic_base + offset);
 }
 
-void lapic_write(uint32_t offset, uint32_t value) {
+WALLOS_NO_CALLER_SAVED void lapic_write(uint32_t offset, uint32_t value) {
 	*(volatile uint32_t*) ((uintptr_t) lapic_base + offset) = value;
 
 	// Ensure the write completes before returning
@@ -77,14 +78,14 @@ void bsp_init_lapic() {
 
 void ap_init_lapic() {
 	// Enable the LAPIC via MSR (IA32_APIC_BASE)
-	// Bit 11 is the Global Enable bit. 
+	// Bit 11 is the Global Enable bit.
 	// We use the standard base 0xFEE00000 unless your MADT said otherwise.
 	enable_lapic_msr((uintptr_t) lapic_phys);
 
 	// Set Spurious Vector and Software Enable (Bit 8)
 	lapic_write(LAPIC_SVR, SPURIOUS_VECTOR | (1 << 8));
 
-	// Setup LVT entries. 
+	// Setup LVT entries.
 	// We mask them initially to prevent "stray" interrupts before  the AP is fully ready for the timer.
 	lapic_write(LAPIC_LVT_TIMER, 1 << 16);
 	lapic_write(LAPIC_LVT_LINT0, 1 << 16);
@@ -107,10 +108,10 @@ void lapic_sleep_us(uint64_t lapic_freq, uint64_t us) {
 	uint64_t ticks = (effective_freq / 1000) * us / 1000;
 
 	if (ticks == 0) return;
-	if (ticks > 0xFFFFFFFF) ticks = 0xFFFFFFFF;	// clamp to 32-bit counter
+	if (ticks > 0xFFFFFFFF) ticks = 0xFFFFFFFF; // clamp to 32-bit counter
 
-	lapic_write(LAPIC_DIVIDE_CONFIG, 0x3);		// divide by 16
-	lapic_write(LAPIC_LVT_TIMER, (1 << 16));	// masked, one-shot
+	lapic_write(LAPIC_DIVIDE_CONFIG, 0x3);  // divide by 16
+	lapic_write(LAPIC_LVT_TIMER, (1 << 16)); // masked, one-shot
 	lapic_write(LAPIC_INITIAL_COUNT, (uint32_t) ticks);
 
 	while (lapic_read(LAPIC_CURRENT_COUNT) != 0) __asm__ volatile("pause");

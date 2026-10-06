@@ -53,17 +53,6 @@
 // My weird dual-socket server only has a 3 of these, 8 should be plenty.
 #define WALLOS_IOAPIC_MAX 8
 
-/* Scheduler configuration
- *
- */
-
-// This limits the amount of space (statically allocated) used by the scheduler.
-// I see ZERO reason WallOS will run on anything with more than 64 cores.
-// If it does, this is easy to change and recompile.
-// For initial setup before the scheduler is implemented, we use this in ways it shouldn't be used.
-// If this comment is still here, know that scheduler_cpu.c relies on this in a bad way.
-#define WALLOS_SYSTEM_MAX_CPU 64
-
 // This tells the OS that we have 64 bit write/read rather than needing to split it up into 32bit write/read
 #define WALLOS_HAS_64_BIT_MMIO
 
@@ -74,6 +63,63 @@
 
 // Max amount of drives that we can have at once.
 #define WDM_MAX_DRIVES 32
+
+// ------------------------------------------------------------------------------------------------
+// ------------------------------------------------------------------------------------------------
+// Scheduler Config
+// ------------------------------------------------------------------------------------------------
+// ------------------------------------------------------------------------------------------------
+
+// I see ZERO reason WallOS will run on anything with more than 64 cores.
+// If it does, this is easy to change and recompile.
+#define WALLOS_SYSTEM_MAX_CPU 64
+
+/* Base scheduling unit (16 ms). */
+#define SCHED_QUANTUM_US 16000u
+
+/* Stack size for a new task when its creator doesn't specify one (32 KiB). */
+#define SCHED_DEFAULT_STACK (32u * 1024u)
+
+/* Maximum quanta a single kernel task may be given per run (64 x 16 ms = 1024 ms).
+ * Larger requests are clamped to this value.
+ * Use KTASK_RUN_TO_COMPLETION for work that must not be time-sliced.
+ */
+#define SCHED_KERNEL_MAX_QUANTA 64u
+
+// Everything below this comment should probably be tuned and tested as we get more tasks
+// These were baselines that felt right, but will probably cause problems eventually
+
+/* How often an idle CPU wakes itself (1 ms, equal to the P9 quantum).
+ * It is the worst-case delay before an idle CPU notices work if a wake-up IPI was missed, and how often it retries stealing.
+ */
+#define SCHED_IDLE_WAKE_US (SCHED_QUANTUM_US / 16)
+
+/* Time between periodic rebalance passes on each CPU (3s. The spec says "every few seconds"). */
+#define SCHED_REBALANCE_US 3000000ull
+
+/* Minimum task-count gap between the busiest and least busy CPU before a periodic rebalance moves anything.
+ * Prevents shuffling tasks back and forth over tiny differences.
+ */
+#define SCHED_IMBALANCE_MIN 4u
+
+/* Maximum number of tasks an idle CPU will steal from other CPUs in one attempt. */
+#define SCHED_STEAL_BATCH 4u
+
+/* Steal cooldown after a CPU's first failed attempt.
+ * It doubles with each further consecutive failure, up to the cap below, and resets after a successful steal. */
+#define SCHED_STEAL_COOLDOWN_BASE_US SCHED_QUANTUM_US
+
+/* Upper bound on the steal cooldown (1 s), no matter how many attempts in a row have failed. */
+#define SCHED_STEAL_COOLDOWN_CAP_US 1000000ull
+
+/* Task spawning has a helper for functions in the form `int fn(int, char**)`.
+ * This caps the max size of the char** array in those cases.
+ * This IS NOT a hard limit for general user main functions. Those are handled entirely differently.
+ * This only applies to tasks being created for the kernel by the kernel.
+ */
+#ifndef TASK_ARGV_MAX_BYTES
+#define TASK_ARGV_MAX_BYTES 4096u
+#endif
 
 // ------------------------------------------------------------------------------------------------
 // ------------------------------------------------------------------------------------------------

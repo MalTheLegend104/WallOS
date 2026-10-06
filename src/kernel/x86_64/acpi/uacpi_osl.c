@@ -2,22 +2,22 @@
 #include <uacpi/acpi.h>
 #include <uacpi/kernel_api.h>
 
+#include <stdarg.h>
+#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
-#include <stdint.h>
-#include <stdarg.h>
 
 #include <panic.h>
 
-#include <klibc/logger.h>
-#include <drivers/serial.h>	
-#include <memory/virtual_mem.h>
 #include <cpu_io.h>
+#include <drivers/serial.h>
+#include <klibc/logger.h>
+#include <memory/virtual_mem.h>
 
 #include <system/timer.h>
 
 // There's a lot of unused params in here
-#pragma GCC diagnostic ignored "-Wunused-parameter" 
+#pragma GCC diagnostic ignored "-Wunused-parameter"
 
 // ------------------------------------------------------------------------------------------------
 // ------------------------------------------------------------------------------------------------
@@ -25,7 +25,7 @@
 // ------------------------------------------------------------------------------------------------
 // ------------------------------------------------------------------------------------------------
 void uacpi_failure(const char* str) {
-	const char* msg[] = { "UACPI called a function stub: ", str };
+	const char* msg[] = {"UACPI called a function stub: ", str};
 
 	printf("UACPI called stub function %s\n", str);
 
@@ -112,7 +112,7 @@ uacpi_status uacpi_kernel_get_rsdp(uacpi_phys_addr* out_rsdp_address) {
 //  */
 // void uacpi_kernel_unmap(void* addr, uacpi_size len) {
 // 	// printf_serial("[UACPI] uacpi_kernel_unmap(0x%llx, 0x%llx) called (no-op)\r\n", (uint64_t) addr, len);
-// 	// I dont really care about unmapping right now. 
+// 	// I dont really care about unmapping right now.
 // }
 
 // ------------------------------------------------------------------------------------------------
@@ -120,8 +120,8 @@ uacpi_status uacpi_kernel_get_rsdp(uacpi_phys_addr* out_rsdp_address) {
 // Prevents redundant VMM allocations when uACPI re-maps the same physical
 // regions (e.g. re-reading table headers, sub-region probes on the SSDT, etc.)
 // ------------------------------------------------------------------------------------------------
-#define PAGE_SIZE       0x1000
-#define PAGE_MASK       (~(uacpi_phys_addr)(PAGE_SIZE - 1))
+#define PAGE_SIZE 0x1000
+#define PAGE_MASK (~(uacpi_phys_addr) (PAGE_SIZE - 1))
 
 // Power-of-two so we can mask instead of modulo. 1024 slots handles a large
 // server SSDT comfortably; bump to 2048 if you ever see cache-full warnings.
@@ -129,13 +129,13 @@ uacpi_status uacpi_kernel_get_rsdp(uacpi_phys_addr* out_rsdp_address) {
 
 typedef struct {
 	uacpi_phys_addr phys_base;   // page-aligned base physical address
-	uacpi_size      mapped_len;  // page-aligned total length passed to VMM
+	uacpi_size mapped_len;  // page-aligned total length passed to VMM
 	void* virt_base;   // what mapKernelLocation returned
-	uint32_t        refcount;    // how many live uacpi_kernel_map calls reference this
+	uint32_t refcount;    // how many live uacpi_kernel_map calls reference this
 } map_cache_entry_t;
 
 static map_cache_entry_t _map_cache[MAP_CACHE_SLOTS];
-static uint32_t          _map_cache_used = 0;
+static uint32_t _map_cache_used = 0;
 
 // FNV-1a hash, fast and good enough for physical page numbers
 static inline uint32_t _map_hash(uacpi_phys_addr phys_base, uacpi_size mapped_len) {
@@ -164,7 +164,8 @@ static int _map_cache_find(uacpi_phys_addr phys_base, uacpi_size mapped_len) {
 static int _map_cache_insert(uacpi_phys_addr phys_base, uacpi_size mapped_len, void* virt_base) {
 	if (_map_cache_used >= MAP_CACHE_SLOTS) {
 		printf_serial("[UACPI][MAP_CACHE] WARNING: cache full (%u slots), cannot insert phys=0x%llx\r\n",
-			MAP_CACHE_SLOTS, (uint64_t) phys_base);
+					  MAP_CACHE_SLOTS,
+					  (uint64_t) phys_base);
 		return -1;
 	}
 	uint32_t slot = _map_hash(phys_base, mapped_len);
@@ -193,28 +194,34 @@ void* uacpi_kernel_map(uacpi_phys_addr addr, uacpi_size len) {
 	// Compute the true page-aligned region we need the VMM to map.
 	uacpi_phys_addr page_offset = addr & (PAGE_SIZE - 1);       // offset within first page
 	uacpi_phys_addr phys_base = addr & PAGE_MASK;              // round base down
-	uacpi_size      aligned_len = (len + page_offset + PAGE_SIZE - 1) & PAGE_MASK; // round len up
+	uacpi_size aligned_len = (len + page_offset + PAGE_SIZE - 1) & PAGE_MASK; // round len up
 
 	// --- Cache lookup ---
 	int idx = _map_cache_find(phys_base, aligned_len);
 	if (idx >= 0) {
 		_map_cache[idx].refcount++;
 		printf_serial("[UACPI][MAP_CACHE] HIT  phys=0x%llx len=0x%llx refcount=%u\r\n",
-			(uint64_t) phys_base, (uint64_t) aligned_len, _map_cache[idx].refcount);
-// Return the cached virtual base plus the original intra-page offset.
+					  (uint64_t) phys_base,
+					  (uint64_t) aligned_len,
+					  _map_cache[idx].refcount);
+		// Return the cached virtual base plus the original intra-page offset.
 		return (void*) ((uintptr_t) _map_cache[idx].virt_base + page_offset);
 	}
 
 	// --- Sanity check: refuse absurdly large requests ---
 	if (aligned_len > 0x200000 * 128) {
 		printf_serial("[UACPI][MAP_CACHE] WARN: oversized map request 0x%llx bytes at phys 0x%llx\r\n",
-			(uint64_t) aligned_len, (uint64_t) phys_base);
-// Peek at the table signature to aid debugging, then bail.
+					  (uint64_t) aligned_len,
+					  (uint64_t) phys_base);
+		// Peek at the table signature to aid debugging, then bail.
 		void* peek = (void*) mapKernelLocation(phys_base, 0x24);
 		if (peek) {
 			char* sig = (char*) peek + page_offset;
 			printf_serial("[UACPI][MAP_CACHE] Signature at target: '%c%c%c%c'\r\n",
-				sig[0], sig[1], sig[2], sig[3]);
+						  sig[0],
+						  sig[1],
+						  sig[2],
+						  sig[3]);
 		}
 		return NULL;
 	}
@@ -223,14 +230,18 @@ void* uacpi_kernel_map(uacpi_phys_addr addr, uacpi_size len) {
 	void* virt_base = (void*) mapKernelLocation(phys_base, aligned_len);
 	if (!virt_base) {
 		printf_serial("[UACPI][MAP_CACHE] VMM returned NULL for phys=0x%llx len=0x%llx\r\n",
-			(uint64_t) phys_base, (uint64_t) aligned_len);
+					  (uint64_t) phys_base,
+					  (uint64_t) aligned_len);
 		return NULL;
 	}
 
 	_map_cache_insert(phys_base, aligned_len, virt_base);
 	printf_serial("[UACPI][MAP_CACHE] MISS phys=0x%llx len=0x%llx -> virt=0x%llx (cache %u/%u)\r\n",
-		(uint64_t) phys_base, (uint64_t) aligned_len, (uint64_t) virt_base,
-		_map_cache_used, MAP_CACHE_SLOTS);
+				  (uint64_t) phys_base,
+				  (uint64_t) aligned_len,
+				  (uint64_t) virt_base,
+				  _map_cache_used,
+				  MAP_CACHE_SLOTS);
 
 	return (void*) ((uintptr_t) virt_base + page_offset);
 }
@@ -256,7 +267,9 @@ void uacpi_kernel_unmap(void* addr, uacpi_size len) {
 			// If you ever want to actually free: call your VMM unmap here when
 			// refcount hits 0 and zero out the slot + _map_cache_used--.
 			printf_serial("[UACPI][MAP_CACHE] UNMAP virt=0x%llx len=0x%llx refcount=%u (kept)\r\n",
-				(uint64_t) virt_base, (uint64_t) aligned_len, e->refcount);
+						  (uint64_t) virt_base,
+						  (uint64_t) aligned_len,
+						  e->refcount);
 			return;
 		}
 	}
@@ -559,7 +572,7 @@ void uacpi_kernel_stall(uacpi_u8 usec) {
 	uint64_t wait_ns = (uint64_t) usec * 1000ull;
 
 	while ((timer_uptime_no_interrupts() - start_ns) < wait_ns) {
-		__asm__ volatile ("pause");
+		__asm__ volatile("pause");
 	}
 }
 /*
@@ -614,6 +627,7 @@ uacpi_status uacpi_kernel_handle_firmware_request(uacpi_firmware_request* req) {
 // ------------------------------------------------------------------------------------------------
 // ------------------------------------------------------------------------------------------------
 #include <system/idt.h>
+#include <wallos_attributes.h>
 
 // Storage for uACPI interrupt handlers
 #define MAX_UACPI_IRQS 16
@@ -630,7 +644,7 @@ static struct uacpi_irq_info uacpi_irq_table[MAX_UACPI_IRQS];
 // This first one is identical to the rest. This one is the "example" so you can actually see what's happening.
 WALLOS_INTERRUPT_HANDLER void uacpi_irq_wrapper_0(struct interrupt_frame* frame) {
 	if (uacpi_irq_table[0].in_use && uacpi_irq_table[0].handler) {
-		   /* Call the uACPI handler */
+		/* Call the uACPI handler */
 		(void) uacpi_irq_table[0].handler(uacpi_irq_table[0].ctx);
 		/* uACPI returns HANDLED or UNHANDLED (and we don't really care about the status), but we still need to send EOI */
 	}
@@ -638,21 +652,66 @@ WALLOS_INTERRUPT_HANDLER void uacpi_irq_wrapper_0(struct interrupt_frame* frame)
 	interrupt_eoi(0);
 }
 
-WALLOS_INTERRUPT_HANDLER void uacpi_irq_wrapper_1(struct interrupt_frame* frame) { if (uacpi_irq_table[1].in_use && uacpi_irq_table[1].handler) { (void) uacpi_irq_table[1].handler(uacpi_irq_table[1].ctx); } interrupt_eoi(1); }
-WALLOS_INTERRUPT_HANDLER void uacpi_irq_wrapper_2(struct interrupt_frame* frame) { if (uacpi_irq_table[2].in_use && uacpi_irq_table[2].handler) { (void) uacpi_irq_table[2].handler(uacpi_irq_table[2].ctx); } interrupt_eoi(2); }
-WALLOS_INTERRUPT_HANDLER void uacpi_irq_wrapper_3(struct interrupt_frame* frame) { if (uacpi_irq_table[3].in_use && uacpi_irq_table[3].handler) { (void) uacpi_irq_table[3].handler(uacpi_irq_table[3].ctx); } interrupt_eoi(3); }
-WALLOS_INTERRUPT_HANDLER void uacpi_irq_wrapper_4(struct interrupt_frame* frame) { if (uacpi_irq_table[4].in_use && uacpi_irq_table[4].handler) { (void) uacpi_irq_table[4].handler(uacpi_irq_table[4].ctx); } interrupt_eoi(4); }
-WALLOS_INTERRUPT_HANDLER void uacpi_irq_wrapper_5(struct interrupt_frame* frame) { if (uacpi_irq_table[5].in_use && uacpi_irq_table[5].handler) { (void) uacpi_irq_table[5].handler(uacpi_irq_table[5].ctx); } interrupt_eoi(5); }
-WALLOS_INTERRUPT_HANDLER void uacpi_irq_wrapper_6(struct interrupt_frame* frame) { if (uacpi_irq_table[6].in_use && uacpi_irq_table[6].handler) { (void) uacpi_irq_table[6].handler(uacpi_irq_table[6].ctx); } interrupt_eoi(6); }
-WALLOS_INTERRUPT_HANDLER void uacpi_irq_wrapper_7(struct interrupt_frame* frame) { if (uacpi_irq_table[7].in_use && uacpi_irq_table[7].handler) { (void) uacpi_irq_table[7].handler(uacpi_irq_table[7].ctx); } interrupt_eoi(7); }
-WALLOS_INTERRUPT_HANDLER void uacpi_irq_wrapper_8(struct interrupt_frame* frame) { if (uacpi_irq_table[8].in_use && uacpi_irq_table[8].handler) { (void) uacpi_irq_table[8].handler(uacpi_irq_table[8].ctx); } interrupt_eoi(8); }
-WALLOS_INTERRUPT_HANDLER void uacpi_irq_wrapper_9(struct interrupt_frame* frame) { if (uacpi_irq_table[9].in_use && uacpi_irq_table[9].handler) { (void) uacpi_irq_table[9].handler(uacpi_irq_table[9].ctx); } interrupt_eoi(9); }
-WALLOS_INTERRUPT_HANDLER void uacpi_irq_wrapper_10(struct interrupt_frame* frame) { if (uacpi_irq_table[10].in_use && uacpi_irq_table[10].handler) { (void) uacpi_irq_table[10].handler(uacpi_irq_table[10].ctx); } interrupt_eoi(10); }
-WALLOS_INTERRUPT_HANDLER void uacpi_irq_wrapper_11(struct interrupt_frame* frame) { if (uacpi_irq_table[11].in_use && uacpi_irq_table[11].handler) { (void) uacpi_irq_table[11].handler(uacpi_irq_table[11].ctx); } interrupt_eoi(11); }
-WALLOS_INTERRUPT_HANDLER void uacpi_irq_wrapper_12(struct interrupt_frame* frame) { if (uacpi_irq_table[12].in_use && uacpi_irq_table[12].handler) { (void) uacpi_irq_table[12].handler(uacpi_irq_table[12].ctx); } interrupt_eoi(12); }
-WALLOS_INTERRUPT_HANDLER void uacpi_irq_wrapper_13(struct interrupt_frame* frame) { if (uacpi_irq_table[13].in_use && uacpi_irq_table[13].handler) { (void) uacpi_irq_table[13].handler(uacpi_irq_table[13].ctx); } interrupt_eoi(13); }
-WALLOS_INTERRUPT_HANDLER void uacpi_irq_wrapper_14(struct interrupt_frame* frame) { if (uacpi_irq_table[14].in_use && uacpi_irq_table[14].handler) { (void) uacpi_irq_table[14].handler(uacpi_irq_table[14].ctx); } interrupt_eoi(14); }
-WALLOS_INTERRUPT_HANDLER void uacpi_irq_wrapper_15(struct interrupt_frame* frame) { if (uacpi_irq_table[15].in_use && uacpi_irq_table[15].handler) { (void) uacpi_irq_table[15].handler(uacpi_irq_table[15].ctx); } interrupt_eoi(15); }
+WALLOS_INTERRUPT_HANDLER void uacpi_irq_wrapper_1(struct interrupt_frame* frame) {
+	if (uacpi_irq_table[1].in_use && uacpi_irq_table[1].handler) { (void) uacpi_irq_table[1].handler(uacpi_irq_table[1].ctx); }
+	interrupt_eoi(1);
+}
+WALLOS_INTERRUPT_HANDLER void uacpi_irq_wrapper_2(struct interrupt_frame* frame) {
+	if (uacpi_irq_table[2].in_use && uacpi_irq_table[2].handler) { (void) uacpi_irq_table[2].handler(uacpi_irq_table[2].ctx); }
+	interrupt_eoi(2);
+}
+WALLOS_INTERRUPT_HANDLER void uacpi_irq_wrapper_3(struct interrupt_frame* frame) {
+	if (uacpi_irq_table[3].in_use && uacpi_irq_table[3].handler) { (void) uacpi_irq_table[3].handler(uacpi_irq_table[3].ctx); }
+	interrupt_eoi(3);
+}
+WALLOS_INTERRUPT_HANDLER void uacpi_irq_wrapper_4(struct interrupt_frame* frame) {
+	if (uacpi_irq_table[4].in_use && uacpi_irq_table[4].handler) { (void) uacpi_irq_table[4].handler(uacpi_irq_table[4].ctx); }
+	interrupt_eoi(4);
+}
+WALLOS_INTERRUPT_HANDLER void uacpi_irq_wrapper_5(struct interrupt_frame* frame) {
+	if (uacpi_irq_table[5].in_use && uacpi_irq_table[5].handler) { (void) uacpi_irq_table[5].handler(uacpi_irq_table[5].ctx); }
+	interrupt_eoi(5);
+}
+WALLOS_INTERRUPT_HANDLER void uacpi_irq_wrapper_6(struct interrupt_frame* frame) {
+	if (uacpi_irq_table[6].in_use && uacpi_irq_table[6].handler) { (void) uacpi_irq_table[6].handler(uacpi_irq_table[6].ctx); }
+	interrupt_eoi(6);
+}
+WALLOS_INTERRUPT_HANDLER void uacpi_irq_wrapper_7(struct interrupt_frame* frame) {
+	if (uacpi_irq_table[7].in_use && uacpi_irq_table[7].handler) { (void) uacpi_irq_table[7].handler(uacpi_irq_table[7].ctx); }
+	interrupt_eoi(7);
+}
+WALLOS_INTERRUPT_HANDLER void uacpi_irq_wrapper_8(struct interrupt_frame* frame) {
+	if (uacpi_irq_table[8].in_use && uacpi_irq_table[8].handler) { (void) uacpi_irq_table[8].handler(uacpi_irq_table[8].ctx); }
+	interrupt_eoi(8);
+}
+WALLOS_INTERRUPT_HANDLER void uacpi_irq_wrapper_9(struct interrupt_frame* frame) {
+	if (uacpi_irq_table[9].in_use && uacpi_irq_table[9].handler) { (void) uacpi_irq_table[9].handler(uacpi_irq_table[9].ctx); }
+	interrupt_eoi(9);
+}
+WALLOS_INTERRUPT_HANDLER void uacpi_irq_wrapper_10(struct interrupt_frame* frame) {
+	if (uacpi_irq_table[10].in_use && uacpi_irq_table[10].handler) { (void) uacpi_irq_table[10].handler(uacpi_irq_table[10].ctx); }
+	interrupt_eoi(10);
+}
+WALLOS_INTERRUPT_HANDLER void uacpi_irq_wrapper_11(struct interrupt_frame* frame) {
+	if (uacpi_irq_table[11].in_use && uacpi_irq_table[11].handler) { (void) uacpi_irq_table[11].handler(uacpi_irq_table[11].ctx); }
+	interrupt_eoi(11);
+}
+WALLOS_INTERRUPT_HANDLER void uacpi_irq_wrapper_12(struct interrupt_frame* frame) {
+	if (uacpi_irq_table[12].in_use && uacpi_irq_table[12].handler) { (void) uacpi_irq_table[12].handler(uacpi_irq_table[12].ctx); }
+	interrupt_eoi(12);
+}
+WALLOS_INTERRUPT_HANDLER void uacpi_irq_wrapper_13(struct interrupt_frame* frame) {
+	if (uacpi_irq_table[13].in_use && uacpi_irq_table[13].handler) { (void) uacpi_irq_table[13].handler(uacpi_irq_table[13].ctx); }
+	interrupt_eoi(13);
+}
+WALLOS_INTERRUPT_HANDLER void uacpi_irq_wrapper_14(struct interrupt_frame* frame) {
+	if (uacpi_irq_table[14].in_use && uacpi_irq_table[14].handler) { (void) uacpi_irq_table[14].handler(uacpi_irq_table[14].ctx); }
+	interrupt_eoi(14);
+}
+WALLOS_INTERRUPT_HANDLER void uacpi_irq_wrapper_15(struct interrupt_frame* frame) {
+	if (uacpi_irq_table[15].in_use && uacpi_irq_table[15].handler) { (void) uacpi_irq_table[15].handler(uacpi_irq_table[15].ctx); }
+	interrupt_eoi(15);
+}
 
 
 // Array of wrapper function pointers
@@ -752,7 +811,7 @@ uacpi_status uacpi_kernel_uninstall_interrupt_handler(uacpi_interrupt_handler ha
 
 	// Restore the generic handler
 	uint8_t vector = 0x20 + irq;
-//	set_idt_entry(&idt[vector], isr_stub_table[vector], 0, 0x8E);
+	//	set_idt_entry(&idt[vector], isr_stub_table[vector], 0, 0x8E);
 	remove_interrupt_handler(vector);
 
 	// Clear the slot
@@ -816,7 +875,7 @@ void uacpi_kernel_free_event(uacpi_handle handle) {
  */
 uacpi_thread_id uacpi_kernel_get_thread_id(void) {
 	// printf_serial("[UACPI] uacpi_kernel_get_thread_id() called\r\n");
-	// This ensures we keep a consistent value across threads. 
+	// This ensures we keep a consistent value across threads.
 	// GCC wasn't happy with just returning a single value.
 	// This has the bonus of being a "random" number (that's really always the same between runs)
 	static int dummy_thread;

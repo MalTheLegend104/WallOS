@@ -2156,7 +2156,7 @@ static bool ws_internal_pollKey(ws_key_input_t* out) {
  */
 static void ws_internal_waitKey(ws_key_input_t* out) {
 	while (!ws_internal_pollKey(out)) {
-		system_poll_loop();
+		// system_poll_loop();
 		busy_wait_ms(1);
 	}
 }
@@ -2504,7 +2504,7 @@ ws_error_t ws_terminalMain() {
 		}
 
 		if (!ws_internal_pollKey(&input)) {
-			system_poll_loop();
+			// system_poll_loop();
 			busy_wait_ms(1);
 			continue;
 		}

@@ -566,13 +566,11 @@ struct editorSyntax HLDB[] = {
 
 // we take control of the terminal for a long time here
 // we need to poll the system loop to get acpi and usb input events
-extern void system_poll_loop(void);
 
 int editorReadKey(void) {
 	wallos_input_event_t ev;
 
 	for (;;) {
-		system_poll_loop();
 		busy_wait_ms(1); // just so we don't absolutely spam the CPU
 		if (!input_poll_event(WALLOS_INPUT_DEVICE_KEYBOARD, &ev)) continue;
 		if (ev.data.keyboard.state == WALLOS_INPUT_STATE_RELEASED) continue;
