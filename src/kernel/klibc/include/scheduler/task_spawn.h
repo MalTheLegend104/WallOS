@@ -32,10 +32,10 @@ typedef struct {
 } _task_main_pack_t;
 
 WALLOS_ALWAYS_INLINE void _task_run_void(void* a) { ((void (*)(void)) a)(); }
-WALLOS_ALWAYS_INLINE void _task_run_int(void* a) { (void) ((int (*)(void)) a)(); }
+WALLOS_ALWAYS_INLINE void _task_run_int(void* a) { task_exit_with(((int (*)(void)) a)()); }
 WALLOS_ALWAYS_INLINE void _task_run_main(void* a) {
 	_task_main_pack_t* p = a;
-	(void) p->fn(p->argc, p->argv);
+	task_exit_with(p->fn(p->argc, p->argv));
 }
 
 WALLOS_ALWAYS_INLINE task_id_t task_spawn_void(task_create_info_t info, void (*fn)(void)) {

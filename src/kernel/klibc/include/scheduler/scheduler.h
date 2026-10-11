@@ -2,6 +2,7 @@
 #define WALLOS_SCHEDULER_H
 #include <scheduler/cpu.h>
 #include <scheduler/task.h>
+#include <wallos_attributes.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -11,7 +12,7 @@ extern "C" {
 	void sched_init(uint32_t cpu_count);                 /* BSP: after all APs are up   */
 	task_t* sched_adopt_boot_task(const char* name);     /* BSP: current thread -> task */
 	void sched_start_bsp(void);                          /* BSP: begin preemption */
-	void sched_ap_entry(void) __attribute__((noreturn)); /* APs: never returns */
+	WALLOS_NORETURN void sched_ap_entry(void); /* APs: never returns */
 
 	/* Running tasks */
 	task_t* sched_current(void);
@@ -19,9 +20,48 @@ extern "C" {
 
 	task_id_t task_create(const task_create_info_t* info);
 	task_id_t task_spawn(const char* name, task_entry_t entry, void* arg);
-	void task_exit(void) __attribute__((noreturn));
-	bool task_kill(task_id_t id); /* External. Applied at next quanta boundary */
+	/**
+	 * @brief Same as a regular task exit(0).
+	 * Identical to calling task_exit_with(0).
+	 */
+	WALLOS_NORETURN void task_exit(void);
+	/**
+	 * @brief Exit the task with the given exit code.
+	 * @param status The status code to exit with.
+	 */
+	WALLOS_NORETURN void task_exit_with(int status);
+	/**
+	 * @brief End the task with a fault.
+	 * This is used by the kernel to kill tasks that have cause and exception (#PF, #GP, #DE, etc.)
+	 *
+	 * @param code The fault code that cause it
+	 */
+	WALLOS_NORETURN void task_fault(int code);
+
+	/**
+	 * @brief Wait for a child to end and collect how it ended.
+	 * The id is invalid afterwards.
+	 * Only the task's parent may wait.
+	 * Blocks until the child is dead.
+	 * Children created DETACHED have no parent and are freed on exit, their status is discarded.
+	 *
+	 * @return false if id doesn't exist, isn't a child of the caller, or another task is already waiting on it, true otherwise
+	 */
+	bool task_wait(task_id_t id, task_exit_info_t* out);
+	/**
+	 * @brief Kill the given task. This will cascade to it's children.
+	 * @return true if sucessfully reqested that it be killed, false otherwise.
+	 */
+	bool task_kill(task_id_t id);
+	/**
+	 * @brief Forcefully suspend a task.
+	 * @returns true if task was found and suspended, false otherwise
+	 */
 	bool task_suspend(task_id_t id);
+	/**
+	 * @brief Resume a task from a suspended state.
+	 * @return true if task was found and resumed, false otherwise
+	 */
 	bool task_resume(task_id_t id);
 
 	/* Blocking subsystem contract (spec: Blocking Event Handlers)

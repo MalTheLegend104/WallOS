@@ -5,17 +5,40 @@
 #include <stddef.h>
 #include <stdint.h>
 
+#if defined(__x86_64__)
+#include <x86_64/arch_task.h>
+#endif
+
 #ifdef __cplusplus
 extern "C" {
 #endif
 
 	typedef struct cpu cpu_t;
 	typedef struct task task_t;
+	typedef struct arch_task arch_task_t;
 
 	typedef uint64_t task_id_t;
 #define TASK_ID_INVALID 0ull
 
 	typedef void (*task_entry_t)(void* arg);
+
+	/* How a task ended */
+	typedef enum {
+		TASK_EXIT_NONE = 0, //< still alive
+		TASK_EXIT_NORMAL,   //< returned from its entry or called task_exit_with(status)
+		TASK_EXIT_KILLED,   //< task_kill(), or its parent died (cascade)
+		TASK_EXIT_FAULT,    //< killed by the kernel for a fault. status = arch fault code
+	} task_exit_reason_t;
+
+	typedef struct task_exit_info {
+		task_exit_reason_t reason;
+		/* Status depends on reason it was killed. This should probably be documented somewhere else...
+		 * NORMAL: the exit code
+		 * FAULT: fault code
+		 * KILLED: 0
+		 */
+		int status;
+	} task_exit_info_t;
 	typedef void (*task_cancel_fn)(task_t* t, void* ctx);
 
 /* Priority */
@@ -38,6 +61,7 @@ extern "C" {
 #define TASK_F_SUSPENDED    (1u << 1)  /* created non-ready / explicitly suspended       */
 #define TASK_F_PENDING_KILL (1u << 2)  /* destroy at next quanta boundary                */
 #define TASK_F_DYING        (1u << 3)  /* destruction has begun. wakes are discarded     */
+#define TASK_F_ZOMBIE       (1u << 4)  /* dead, stack gone, TCB kept so the parent can task_wait() for the status */
 
 /* task_create_info.flags */
 #define TASK_CREATE_SUSPENDED (1u << 0) /* do not schedule until task_resume()           */
@@ -119,7 +143,17 @@ extern "C" {
 		task_cancel_fn blocker_cancel; //< Called by destruction if the task was blocked. Subsystem must drop the reference to this task. Only valid while BLOCKED, never cleared after a wake.
 		void* blocker_ctx; //< Passed back to blocker_cancel unchanged.
 
+		// Exit status. Written by the task itself (or by destruction) before the task is queued for reaping.
+		task_exit_reason_t exit_reason; //< TASK_EXIT_NONE until the task ends. Destruction fills in KILLED if nothing else was recorded.
+		int exit_status; //< See task_exit_info_t.
+		task_t* waiter; //< The parent blocked in task_wait() on this task. (tree lock)
+
 		char name[24]; //< Debug name, truncated to fit and always NUL terminated
+
+		// I assume I will need this on all platforms, if not an empty struct should get compiled out.
+		// I will make sure the arch_task struct is in the porting doc eventually.
+		// The header defining stuct arch_task should be included at the top of this file.
+		arch_task_t arch; //< Port-specific per-task state (user GS/FS, address space, etc.)
 	};
 
 #ifdef __cplusplus

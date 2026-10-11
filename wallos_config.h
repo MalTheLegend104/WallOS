@@ -121,6 +121,11 @@
 #define TASK_ARGV_MAX_BYTES 4096u
 #endif
 
+/* Set to 1 to enable syscall logging.
+ * This will print to the serial log every time a syscall is called, with the arguments.
+ */
+#define WALLOS_SYSCALL_LOG 0
+
 // ------------------------------------------------------------------------------------------------
 // ------------------------------------------------------------------------------------------------
 // Error Checking

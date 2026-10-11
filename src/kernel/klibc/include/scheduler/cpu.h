@@ -33,10 +33,14 @@ extern "C" {
 		cpu_t* self;                       /* offset 0                                    */
 		uint32_t id;                       /* offset 8: logical id (index in system_cpus) */
 		uint32_t hw_id;                    /* hardware id (APIC id on x86)                */
+		struct arch_cpu arch;              /* offset 16: port-specific                    */
+
+		/* Everything after this point can change locations freely.
+		 * Only the fields above have offset requirements.
+		 */
 
 		volatile bool online;
 		volatile bool started;             /* scheduling loop entered                     */
-		struct arch_cpu arch;              /* port-specific                               */
 
 		/* Runqueues (rq_lock protects lists, counters are atomic)                        */
 		sched_lock_t rq_lock;
@@ -74,6 +78,7 @@ extern "C" {
 	// Mostly an x86 thing but greatly improves hot path stuff since they can be read using a mov
 	_Static_assert(offsetof(cpu_t, self) == 0, "cpu_t.self must be at offset 0");
 	_Static_assert(offsetof(cpu_t, id) == 8, "cpu_t.id must be at offset 8");
+	_Static_assert(offsetof(cpu_t, arch) == 16, "cpu_t.arch must be at offset 16");
 
 	// Really shouldnt be used externally, still exposed if absolutely needed.
 	extern cpu_t system_cpus[WALLOS_SYSTEM_MAX_CPU];

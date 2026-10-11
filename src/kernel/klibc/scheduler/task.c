@@ -118,6 +118,11 @@ task_id_t task_create(const task_create_info_t* info) {
 	t->flags = (info->flags & TASK_CREATE_SUSPENDED) ? TASK_F_SUSPENDED : 0;
 	copy_name(t, info->name);
 	t->saved_ctx = arch_task_context_init(stack, ssz, info->entry, info->arg);
+	if (!t->saved_ctx) { // stack too small for the arch's initial frame
+		kfree(stack);
+		kfree(t);
+		return TASK_ID_INVALID;
+	}
 
 	task_id_t id = t->id;
 
@@ -171,30 +176,41 @@ void sched_task_destroy(task_t* t) {
 		t->blocker_cancel(t, t->blocker_ctx);
 	}
 
-	uint64_t f = sched_lock_irqsave(&tree_lock);
-	registry_remove(t);
-	// Unlink us from the sibling chain
-	if (t->parent) {
-		if (t->sib_prev) t->sib_prev->sib_next = t->sib_next;
-		else t->parent->child_head = t->sib_next;
+	if (t->exit_reason == TASK_EXIT_NONE) t->exit_reason = TASK_EXIT_KILLED;
 
-		if (t->sib_next) t->sib_next->sib_prev = t->sib_prev;
-	}
+	task_t* corpses = NULL; // already-published zombie children, freed after the lock drops
+	uint64_t f = sched_lock_irqsave(&tree_lock);
+
+	// A task with a parent stays registered and linked (a zombie in waiting) until its parent collects it or dies.
+	// sched_reap_zombies() publishes it once the stack is gone.
+	if (!t->parent) registry_remove(t);
 
 	// We cascade on the child tasks.
-	// Orphan every child and mark it pending-kill
-	// The scheduler will take care of them when it comes across them.
+	// Orphan every live child and mark it pending-kill, the scheduler will take care of them when it comes across them.
+	// Children that are already zombies can't be waited for anymore, so they are simply freed.
 	task_t* ch = t->child_head;
 	while (ch) {
 		task_t* nx = ch->sib_next;
 		ch->parent = NULL;
 		ch->sib_next = ch->sib_prev = NULL;
-		__atomic_fetch_or(&ch->flags, TASK_F_PENDING_KILL, __ATOMIC_RELEASE);
-		if (ch->cpu != here->id) arch_send_resched_ipi(ch->cpu);
+		if (__atomic_load_n(&ch->flags, __ATOMIC_ACQUIRE) & TASK_F_ZOMBIE) {
+			registry_remove(ch);
+			ch->rq_next = corpses;
+			corpses = ch;
+		} else {
+			__atomic_fetch_or(&ch->flags, TASK_F_PENDING_KILL, __ATOMIC_RELEASE);
+			if (ch->cpu != here->id) arch_send_resched_ipi(ch->cpu);
+		}
 		ch = nx;
 	}
 	t->child_head = NULL;
 	sched_unlock_irqrestore(&tree_lock, f);
+
+	while (corpses) {
+		task_t* nx = corpses->rq_next;
+		kfree(corpses);
+		corpses = nx;
+	}
 
 	if (t->is_kernel && (t->kflags & KTASK_TAKEOVER)) __atomic_sub_fetch(&system_cpus[t->cpu].takeover, 1, __ATOMIC_ACQ_REL);
 
@@ -213,22 +229,103 @@ void sched_destroy_chain(task_t* t) {
 	}
 }
 
+static void sibling_unlink(task_t* t) { /* tree_lock held */
+	if (!t->parent) return;
+	if (t->sib_prev) t->sib_prev->sib_next = t->sib_next;
+	else t->parent->child_head = t->sib_next;
+	if (t->sib_next) t->sib_next->sib_prev = t->sib_prev;
+	t->sib_next = t->sib_prev = NULL;
+}
+
+// Runs at the start of the next scheduling pass on the CPU that destroyed the task, so we're off its stack.
 void sched_reap_zombies(cpu_t* c) {
 	task_t* t = c->zombies;
 	c->zombies = NULL;
 	while (t) {
 		task_t* nx = t->rq_next;
+		t->rq_next = NULL;
+
 		if (t->owns_stack) kfree(t->stack_base);
-		kfree(t);
+		t->stack_base = NULL;
+		if (t->owns_arg) kfree(t->arg); // TASK_CREATE_OWN_ARG, nothing else will ever free it
+		t->arg = NULL;
+
+		// Publish the exit status, or free outright if nobody can ever ask for it
+		uint64_t f = sched_lock_irqsave(&tree_lock);
+		if (t->parent) {
+			__atomic_fetch_or(&t->flags, TASK_F_ZOMBIE, __ATOMIC_RELEASE);
+			task_t* w = t->waiter;
+			t->waiter = NULL;
+			if (w) task_wake(w); // w is alive. its cancel hook would have cleared t->waiter under this lock
+			sched_unlock_irqrestore(&tree_lock, f);
+		} else {
+			sched_unlock_irqrestore(&tree_lock, f);
+			kfree(t);
+		}
 		t = nx;
 	}
 }
 
-void task_exit(void) {
+void task_exit_with(int status) {
 	task_t* t = cpu_current()->current;
+	t->exit_reason = TASK_EXIT_NORMAL;
+	t->exit_status = status;
 	__atomic_fetch_or(&t->flags, TASK_F_PENDING_KILL, __ATOMIC_RELEASE);
 	// forced yield that never returns. even if it somehow does, it will just infinitely yield.
 	while (true) arch_yield();
+}
+
+void task_exit(void) { task_exit_with(0); }
+
+void task_fault(int code) {
+	task_t* t = cpu_current()->current;
+	t->exit_reason = TASK_EXIT_FAULT;
+	t->exit_status = code;
+	__atomic_fetch_or(&t->flags, TASK_F_PENDING_KILL, __ATOMIC_RELEASE);
+	while (true) arch_yield();
+}
+
+static void wait_cancel(task_t* t, void* ctx) {
+	// The waiter is dying
+	// Look the child up by id, it may already be gone
+	uint64_t f = sched_lock_irqsave(&tree_lock);
+	task_t* c = registry_find((task_id_t) (uintptr_t) ctx);
+	if (c && c->waiter == t) c->waiter = NULL;
+	sched_unlock_irqrestore(&tree_lock, f);
+}
+
+bool task_wait(task_id_t id, task_exit_info_t* out) {
+	task_t* me = cpu_current()->current;
+	if (!me || me == cpu_current()->idle) return false;
+
+	while (true) {
+		uint64_t f = sched_lock_irqsave(&tree_lock);
+		task_t* c = registry_find(id);
+		if (!c || c->parent != me) {
+			sched_unlock_irqrestore(&tree_lock, f);
+			return false;
+		}
+		if (__atomic_load_n(&c->flags, __ATOMIC_ACQUIRE) & TASK_F_ZOMBIE) {
+			if (out) {
+				out->reason = c->exit_reason;
+				out->status = c->exit_status;
+			}
+			sibling_unlink(c);
+			registry_remove(c);
+			sched_unlock_irqrestore(&tree_lock, f);
+			kfree(c);
+			return true;
+		}
+		if (c->waiter && c->waiter != me) {
+			sched_unlock_irqrestore(&tree_lock, f);
+			return false;
+		}
+		// Flag is set under the tree lock and publication takes the same lock, so the wake can't be lost
+		c->waiter = me;
+		task_block_begin(me, wait_cancel, (void*) (uintptr_t) id);
+		sched_unlock_irqrestore(&tree_lock, f);
+		sched_block_wait();
+	}
 }
 
 bool task_kill(task_id_t id) {

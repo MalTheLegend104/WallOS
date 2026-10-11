@@ -63,13 +63,14 @@ uint32_t cpu_online_count = 0; // final count after arch_init_cpus
 
 void x86_ap_main() {
 	__atomic_store_n(&ap_stack_locked, 0, __ATOMIC_SEQ_CST);
-	set_ap_gdt_and_tss();
+	struct tss_64* tss = set_gdt_and_tss();
 	ap_load_idt();
 	WALLOS_CLI();
 	ap_init_lapic();
 
 	uint32_t apic_id = lapic_read(LAPIC_ID) >> 24;
 	uint32_t logical = x86_percpu_ap_bind(apic_id); // GS now valid
+	x86_percpu_bind_tss((volatile uint64_t*) (uintptr_t) &tss->rsp0); // arch_task_switch keeps this pointed at the running task's kernel stack
 	cpu_t* self = cpu_current();
 
 	uint64_t hz = calibrate_lapic_timer_with_tsc(bsp_tsc_freq);
@@ -112,9 +113,9 @@ void pic_disable(void) {
 }
 
 #include <wallos_attributes.h>
-WALLOS_INTERRUPT_HANDLER void lapic_spurious(struct interrupt_frame* f) {
-	(void) f;
-	lapic_write(LAPIC_EOI, 0);
+WALLOS_INTERRUPT_HANDLER void lapic_spurious(struct interrupt_regs* regs) {
+	(void) regs;
+	//  A spurious interrupt must NOT be EOI'd (Intel SDM vol 3, 10.9)
 }
 
 void arch_init_cpus() {

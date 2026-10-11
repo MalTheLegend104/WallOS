@@ -12,7 +12,6 @@ PIT_COUNTER equ PIT_FREQUENCY / DESIRED_FREQUENCY
 PIT_COMMAND_PORT equ 0x43
 PIT_CHANNEL0_PORT equ 0x40
 
-
 section .text
 global enablePS2
 global pic_irq_enable
@@ -129,3 +128,119 @@ idt_load:
 	lidt [rdi]
 	sti
 	ret
+
+; ------------------------------------------------------------------------------------------------
+; Interrupt/Exception entry
+;
+; All 256 vectors enter through an individual stub that pushes the vector number and error code, then jump to the main handler
+; The main handler will swapgs if we came from user mode, push all GPRs, then call x86_interrupt_dispatch
+; After that returns, we pop all GPRs, remove the vector and error code from the stack, swapgs if we are returning to ring 3, then iretq
+;
+; Frame, low -> high. This MUST match `struct interrupt_regs` in idt.h:
+;     r15 r14 r13 r12 r11 r10 r9 r8 rbp rdi rsi rdx rcx rbx rax | vector | error_code | rip cs rflags rsp ss
+;
+; The test for user mode is on the CS of the interrupted frame, and the exit path tests the CS of the frame being RETURNED to.
+; This means a handler is free to edit regs->cs/rip/etc.
+;
+; The scheduler handles it's own interrupts, overriding the vector stub that calls main.
+; Same for syscall/sysret.
+;
+; Technically we don't have anything for the IST stacks for NMI, #DF, or #MC yet, but like, not really that big of a deal to me
+; It'll just triple fault and I don't really care if that happens on a hardware error... (#DF is different but still not really something I want to deal with)
+; ------------------------------------------------------------------------------------------------
+extern x86_interrupt_dispatch
+
+section .text
+
+x86_isr_common:                     ; stack: [vector][error][rip][cs]...
+	test byte [rsp + 24], 3         ; CS of the interrupted code (RPL bits)
+	jz   .from_kernel
+	swapgs
+.from_kernel:
+	push rax
+	push rbx
+	push rcx
+	push rdx
+	push rsi
+	push rdi
+	push rbp
+	push r8
+	push r9
+	push r10
+	push r11
+	push r12
+	push r13
+	push r14
+	push r15
+
+	mov  rdi, rsp                   ; arg0 = struct interrupt_regs*
+	mov  rbp, rsp                   ; rbp is callee-saved, so it survives the call
+	and  rsp, -16                   ; SysV requires that stack is 16-byte aligned at the call
+	cld                             ; SysV needs DF=0. iretq restores the interrupted code's RFLAGS
+	call x86_interrupt_dispatch
+	mov  rsp, rbp
+
+	pop  r15
+	pop  r14
+	pop  r13
+	pop  r12
+	pop  r11
+	pop  r10
+	pop  r9
+	pop  r8
+	pop  rbp
+	pop  rdi
+	pop  rsi
+	pop  rdx
+	pop  rcx
+	pop  rbx
+	pop  rax
+	add  rsp, 16                    ; remove the vector + error code from the stack
+
+	test byte [rsp + 8], 3          ; CS of the frame we are returning to
+	jz   .to_kernel
+	swapgs
+.to_kernel:
+	iretq
+
+; Below is awful macro magic for NASM
+; It makes all the stubs for all the interrupts, pushing 0 as the error code for the interrupts that doesn't have them
+; Adds them all to a table so we can load it using lidt
+
+; CPU exceptions that automatically push an error code:
+; #DF (8), #TS (10), #NP (11), #SS (12), #GP (13), #PF (14), #AC (17), #CP (21), #VC (29), #SX (30).
+;
+; Generate an ISR stub for each interrupt vector (0-255).
+%macro ISR_STUB 1
+x86_isr_stub_ %+ %1:
+%if %1 != 8 && %1 != 10 && %1 != 11 && %1 != 12 && %1 != 13 && %1 != 14 && %1 != 17 && %1 != 21 && %1 != 29 && %1 != 30
+	push qword 0 ; fake error code for interrupts that don't have them, so every frame looks the same
+%endif
+
+	; Push the vector number so the common handler can identify the ISR.
+	push qword %1
+	jmp x86_isr_common
+%endmacro
+
+; This is what actually makes the stubs
+%assign v 0    ; inits NASM preprocessor variable v to zero
+%rep 256       ; repeat 256 times
+	ISR_STUB v ; Makes all the interrupts using the macro
+%assign v v+1  ; v++
+%endrep        ; end repeat
+
+section .data
+
+global x86_isr_stub_table
+
+x86_isr_stub_table:
+	; Export a lookup table of stub addresses, indexed by interrupt vector.
+	; for (int v = 0; v < 256; v++) x86_isr_stub_table[v] = x86_isr_stub_<v>
+%assign v 0
+%rep 256
+	dq x86_isr_stub_ %+ v
+%assign v v+1
+%endrep
+
+; GCC was complaining about this
+section .note.GNU-stack noalloc noexec nowrite progbits

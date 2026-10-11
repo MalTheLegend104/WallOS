@@ -14,7 +14,7 @@
 // ------------------------------------------------------------------------------------------------
 
 /* All interrupt handlers must be marked with both these attributes, and it's incredibly ugly to have them decorated normally. */
-#define WALLOS_INTERRUPT_HANDLER __attribute__((interrupt)) __attribute__((__target__("general-regs-only")))
+#define WALLOS_INTERRUPT_HANDLER __attribute__((__target__("general-regs-only")))
 
 /* Control flow */
 #define WALLOS_NORETURN __attribute__((noreturn)) //< Function doesnt return
@@ -65,14 +65,16 @@
 /* Preserves every register, mostly for helpers called from asm/interrupt paths */
 #define WALLOS_NO_CALLER_SAVED __attribute__((no_caller_saved_registers, __target__("general-regs-only")))
 
-// Not really a function attribute but still wanted it here.
-#define WALLOS_FALLTHROUGH __attribute__((fallthrough)) //< Intentional switch fallthrough
 
 // ------------------------------------------------------------------------------------------------
 // ------------------------------------------------------------------------------------------------
 // Misc Attributes
 // ------------------------------------------------------------------------------------------------
 // ------------------------------------------------------------------------------------------------
+// Not really an attribute, but wanted it here
+#define WALLOS_UNREACHABLE __builtin_unreachable //< Unreachable code
+
+#define WALLOS_FALLTHROUGH __attribute__((fallthrough)) //< Intentional switch fallthrough
 
 #define WALLOS_ALIGNED(n)        __attribute__((aligned(n)))        //< Align variable/type to n bytes
 #define WALLOS_ASSUME_ALIGNED(n) __attribute__((assume_aligned(n))) //< Function returns a pointer aligned to n

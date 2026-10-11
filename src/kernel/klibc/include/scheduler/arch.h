@@ -56,8 +56,24 @@ extern "C" {
 	void arch_send_kpreempt_ipi(uint32_t cpu_id);
 	void arch_yield(void);                          /* trap into sched_handle   */
 
-	/* Build a context that, when first resumed, calls sched_task_bootstrap(fn,arg). */
+	/**
+	 * Build a context that, when first resumed, calls sched_task_bootstrap(fn,arg).
+	 * Returns NULL if the stack is too small to hold the initial context.
+	 */
 	void* arch_task_context_init(void* stack_base, size_t stack_size, task_entry_t fn, void* arg);
+
+	/* Called from sched_handle, IRQs off, when the CPU is about to resume a different task than the one it interrupted.
+	 * `out` is NULL the first time a CPU enters its scheduling loop.
+	 * The port switches whatever is per-task but not part of the saved context (address space, kernel stack pointers for traps, etc.)
+	 */
+	void arch_task_switch(task_t* out, task_t* next);
+
+	/**
+	 * Drop the calling task into user mode at `entry` with the given user stack and address space.
+	 * Never returns.
+	 * The task keeps its kernel stack, which is used for every later trap from user mode.
+	 */
+	void arch_enter_user(uintptr_t entry, uintptr_t user_sp, uint64_t aspace) __attribute__((noreturn));
 
 	/**
 	 * Initializes all CPUs on a system, and starts the scheduler.

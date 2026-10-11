@@ -368,7 +368,10 @@ void* sched_handle(cpu_t* c, void* ctx, sched_reason_t reason) {
 
 	// We now have work, so stop advertising ourselves for donations
 	if (next != c->idle) sched_clear_targetable(c);
-	if (next != out) c->ctx_switches++;
+	if (next != out) {
+		c->ctx_switches++;
+		arch_task_switch(out, next); // per-task state that isn't in the saved context
+	}
 
 	return next->saved_ctx;
 }

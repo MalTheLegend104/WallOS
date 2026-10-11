@@ -638,7 +638,7 @@ struct acpi_irq_info {
 static struct acpi_irq_info acpi_irq_table[MAX_ACPI_IRQS];
 
 // This one is left here, not as a macro, just so it's obvious as to what it's doing.
-WALLOS_INTERRUPT_HANDLER void acpi_irq_wrapper_0(struct interrupt_frame* frame) {
+WALLOS_INTERRUPT_HANDLER void acpi_irq_wrapper_0(struct interrupt_regs* frame) {
 	(void) frame;
 	bool handled = false;
 
@@ -655,7 +655,7 @@ WALLOS_INTERRUPT_HANDLER void acpi_irq_wrapper_0(struct interrupt_frame* frame) 
 }
 
 #define DEFINE_ACPI_IRQ_WRAPPER(n) \
-	WALLOS_INTERRUPT_HANDLER void acpi_irq_wrapper_##n(struct interrupt_frame* frame) { \
+	WALLOS_INTERRUPT_HANDLER void acpi_irq_wrapper_##n(struct interrupt_regs* frame) { \
 		(void) frame; \
 		bool handled = false; \
 		struct acpi_irq_info* irq = &acpi_irq_table[n]; \
@@ -681,7 +681,7 @@ DEFINE_ACPI_IRQ_WRAPPER(13)
 DEFINE_ACPI_IRQ_WRAPPER(14)
 DEFINE_ACPI_IRQ_WRAPPER(15)
 
-static void (*acpi_irq_wrappers[])(struct interrupt_frame*) = {
+static void (*acpi_irq_wrappers[])(struct interrupt_regs*) = {
 	acpi_irq_wrapper_0,
 	acpi_irq_wrapper_1,
 	acpi_irq_wrapper_2,

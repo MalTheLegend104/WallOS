@@ -4,8 +4,14 @@
 #include <stdint.h>
 
 struct arch_cpu {
-	uint64_t lapic_freq_hz;        /* LAPIC timer Hz at divide-by-16 */
+	/* MUST stay first. sched_stubs.asm reads these through GS (cpu_t.arch sits at offset 16, see cpu.h) */
+	uint64_t syscall_kstack; /* gs:16 kernel stack top of the task running here (syscall entry + RSP0) */
+	uint64_t syscall_scratch; /* gs:24 user rsp put here by x86_syscall_entry */
+
+	uint64_t lapic_freq_hz; /* LAPIC timer Hz at divide-by-16 */
 	uint64_t lapic_ticks_per_ms;
+	volatile uint64_t* tss_rsp0; /* points at this CPU's TSS.rsp0 */
+	uint64_t cur_cr3; /* CR3 currently loaded here */
 };
 
 /* Vectors. 0xF0-0xFF are inside the remapped PIC range. */
@@ -48,6 +54,8 @@ static inline void arch_halt(void) {
 }
 
 void x86_sched_arch_early_init(uint64_t tsc_freq_hz); /* BSP, once, first */
+void x86_percpu_bind_tss(volatile uint64_t* rsp0_field); /* All, where its TSS.rsp0 lives */
+void x86_fpu_cpu_init(void); /* All, CR0/CR4/XCR0 */
 void x86_percpu_bsp_bind(uint32_t apic_id); /* BSP gets assigned logical 0 */
 uint32_t x86_percpu_ap_bind(uint32_t apic_id); /* AP, returns logical */
 void x86_sched_register_vectors(void); /* BSP, before APs */

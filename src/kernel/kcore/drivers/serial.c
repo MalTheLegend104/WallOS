@@ -374,9 +374,8 @@ static void process_serial_byte(char c) {
 // ---------------------------------------------------------------------------
 // IRQ 4 handler (COM1)
 // ---------------------------------------------------------------------------
-WALLOS_INTERRUPT_HANDLER
-void serial_irq_handler(struct interrupt_frame* frame) {
-	(void) frame; // we dont use it, but GCC requires it on __attribute__((interrupt))
+WALLOS_INTERRUPT_HANDLER void serial_irq_handler(struct interrupt_regs* frame) {
+	(void) frame;
 	uint16_t port = COM1;
 
 	// Drain the FIFO completely before returning.

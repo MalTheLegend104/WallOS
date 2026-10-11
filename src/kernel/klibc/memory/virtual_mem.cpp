@@ -73,16 +73,16 @@
  * Regardless, this entire summary is meant to make x86_64 paging less daunting, and hopefully make it easier to follow the code below.
  */
 
+#include <assert.h>
+#include <drivers/serial.h>
+#include <klibc/logger.h>
+#include <memory/physical_mem.hpp>
+#include <memory/virtual_mem.h>
+#include <panic.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <assert.h>
-#include <panic.h>
-#include <klibc/logger.h>
-#include <drivers/serial.h>
-#include <memory/virtual_mem.h>
-#include <memory/physical_mem.hpp>
 
 /* To start out, we're defining:
  * The top level page (pml4)
@@ -115,9 +115,9 @@ uint64_t kpde[TABLE_ENTRIES] __attribute__((aligned(4096)));
 uint64_t kpte[TABLE_ENTRIES] __attribute__((aligned(4096)));
 
 // pml4[1] - First table for general purpose memory. [512GB]
-uint64_t pdp[TABLE_ENTRIES]  __attribute__((aligned(4096)));
+uint64_t pdp[TABLE_ENTRIES] __attribute__((aligned(4096)));
 // First three entries in normal pdp [1GB each]
-uint64_t pde[TABLE_ENTRIES]  __attribute__((aligned(4096)));
+uint64_t pde[TABLE_ENTRIES] __attribute__((aligned(4096)));
 
 // The framebuffer will get put in the upper limit of 4gb memory
 uint64_t pde_3gb[TABLE_ENTRIES] __attribute__((aligned(4096)));
@@ -289,7 +289,7 @@ void Memory::mapFramebuffer(uintptr_t base_addr, size_t size, bool text_mode) {
 	// There's a very good chance we're already in a "reserved" region for MMIO
 	Memory::reserveMemory(base_addr, size);
 
-	// If it's VGA text mode, we don't need to do anything else, 
+	// If it's VGA text mode, we don't need to do anything else,
 	// it's already identity mapped (and the mapping will be ignored anyway).
 	if (text_mode) {
 		printf_serial("[VMM] Framebuffer is VGA Text Mode. No mapping required.\r\n");
@@ -337,7 +337,6 @@ void Memory::MapPreAllocMem(uintptr_t addr) {
 	pde_t[pde_index] |= BIT_SIZE | BIT_WRITE | BIT_PRESENT;
 
 	kernel_mapping_end = addr + PAGE_2MB_SIZE;
-
 }
 
 uintptr_t Memory::NewKernelPage() {
@@ -349,7 +348,7 @@ uintptr_t Memory::NewKernelPage() {
 
 uintptr_t Memory::MapSequentialKernelPages(size_t pages) {
 	// We need to find sequential entries in the kpdp that we can map to.
-	// Each entry in kpdp is a 1GB region of memory. 
+	// Each entry in kpdp is a 1GB region of memory.
 	// We start at kpdp[510], if that's full we go to kpdp[511]
 	// If both of those are full, we start at kpdp[1]->kpdp[509] (index 0 is identity mapped to index 510)
 	// If we somehow need more than 512GB of virtual mappings for the kernel we've messed up somewhere.
@@ -377,9 +376,9 @@ uintptr_t Memory::MapSequentialKernelPages(size_t pages) {
 		}
 		for (int j = 0; j < TABLE_ENTRIES; j++) {
 			if (TABLE_ENTRY_EMPTY(pde_t, j)) {
-					// For simplicity's sake, I am not allocating across tables.
-					// I wont allocate the end of pde[1] into the beginning of pde[2]
-					// This would complicate this code to be much more messy, which I dont want to deal with right now.
+				// For simplicity's sake, I am not allocating across tables.
+				// I wont allocate the end of pde[1] into the beginning of pde[2]
+				// This would complicate this code to be much more messy, which I dont want to deal with right now.
 				if (current_streak == 0) {
 					pde_base_index = j;
 				}
@@ -606,7 +605,7 @@ uintptr_t Memory::MapKernelLocation(uintptr_t addr, size_t len) {
 	// Calculate the start of the last 2MB page (by aligning the end address DOWN)
 	uintptr_t final_page_addr = (final_addr - 1) & ~0x1FFFFF;
 
-	// The number of pages is the distance between the first and last page, 
+	// The number of pages is the distance between the first and last page,
 	// divided by page size, plus 1 for the first page itself.
 	int page_count = ((final_page_addr - base_page_addr) / PAGE_2MB_SIZE) + 1;
 
@@ -648,7 +647,7 @@ uintptr_t Memory::MapKernelLocationWithFlags(uintptr_t addr, size_t len, uint64_
 	// Calculate the start of the last 2MB page (by aligning the end address DOWN)
 	uintptr_t final_page_addr = (final_addr - 1) & ~0x1FFFFF;
 
-	// The number of pages is the distance between the first and last page, 
+	// The number of pages is the distance between the first and last page,
 	// divided by page size, plus 1 for the first page itself.
 	int page_count = ((final_page_addr - base_page_addr) / PAGE_2MB_SIZE) + 1;
 
@@ -679,18 +678,79 @@ uintptr_t mapKernelLocationWithFlags(uintptr_t addr, size_t len, uint64_t flags)
 	return Memory::MapKernelLocationWithFlags(addr, len, flags);
 }
 
-#pragma GCC diagnostic ignored "-Wunused-parameter" 
+#pragma GCC diagnostic ignored "-Wunused-parameter"
 void Memory::FreeKernelPage(uintptr_t addr) {
-
 }
 
+/* User memory. This is just a hacky fix for now until I rewrite the VMM.
+ *
+ * initVirtualMemory() gave userspace pml4[1] -> pdp[0] -> pde[], all marked USR.
+ * That's one 1GB region of 2MB slots starting at USER_VIRTUAL_BASE.
+ * Pages are mapped in the one shared set of page tables (there's no per-process address space yet), so the kernel can touch them directly too.
+ */
+#define USER_VIRTUAL_BASE (1ULL << PML4_OFFSET)
+
+// Guards pde[]. Finding a free slot and claiming it has to be one step or two CPUs can get the same slot.
+static volatile int user_map_lock = 0;
+static void user_map_lock_acquire() {
+	while (__atomic_exchange_n(&user_map_lock, 1, __ATOMIC_ACQUIRE)) { __asm__ volatile("pause"); }
+}
+static void user_map_lock_release() { __atomic_store_n(&user_map_lock, 0, __ATOMIC_RELEASE); }
+
+/**
+ * @brief Allocates one 2MB page of user memory.
+ * The page is zeroed, user accessible, writable, and executable.
+ *
+ * @return uintptr_t Virtual address of the page (2MB aligned, in the user half), or 0 if there's no free slot or no physical memory.
+ */
 uintptr_t Memory::NewUserPage() {
+	user_map_lock_acquire();
+	for (int j = 0; j < TABLE_ENTRIES; j++) {
+		if (!TABLE_ENTRY_EMPTY(pde, j)) continue;
+
+		uintptr_t phys = Memory::PhysicalAlloc2MBSequential(1);
+		if (!phys) {
+			user_map_lock_release();
+			return 0;
+		}
+
+		set_page_frame(&(pde[j]), phys);
+		pde[j] |= BIT_SIZE | BIT_USR | BIT_WRITE | BIT_PRESENT;
+		user_map_lock_release();
+
+		// A not-present entry is never cached in the TLB, so nothing stale to flush on any CPU. This is just for this one.
+		uintptr_t virt = USER_VIRTUAL_BASE + (uintptr_t) j * PAGE_2MB_SIZE;
+		asm volatile("invlpg (%0)" ::"r"(virt) : "memory");
+
+		// The physical page could have been used before
+		memset((void*) virt, 0, PAGE_2MB_SIZE);
+		return virt;
+	}
+	user_map_lock_release();
 	return 0;
 }
 
-#pragma GCC diagnostic ignored "-Wunused-parameter" 
+/**
+ * @brief Unmaps a page from NewUserPage().
+ *
+ * I was lazy while writing this, it doesn't return the page to the physical allocator, and there's no TLB shootdown for other CPUs.
+ */
 void Memory::FreeUserPage(uintptr_t addr) {
+	if (addr < USER_VIRTUAL_BASE || addr >= USER_VIRTUAL_BASE + (uintptr_t) TABLE_ENTRIES * PAGE_2MB_SIZE) return;
 
+	size_t j = (addr - USER_VIRTUAL_BASE) / PAGE_2MB_SIZE;
+	user_map_lock_acquire();
+	pde[j] = 0;
+	user_map_lock_release();
+	__asm__ volatile("invlpg (%0)" ::"r"(addr & ~(uintptr_t) (PAGE_2MB_SIZE - 1)) : "memory");
+}
+
+uintptr_t newUserPage() {
+	return Memory::NewUserPage();
+}
+
+void freeUserPage(uintptr_t addr) {
+	Memory::FreeUserPage(addr);
 }
 
 uintptr_t virt_to_phys(uintptr_t addr) {
@@ -741,16 +801,15 @@ uintptr_t virt_to_phys(uintptr_t addr) {
 
 static void print_entry_flags(uint64_t entry) {
 	printf_serial("  flags: %s%s%s%s%s%s%s%s%s\r\n",
-		(entry & (1ULL << 63)) ? "NX " : "",
-		(entry & (1 << 8)) ? "GLOBAL " : "",
-		(entry & (1 << 7)) ? "PS " : "",
-		(entry & (1 << 6)) ? "DIRTY " : "",
-		(entry & (1 << 5)) ? "ACCESS " : "",
-		(entry & (1 << 2)) ? "USR " : "",
-		(entry & (1 << 1)) ? "RW " : "",
-		(entry & (1 << 0)) ? "PRESENT" : "NOT-PRESENT",
-		""
-	);
+				  (entry & (1ULL << 63)) ? "NX " : "",
+				  (entry & (1 << 8)) ? "GLOBAL " : "",
+				  (entry & (1 << 7)) ? "PS " : "",
+				  (entry & (1 << 6)) ? "DIRTY " : "",
+				  (entry & (1 << 5)) ? "ACCESS " : "",
+				  (entry & (1 << 2)) ? "USR " : "",
+				  (entry & (1 << 1)) ? "RW " : "",
+				  (entry & (1 << 0)) ? "PRESENT" : "NOT-PRESENT",
+				  "");
 }
 
 static void cmd_walk(uint64_t vaddr) {
@@ -768,16 +827,18 @@ static void cmd_walk(uint64_t vaddr) {
 	printf_serial("  indices: pml4[%d] pdp[%d] pde[%d] pte[%d] offset=0x%x\r\n", pml4_i, pdp_i, pde_i, pte_i, off);
 
 	/* Print one level's result to both outputs. Entry value is green if present, red if not. */
-#define WALK_PRINT_LEVEL(label, idx, entry)												\
-		do {																				\
-			bool _p = (entry) & 1;															\
-			printf_color(_p ? PRINT_COLOR_LIGHT_GREEN : PRINT_COLOR_LIGHT_RED,				\
-						PRINT_DEFAULT_BG,													\
-						"  " label "[%d] = 0x%llx%s\n",										\
-						(idx), (uint64_t)(entry), _p ? "" : "  !! NOT PRESENT");			\
-			printf_serial("  " label "[%d] = 0x%llx\r\n", (idx), (uint64_t)(entry));		\
-			print_entry_flags(entry);														\
-		} while (0)
+#define WALK_PRINT_LEVEL(label, idx, entry) \
+	do { \
+		bool _p = (entry) & 1; \
+		printf_color(_p ? PRINT_COLOR_LIGHT_GREEN : PRINT_COLOR_LIGHT_RED, \
+					 PRINT_DEFAULT_BG, \
+					 "  " label "[%d] = 0x%llx%s\n", \
+					 (idx), \
+					 (uint64_t) (entry), \
+					 _p ? "" : "  !! NOT PRESENT"); \
+		printf_serial("  " label "[%d] = 0x%llx\r\n", (idx), (uint64_t) (entry)); \
+		print_entry_flags(entry); \
+	} while (0)
 
 	/* PML4 */
 	uint64_t pml4_e = pml4[pml4_i];
@@ -789,7 +850,7 @@ static void cmd_walk(uint64_t vaddr) {
 
 	/* PDP */
 	uint64_t* pdp_t = (uint64_t*) getFrame(pml4_e);
-	uint64_t  pdp_e = pdp_t[pdp_i];
+	uint64_t pdp_e = pdp_t[pdp_i];
 	WALK_PRINT_LEVEL("PDP ", pdp_i, pdp_e);
 	if (!(pdp_e & 1)) {
 		printf_color(PRINT_COLOR_LIGHT_RED, PRINT_DEFAULT_BG, "  Walk terminated at PDP.\n");
@@ -806,7 +867,7 @@ static void cmd_walk(uint64_t vaddr) {
 
 	/* PDE */
 	uint64_t* pde_t = (uint64_t*) getFrame(pdp_e);
-	uint64_t  pde_e = pde_t[pde_i];
+	uint64_t pde_e = pde_t[pde_i];
 	WALK_PRINT_LEVEL("PDE ", pde_i, pde_e);
 	if (!(pde_e & 1)) {
 		printf_color(PRINT_COLOR_LIGHT_RED, PRINT_DEFAULT_BG, "  Walk terminated at PDE.\n");
@@ -816,15 +877,14 @@ static void cmd_walk(uint64_t vaddr) {
 	/* 2 MB page? */
 	if (pde_e & (1 << 7)) {
 		uint64_t phys = getFrame(pde_e) + (vaddr & 0x1FFFFF);
-		printf_color(PRINT_COLOR_YELLOW, PRINT_DEFAULT_BG,
-			"  2MB PAGE  ->  phys = 0x%llx\n", phys);
+		printf_color(PRINT_COLOR_YELLOW, PRINT_DEFAULT_BG, "  2MB PAGE  ->  phys = 0x%llx\n", phys);
 		printf_serial("  2MB PAGE  ->  phys = 0x%llx\r\n", phys);
 		return;
 	}
 
 	/* PTE */
 	uint64_t* pte_t = (uint64_t*) getFrame(pde_e);
-	uint64_t  pte_e = pte_t[pte_i];
+	uint64_t pte_e = pte_t[pte_i];
 	WALK_PRINT_LEVEL("PTE ", pte_i, pte_e);
 	if (!(pte_e & 1)) {
 		printf_color(PRINT_COLOR_LIGHT_RED, PRINT_DEFAULT_BG, "  Walk terminated at PTE.\n");
@@ -851,8 +911,10 @@ static void dump_table(const char* name, uint64_t* table, size_t entries) {
 	for (size_t i = 0; i < entries; i++) {
 		if (!(table[i] & 1)) continue;
 		present_count++;
-		printf_serial("  [%03zu] 0x%llx  frame=0x%llx%s%s%s%s\r\n",
-			i, table[i],
+		printf_serial(
+			"  [%03zu] 0x%llx  frame=0x%llx%s%s%s%s\r\n",
+			i,
+			table[i],
 			getFrame(table[i]),
 			(table[i] & (1 << 7)) ? " PS" : "",
 			(table[i] & (1 << 2)) ? " USR" : "",
@@ -884,11 +946,11 @@ static void cmd_info(void) {
 
 	/* One row: label in light-grey, value in white */
 #define INFO_ROW(label, fmt, ...) \
-    do { \
-        printf_color(PRINT_COLOR_LIGHT_GREY, PRINT_DEFAULT_BG, "  %-22s", label); \
-        printf_color(PRINT_COLOR_WHITE,      PRINT_DEFAULT_BG, fmt "\n", ##__VA_ARGS__); \
-        printf_serial("  %-22s" fmt "\r\n", label, ##__VA_ARGS__); \
-    } while(0)
+	do { \
+		printf_color(PRINT_COLOR_LIGHT_GREY, PRINT_DEFAULT_BG, "  %-22s", label); \
+		printf_color(PRINT_COLOR_WHITE, PRINT_DEFAULT_BG, fmt "\n", ##__VA_ARGS__); \
+		printf_serial("  %-22s" fmt "\r\n", label, ##__VA_ARGS__); \
+	} while (0)
 
 	INFO_ROW("KERNEL_VIRTUAL_BASE:", "0x%llx", (uint64_t) KERNEL_VIRTUAL_BASE);
 	INFO_ROW("kernel_mapping_end:", "0x%llx", (uint64_t) kernel_mapping_end);
@@ -955,15 +1017,13 @@ extern "C" int virt_mem_cli(int argc, char** argv) {
 		else if (strcmp(tbl, "pde") == 0) dump_table("pde", pde, TABLE_ENTRIES);
 		else if (strcmp(tbl, "pde3gb") == 0) dump_table("pde_3gb", pde_3gb, TABLE_ENTRIES);
 		else {
-			printf_color(PRINT_COLOR_LIGHT_RED, PRINT_DEFAULT_BG,
-				"[VMM] unknown table '%s'\n       try: pml4 kpdp kpde kpte pdp pde pde3gb\n", tbl);
+			printf_color(PRINT_COLOR_LIGHT_RED, PRINT_DEFAULT_BG, "[VMM] unknown table '%s'\n       try: pml4 kpdp kpde kpte pdp pde pde3gb\n", tbl);
 			printf_serial("[VMM] unknown table '%s'\r\n", tbl);
 			return 1;
 		}
 
 	} else {
-		printf_color(PRINT_COLOR_LIGHT_RED, PRINT_DEFAULT_BG,
-			"[VMM] unknown command '%s' — try 'help'\n", cmd);
+		printf_color(PRINT_COLOR_LIGHT_RED, PRINT_DEFAULT_BG, "[VMM] unknown command '%s' — try 'help'\n", cmd);
 		printf_serial("[VMM] unknown command '%s'\r\n", cmd);
 		return 1;
 	}
