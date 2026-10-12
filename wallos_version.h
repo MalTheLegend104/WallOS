@@ -10,7 +10,7 @@
  * Anything using this should *not* expect it to remain the same length.
  * The only expectation from this define is that it exist
  */
-#define WALLOS_VERSION_STR "WallOS v0.5.0"
+#define WALLOS_VERSION_STR "WallOS v0.6.0"
 
 /* Integer version of the current version of WallOS
  * This is what's expected to be used for compatibility checking.
@@ -22,7 +22,7 @@
  * Everything else is derived from these three.
  */
 #define WALLOS_VERSION_MAJOR_INT 0
-#define WALLOS_VERSION_MINOR_INT 5
+#define WALLOS_VERSION_MINOR_INT 6
 #define WALLOS_VERSION_PATCH_INT 0
 
 // ------------------------------------------------------------------------------------------------
@@ -96,3 +96,6 @@
 
 // Added the scheduler
 #define WALLOS_VERSION_SCHEDULER_0_5_0 WALLOS_VERSION_MAKE(0, 5, 0)
+
+// Added a basic user mode and syscalls
+#define WALLOS_VERSION_USERMODE_0_6_0 WALLOS_VERSION_MAKE(0, 6, 0)

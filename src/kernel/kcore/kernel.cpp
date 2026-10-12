@@ -29,8 +29,8 @@
 
 #include <system/cpuid.h>
 #include <system/idt.h>
-#include <system/timer.h>
 #include <system/poll.h>
+#include <system/timer.h>
 
 #include <terminal/wall_shell.h>
 #include <x86_64/timing.h>
@@ -449,9 +449,8 @@ void kernel_main(unsigned int magic, multiboot_info* mbt_info) {
 	// ------------------------------------------------------------------------------------------------
 	// Regular Interrupt Handlers
 	// ------------------------------------------------------------------------------------------------
-	Syscall::initialize();
+	syscall_init();
 	setup_serial_interrupts();
-
 
 	// ------------------------------------------------------------------------------------------------
 	// ACPI
