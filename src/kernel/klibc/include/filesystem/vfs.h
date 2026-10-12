@@ -1,9 +1,9 @@
 #ifndef WALLOS_VFS_H
 #define WALLOS_VFS_H
 
-#include <stdint.h>
 #include <stdbool.h>
 #include <stddef.h>
+#include <stdint.h>
 
 #include "wdm.h"
 
@@ -11,30 +11,30 @@
 extern "C" {
 #endif
 
-// ------------------------------------------------------------------------------------------------
-// ------------------------------------------------------------------------------------------------
-// Limits
-// ------------------------------------------------------------------------------------------------
-// ------------------------------------------------------------------------------------------------
+	// ------------------------------------------------------------------------------------------------
+	// ------------------------------------------------------------------------------------------------
+	// Limits
+	// ------------------------------------------------------------------------------------------------
+	// ------------------------------------------------------------------------------------------------
 
 #ifndef VFS_PATH_MAX
 /** Maximum length of an absolute path, including the null terminator. */
-#define VFS_PATH_MAX   256
+#define VFS_PATH_MAX 256
 #endif
 
 #ifndef VFS_FD_MAX
 /** Maximum number of simultaneously open file descriptors. */
-#define VFS_FD_MAX      64
+#define VFS_FD_MAX 64
 #endif
 
 #ifndef VFS_MOUNT_MAX
 /** Maximum number of simultaneously mounted filesystems. */
-#define VFS_MOUNT_MAX   32
+#define VFS_MOUNT_MAX 32
 #endif
 
 #ifndef VFS_FD_INVALID
 /** Sentinel value for an invalid or un-opened file descriptor. */
-#define VFS_FD_INVALID  (-1)
+#define VFS_FD_INVALID (-1)
 #endif
 
 	// ------------------------------------------------------------------------------------------------
@@ -51,34 +51,36 @@ extern "C" {
 
 	/** Error codes returned by all VFS functions. */
 	typedef enum {
-		VFS_OK = 0,                /**< Success                                      */
-		VFS_ERR_INVALID = -1,      /**< Invalid argument (NULL pointer, bad flags)   */
-		VFS_ERR_IO = -2,           /**< I/O error propagated from the WDM layer      */
-		VFS_ERR_NOENT = -3,        /**< No such file or directory                    */
-		VFS_ERR_EXIST = -4,        /**< File or directory already exists             */
-		VFS_ERR_NOTDIR = -5,       /**< A path component is not a directory          */
-		VFS_ERR_ISDIR = -6,        /**< Expected a file, got a directory             */
-		VFS_ERR_NOTEMPTY = -7,     /**< Directory is not empty                       */
-		VFS_ERR_NOMNT = -8,        /**< Path does not map to any mounted filesystem  */
-		VFS_ERR_BADF = -9,         /**< Bad file descriptor                          */
-		VFS_ERR_BUSY = -10,        /**< Resource busy (open fds, active mount point) */
-		VFS_ERR_NOSPACE = -11,     /**< No space left on device                      */
-		VFS_ERR_TOOLONG = -12,     /**< Path exceeds VFS_PATH_MAX                    */
-		VFS_ERR_OVERFLOW = -13,    /**< Read/write offset exceeds file bounds        */
-		VFS_ERR_MNTFULL = -14,     /**< Mount table is full (VFS_MOUNT_MAX reached)  */
-		VFS_ERR_FDFULL = -15,      /**< FD table is full (VFS_FD_MAX reached)        */
-		VFS_ERR_UNSUPPORTED = -16, /**< Operation not supported by this filesystem   */
+		VFS_OK = 0,                /**< Success                                                   */
+		VFS_ERR_INVALID = -1,      /**< Invalid argument (NULL pointer, bad flags)                */
+		VFS_ERR_IO = -2,           /**< I/O error propagated from the WDM layer                   */
+		VFS_ERR_NOENT = -3,        /**< No such file or directory                                 */
+		VFS_ERR_EXIST = -4,        /**< File or directory already exists                          */
+		VFS_ERR_NOTDIR = -5,       /**< A path component is not a directory                       */
+		VFS_ERR_ISDIR = -6,        /**< Expected a file, got a directory                          */
+		VFS_ERR_NOTEMPTY = -7,     /**< Directory is not empty                                    */
+		VFS_ERR_NOMNT = -8,        /**< Path does not map to any mounted filesystem               */
+		VFS_ERR_BADF = -9,         /**< Bad file descriptor                                       */
+		VFS_ERR_BUSY = -10,        /**< Resource busy (open fds, active mount point)              */
+		VFS_ERR_NOSPACE = -11,     /**< No space left on device                                   */
+		VFS_ERR_TOOLONG = -12,     /**< Path exceeds VFS_PATH_MAX                                 */
+		VFS_ERR_OVERFLOW = -13,    /**< Read/write offset exceeds file bounds                     */
+		VFS_ERR_MNTFULL = -14,     /**< Mount table is full (VFS_MOUNT_MAX reached)               */
+		VFS_ERR_FDFULL = -15,      /**< FD table is full (VFS_FD_MAX reached)                     */
+		VFS_ERR_UNSUPPORTED = -16, /**< Operation not supported by this filesystem                */
+		VFS_ERR_WOULDBLOCK = -17   /**< VFS_O_NONBLOCK was set, and the function would've blocked */
 	} VFS_Status;
 
 	/** Flags passed to VFS_Open. May be OR'd together. */
 	typedef enum {
-		VFS_O_RDONLY = 0x00, /**< Open for reading only                            */
-		VFS_O_WRONLY = 0x01, /**< Open for writing only                            */
-		VFS_O_RDWR = 0x02,   /**< Open for reading and writing                     */
-		VFS_O_CREAT = 0x04,  /**< Create file if it does not exist                 */
-		VFS_O_TRUNC = 0x08,  /**< Truncate file to zero length on open             */
-		VFS_O_EXCL = 0x10,   /**< With VFS_O_CREAT: fail if file already exists    */
-		VFS_O_APPEND = 0x20, /**< Writes always go to end of file                  */
+		VFS_O_RDONLY = 0x00,   /**< Open for reading only                                                  */
+		VFS_O_WRONLY = 0x01,   /**< Open for writing only                                                  */
+		VFS_O_RDWR = 0x02,     /**< Open for reading and writing                                           */
+		VFS_O_CREAT = 0x04,    /**< Create file if it does not exist                                       */
+		VFS_O_TRUNC = 0x08,    /**< Truncate file to zero length on open                                   */
+		VFS_O_EXCL = 0x10,     /**< With VFS_O_CREAT: fail if file already exists                          */
+		VFS_O_APPEND = 0x20,   /**< Writes always go to end of file                                        */
+		VFS_O_NONBLOCK = 0x40, /**< I/O on this fd returns VFS_ERR_WOULDBLOCK instead of blocking the task */
 	} VFS_OpenFlags;
 
 	typedef struct {
@@ -144,7 +146,7 @@ extern "C" {
 		 *
 		 * @return VFS_OK to allow the mount to proceed, or any VFS_ERR_* code to abort.
 		 */
-		VFS_Status(*on_mount)(WDM_DriveHandle drive, void* fs_ctx);
+		VFS_Status (*on_mount)(WDM_DriveHandle drive, void* fs_ctx);
 
 		/**
 		 * @brief Called by VFS_Unmount() after all open fds on this mount have been closed and the entry is removed from the table.
@@ -175,7 +177,7 @@ extern "C" {
 		 * @retval VFS_ERR_NOSPACE if there is no space to create the file.
 		 * @retval VFS_ERR_IO      on hardware failure.
 		 */
-		VFS_Status(*open_file)(void* fs_ctx, const char* path, VFS_OpenFlags flags, VFS_FD* out_fd);
+		VFS_Status (*open_file)(void* fs_ctx, const char* path, VFS_OpenFlags flags, VFS_FD* out_fd);
 
 		/**
 		 * @brief Close a file and release driver resources. **Required.**
@@ -190,7 +192,7 @@ extern "C" {
 		 * @retval VFS_ERR_BADF if @p fd is not a valid open descriptor.
 		 * @retval VFS_ERR_IO   on hardware failure during implicit flush.
 		 */
-		VFS_Status(*close_file)(void* fs_ctx, VFS_FD fd);
+		VFS_Status (*close_file)(void* fs_ctx, VFS_FD fd);
 
 		/**
 		 * @brief Read bytes from an open file. **Required.**
@@ -208,7 +210,7 @@ extern "C" {
 		 * @retval VFS_ERR_BADF if @p fd is not open for reading.
 		 * @retval VFS_ERR_IO   on hardware failure.
 		 */
-		VFS_Status(*read_file)(void* fs_ctx, VFS_FD fd, void* buf, size_t size, size_t* out_read);
+		VFS_Status (*read_file)(void* fs_ctx, VFS_FD fd, void* buf, size_t size, size_t* out_read);
 
 		/**
 		 * @brief Write bytes to an open file. **Required.**
@@ -228,7 +230,7 @@ extern "C" {
 		 * @retval VFS_ERR_NOSPACE if the device has no space remaining.
 		 * @retval VFS_ERR_IO     on hardware failure.
 		 */
-		VFS_Status(*write_file)(void* fs_ctx, VFS_FD fd, const void* buf, size_t size, size_t* out_written);
+		VFS_Status (*write_file)(void* fs_ctx, VFS_FD fd, const void* buf, size_t size, size_t* out_written);
 
 		/**
 		 * @brief Create a directory. **Required.**
@@ -246,7 +248,7 @@ extern "C" {
 		 * @retval VFS_ERR_NOSPACE if there is no space to create the entry.
 		 * @retval VFS_ERR_IO      on hardware failure.
 		 */
-		VFS_Status(*make_dir)(void* fs_ctx, const char* path);
+		VFS_Status (*make_dir)(void* fs_ctx, const char* path);
 
 		/**
 		 * @brief Remove an empty directory. **Required.**
@@ -260,7 +262,7 @@ extern "C" {
 		 * @retval VFS_ERR_NOTEMPTY if the directory contains entries.
 		 * @retval VFS_ERR_IO       on hardware failure.
 		 */
-		VFS_Status(*remove_dir)(void* fs_ctx, const char* path);
+		VFS_Status (*remove_dir)(void* fs_ctx, const char* path);
 
 		/**
 		 * @brief Open a directory for reading. **Required.**
@@ -268,7 +270,7 @@ extern "C" {
 		 * Similar to open_file, but for directories.
 		 * @param out_fd Receives the driver-level directory descriptor.
 		 */
-		VFS_Status(*open_dir)(void* fs_ctx, const char* path, VFS_FD* out_fd);
+		VFS_Status (*open_dir)(void* fs_ctx, const char* path, VFS_FD* out_fd);
 
 		/**
 		 * @brief Read the next entry from an open directory. **Required.**
@@ -279,7 +281,7 @@ extern "C" {
 		 * @return VFS_OK on success.
 		 * @retval VFS_OK with out_ent->name[0] == '\0' if end of directory reached.
 		 */
-		VFS_Status(*read_dir)(void* fs_ctx, VFS_FD fd, VFS_DirEnt* out_ent);
+		VFS_Status (*read_dir)(void* fs_ctx, VFS_FD fd, VFS_DirEnt* out_ent);
 	} VFS_FSOps;
 
 	// ------------------------------------------------------------------------------------------------
@@ -341,7 +343,7 @@ extern "C" {
 	 */
 	VFS_Status VFS_Mount(
 		const char* path,
-		WDM_DriveHandle  drive,
+		WDM_DriveHandle drive,
 		const VFS_FSOps* ops,
 		void* fs_ctx
 	);

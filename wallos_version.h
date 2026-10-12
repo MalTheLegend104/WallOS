@@ -10,7 +10,7 @@
  * Anything using this should *not* expect it to remain the same length.
  * The only expectation from this define is that it exist
  */
-#define WALLOS_VERSION_STR "WallOS v0.6.0"
+#define WALLOS_VERSION_STR "WallOS v0.6.1"
 
 /* Integer version of the current version of WallOS
  * This is what's expected to be used for compatibility checking.
@@ -23,7 +23,7 @@
  */
 #define WALLOS_VERSION_MAJOR_INT 0
 #define WALLOS_VERSION_MINOR_INT 6
-#define WALLOS_VERSION_PATCH_INT 0
+#define WALLOS_VERSION_PATCH_INT 1
 
 // ------------------------------------------------------------------------------------------------
 // ------------------------------------------------------------------------------------------------
