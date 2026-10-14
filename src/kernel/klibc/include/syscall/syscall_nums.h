@@ -10,6 +10,7 @@
 enum {
 	SYS_EXIT = 0,
 	SYS_YIELD = 1,
+	SYS_DEBUG_LOG = 2,
 
 };
 
