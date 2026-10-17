@@ -1,6 +1,7 @@
 #ifndef WALLOS_PCI_H
 #define WALLOS_PCI_H
 
+#include <stddef.h>
 #include <stdint.h>
 
 #ifdef __cplusplus
@@ -22,16 +23,16 @@ extern "C" {
 	// Config space reads
 	uint32_t pci_config_read32(uint8_t bus, uint8_t slot, uint8_t func, uint8_t offset);
 	uint16_t pci_config_read16(uint8_t bus, uint8_t slot, uint8_t func, uint8_t offset);
-	uint8_t  pci_config_read8(uint8_t bus, uint8_t slot, uint8_t func, uint8_t offset);
+	uint8_t pci_config_read8(uint8_t bus, uint8_t slot, uint8_t func, uint8_t offset);
 
 	// Config space writes
 	void pci_config_write32(uint8_t bus, uint8_t slot, uint8_t func, uint8_t offset, uint32_t value);
 	void pci_config_write16(uint8_t bus, uint8_t slot, uint8_t func, uint8_t offset, uint16_t value);
-	void pci_config_write8(uint8_t bus, uint8_t slot, uint8_t func, uint8_t offset, uint8_t  value);
+	void pci_config_write8(uint8_t bus, uint8_t slot, uint8_t func, uint8_t offset, uint8_t value);
 
 	// BAR helpers
 	uintptr_t pci_read_bar(uint8_t bus, uint8_t slot, uint8_t func, uint8_t bar_index, int* is_io_out, int* is_64_out);
-	size_t    pci_bar_size(uint8_t bus, uint8_t slot, uint8_t func, uint8_t bar_index);
+	size_t pci_bar_size(uint8_t bus, uint8_t slot, uint8_t func, uint8_t bar_index);
 
 	// Command register helpers
 	void pci_set_bus_master(uint8_t bus, uint8_t slot, uint8_t func, int enable);
@@ -43,9 +44,9 @@ extern "C" {
 	// ------------------------------------------------------------------------------------------------
 	// This was hand made from the pci_classes[] array in pci_dev.h
 	// If more classes are added in the future, this must be manually updated.
-	// 
+	//
 	// Guide to adding things:
-	// 
+	//
 	// ------------------------------------------------------------------------------------------------
 	// ------------------------------------------------------------------------------------------------
 
@@ -76,8 +77,8 @@ extern "C" {
 		{0x02, 0xff, "net_cont"},  // Generic
 		{0x02, 0x00, "eth"},       // Ethernet
 		{0x02, 0x01, "tokenring"},
-		{0x02, 0x02, "fddi"},      // FDDI 
-		{0x02, 0x03, "atm"},       // ATM 
+		{0x02, 0x02, "fddi"},      // FDDI
+		{0x02, 0x03, "atm"},       // ATM
 		{0x02, 0x04, "isdn"},
 		{0x02, 0x05, "worldfip"},
 		{0x02, 0x06, "picmg"},

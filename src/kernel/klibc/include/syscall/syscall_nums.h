@@ -1,6 +1,8 @@
 #ifndef WALLOS_SYSCALL_NUMS_H
 #define WALLOS_SYSCALL_NUMS_H
 
+#include <stdint.h>
+
 // This header will be exported as a user mode header, so syscall numbers can be seen in user mode.
 // Always explicitly set the syscall number.
 
@@ -10,7 +12,7 @@
 enum {
 	SYS_EXIT = 0,
 	SYS_YIELD = 1,
-
+	SYS_DEBUG_LOG = 2,
 };
 
 #endif // WALLOS_SYSCALL_NUMS_H
