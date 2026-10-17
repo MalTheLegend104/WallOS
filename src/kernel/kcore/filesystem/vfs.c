@@ -1,11 +1,12 @@
 /**
  * Wallos VFS (Virtual File System).
  * TODO: Spinlocks should be on table accesses
+ * TODO: VFS_O_NONBLOCK
  */
 #include <filesystem/vfs.h>
-#include <stdint.h>
 #include <stdbool.h>
 #include <stddef.h>
+#include <stdint.h>
 #include <string.h>
 
 // ------------------------------------------------------------------------------------------------
@@ -16,28 +17,28 @@
 
 /** One entry in the global mount table. */
 typedef struct {
-	bool             active;
-	char             path[VFS_PATH_MAX]; /**< Absolute mount point, e.g. "/mnt/usb" */
-	size_t           path_len;           /**< strlen(path), cached                  */
-	WDM_DriveHandle  drive;
+	bool active;
+	char path[VFS_PATH_MAX]; /**< Absolute mount point, e.g. "/mnt/usb" */
+	size_t path_len;           /**< strlen(path), cached                  */
+	WDM_DriveHandle drive;
 	const VFS_FSOps* ops;
 	void* fs_ctx;
-	uint32_t         mount_seq;          /**< Insertion order, for reverse unmount  */
-	uint32_t         open_count;         /**< Number of live FDs on this mount      */
+	uint32_t mount_seq;          /**< Insertion order, for reverse unmount  */
+	uint32_t open_count;         /**< Number of live FDs on this mount      */
 } VFS_MountEntry;
 
 /** One entry in the global FD table. */
 typedef struct {
-	bool           active;
+	bool active;
 	VFS_MountEntry* mount;   /**< Back-pointer to the owning mount      */
-	VFS_FD         drv_fd;   /**< The fd value returned by the driver   */
-	VFS_OpenFlags  flags;    /**< Flags this descriptor was opened with */
+	VFS_FD drv_fd;   /**< The fd value returned by the driver   */
+	VFS_OpenFlags flags;    /**< Flags this descriptor was opened with */
 } VFS_FDEntry;
 
 static VFS_MountEntry vfs_mounts[VFS_MOUNT_MAX];
-static VFS_FDEntry    vfs_fds[VFS_FD_MAX];
-static bool           wdm_initialized = false;
-static uint32_t       vfs_mount_seq = 0;
+static VFS_FDEntry vfs_fds[VFS_FD_MAX];
+static bool wdm_initialized = false;
+static uint32_t vfs_mount_seq = 0;
 
 // ------------------------------------------------------------------------------------------------
 // ------------------------------------------------------------------------------------------------
@@ -74,7 +75,7 @@ static VFS_Status validate_path(const char* path) {
  */
 static VFS_MountEntry* resolve_mount(const char* path) {
 	VFS_MountEntry* best = NULL;
-	size_t          best_len = 0;
+	size_t best_len = 0;
 
 	for (int i = 0; i < VFS_MOUNT_MAX; i++) {
 		VFS_MountEntry* m = &vfs_mounts[i];
@@ -160,7 +161,7 @@ static bool validate_fd(VFS_FD fd) {
  */
 static VFS_Status close_fd_entry(VFS_FDEntry* entry) {
 	VFS_MountEntry* m = entry->mount;
-	VFS_Status      st = m->ops->close_file(m->fs_ctx, entry->drv_fd);
+	VFS_Status st = m->ops->close_file(m->fs_ctx, entry->drv_fd);
 
 	m->open_count--;
 	memset(entry, 0, sizeof(*entry));
@@ -236,12 +237,7 @@ VFS_Status VFS_Mount(const char* path, WDM_DriveHandle drive, const VFS_FSOps* o
 
 	// All operations are required.
 	// Yes this is ugly. Yes this is the easiest way to do this.
-	if (!ops->on_mount || !ops->on_unmount ||
-		!ops->create_context || !ops->destroy_context ||
-		!ops->open_file || !ops->close_file ||
-		!ops->read_file || !ops->write_file ||
-		!ops->make_dir || !ops->remove_dir ||
-		!ops->open_dir || !ops->read_dir) {
+	if (!ops->on_mount || !ops->on_unmount || !ops->create_context || !ops->destroy_context || !ops->open_file || !ops->close_file || !ops->read_file || !ops->write_file || !ops->make_dir || !ops->remove_dir || !ops->open_dir || !ops->read_dir) {
 		return VFS_ERR_INVALID;
 	}
 
@@ -329,7 +325,7 @@ VFS_Status VFS_Open(const char* path, VFS_OpenFlags flags, VFS_FD* out_fd) {
 
 	if (vfd == VFS_FD_INVALID) return VFS_ERR_FDFULL;
 
-	VFS_FD     drv_fd = VFS_FD_INVALID;
+	VFS_FD drv_fd = VFS_FD_INVALID;
 	VFS_Status dst = m->ops->open_file(m->fs_ctx, driver_path(m, path), flags, &drv_fd);
 
 	if (dst != VFS_OK) {
@@ -442,7 +438,7 @@ VFS_Status VFS_Rmdir(const char* path) {
 
 	VFS_MountEntry* m = resolve_mount(path);
 
-	if (!m)	return VFS_ERR_NOMNT;
+	if (!m) return VFS_ERR_NOMNT;
 
 	return m->ops->remove_dir(m->fs_ctx, driver_path(m, path));
 }

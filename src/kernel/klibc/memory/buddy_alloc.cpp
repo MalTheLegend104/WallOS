@@ -1,11 +1,11 @@
+#include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
-#include <stdbool.h>
 
-#include <panic.h>
 #include <drivers/serial.h>
 #include <klibc/multiboot.h>
 #include <memory/virtual_mem.h>
+#include <panic.h>
 
 #include <memory/physical_mem.hpp>
 
@@ -14,15 +14,18 @@ extern "C" {
 	extern uint64_t kernel_end;
 }
 
+// The 2MB helpers below assume an order-9 block exists.
+static_assert(MAX_ORDER >= 9, "MAX_ORDER must be at least 9 (2MB) for the 2MB allocation helpers");
+
 uint64_t buddy_phys_kernel_end;
 
 typedef struct {
 	// These are commented so I keep track of array size without doing mental math every time I look at it.
-	// They're self explanitory but still explained bc why not.
+	// They're self explanatory but still explained bc why not.
 	uint32_t next;    // 4: Index of next free block in this order list
 	uint32_t prev;    // 4: Index of previous free block
-	uint8_t  order;   // 1: Order of the block
-	bool     is_free; // 1: Is block free
+	uint8_t order;    // 1: Order of the block
+	bool is_free;     // 1: Is block free
 	uint16_t flags;   // 2: Flags to keep track of information about the memory block
 } Page;
 
@@ -86,6 +89,36 @@ void remove_from_list(uint8_t order, uint32_t index) {
 	}
 }
 
+/**
+ * @brief Shrink a block that has already been removed from its free list
+ * @param block_idx Index of the block (already unlinked)
+ * @param from_order The order the block currently has
+ * @param to_order The order we want to end up with
+ *
+ * The right half of each split goes back on a free list, the left half keeps being split.
+ * The resulting block is marked as allocated with order `to_order`.
+ */
+static void split_block(uint32_t block_idx, uint8_t from_order, uint8_t to_order) {
+	while (from_order > to_order) {
+		from_order--;
+
+		// The right half becomes the new buddy
+		uint32_t buddy_idx = block_idx + (1u << from_order);
+
+		mem_map[buddy_idx].order = from_order;
+		mem_map[buddy_idx].is_free = true;
+
+		// The LEFT block is effectively shortened. It isn't listed anywhere because we're still splitting it.
+		mem_map[block_idx].order = from_order;
+
+		// Push only the RIGHT half (the buddy) to the free list
+		push_to_list(from_order, buddy_idx);
+	}
+
+	mem_map[block_idx].order = to_order;
+	mem_map[block_idx].is_free = false;
+}
+
 uint32_t buddy_alloc(uint8_t order) {
 	int found_order = order;
 	while (found_order <= MAX_ORDER && free_lists[found_order] == 0xFFFFFFFF) {
@@ -98,31 +131,14 @@ uint32_t buddy_alloc(uint8_t order) {
 	uint32_t block_idx = free_lists[found_order];
 	remove_from_list(found_order, block_idx);
 
-	// SPLIT logic
-	while (found_order > order) {
-		found_order--;
-
-		// The right half becomes the new buddy
-		uint32_t buddy_idx = block_idx + (1 << found_order);
-
-		// SET METADATA for the buddy
-		mem_map[buddy_idx].order = found_order;
-		mem_map[buddy_idx].is_free = true;
-
-		// The LEFT block (block_idx) is effectively shortened.
-		// We don't add it to a list yet because we are still splitting it.
-		mem_map[block_idx].order = found_order;
-
-		// Push only the RIGHT half (the buddy) to the free list
-		push_to_list(found_order, buddy_idx);
-	}
-
-	// Clean up before returning
-	mem_map[block_idx].order = order;  // ensure the order is set regardless of the loop above
-	mem_map[block_idx].is_free = false;
+	split_block(block_idx, found_order, order);
 	return block_idx;
 }
 
+/**
+ * @brief Like buddy_alloc(), but the whole block must sit below 4GiB.
+ * Returns a mem_map index, or 0xFFFFFFFF if no block below 4GiB is available.
+ */
 uint32_t buddy_alloc_32(uint8_t order) {
 	for (uint8_t found_order = order; found_order <= MAX_ORDER; found_order++) {
 		uint32_t current_idx = free_lists[found_order];
@@ -135,22 +151,8 @@ uint32_t buddy_alloc_32(uint8_t order) {
 			if (phys_addr + block_size <= 0x100000000ULL) {
 				// Found one! Remove it from the middle of the list
 				remove_from_list(found_order, current_idx);
-
-				// Re-use your existing split logic
-				uint32_t block_idx = current_idx;
-				uint8_t temp_order = found_order;
-				while (temp_order > order) {
-					temp_order--;
-					uint32_t buddy_idx = block_idx + (1 << temp_order);
-					mem_map[buddy_idx].order = temp_order;
-					mem_map[buddy_idx].is_free = true;
-					mem_map[block_idx].order = temp_order;
-					push_to_list(temp_order, buddy_idx);
-				}
-
-				mem_map[block_idx].order = order;
-				mem_map[block_idx].is_free = false;
-				return block_idx;
+				split_block(current_idx, found_order, order);
+				return current_idx;
 			}
 			// Move to the next block in the same order list
 			current_idx = mem_map[current_idx].next;
@@ -195,8 +197,7 @@ void buddy_free(uint32_t index, uint8_t order) {
 
 		// Is the buddy mergeable?
 		// It must be FREE and it must be the EXACT SAME order.
-		// If it's a different order, it's either part of a larger block 
-		// or split into smaller blocks.
+		// If it's a different order, it's either part of a larger block or split into smaller blocks.
 		if (!buddy_page->is_free || buddy_page->order != curr_order) {
 			break;
 		}
@@ -228,7 +229,7 @@ void buddy_free(uint32_t index, uint8_t order) {
 }
 
 uint8_t calculate_max_fit_order(uint32_t base_idx, uint32_t available_pages) {
-	// Find the alignment of the base index. 
+	// Find the alignment of the base index.
 	// If base_idx is 0x4, it's aligned to Order 2 (2^2 = 4).
 	// We use __builtin_ctz (Count Trailing Zeros) to find the first '1' bit.
 	uint8_t alignment_order = (base_idx == 0) ? MAX_ORDER : (uint8_t) __builtin_ctz(base_idx);
@@ -240,16 +241,19 @@ uint8_t calculate_max_fit_order(uint32_t base_idx, uint32_t available_pages) {
 	// The order we use is the minimum of these three:
 	uint8_t order = alignment_order;
 	if (space_order < order) order = space_order;
-	if (order > MAX_ORDER)   order = MAX_ORDER;
+	if (order > MAX_ORDER) order = MAX_ORDER;
 
 	return order;
 }
 
-void init_region(uintptr_t start, uintptr_t end) {
-	uint32_t start_idx = addr_to_idx(ALIGN_UP(start, PAGE_SIZE));
-	uint32_t end_idx = addr_to_idx(ALIGN_DOWN(end, PAGE_SIZE));
-
-	for (uint32_t i = start_idx; i < end_idx; ) {
+/**
+ * @brief Put the pages [start_idx, end_idx) on the free lists
+ *
+ * Pushes the largest self-aligned block that fits at each position.
+ * The pages must not already be on a free list.
+ */
+static void add_free_pages(uint32_t start_idx, uint32_t end_idx) {
+	for (uint32_t i = start_idx; i < end_idx;) {
 		// Find the largest power-of-two block we can fit here
 		// that is also aligned to its own size.
 		uint8_t order = calculate_max_fit_order(i, end_idx - i);
@@ -258,7 +262,72 @@ void init_region(uintptr_t start, uintptr_t end) {
 		mem_map[i].order = order;
 		push_to_list(order, i);
 
-		i += (1 << order); // Move to the next block
+		i += (1u << order); // Move to the next block
+	}
+}
+
+void init_region(uintptr_t start, uintptr_t end) {
+	uint32_t start_idx = addr_to_idx(ALIGN_UP(start, PAGE_SIZE));
+	uint32_t end_idx = addr_to_idx(ALIGN_DOWN(end, PAGE_SIZE));
+
+	add_free_pages(start_idx, end_idx);
+}
+
+/**
+ * @brief Find the free block (if any) that contains page @idx
+ *
+ * @param idx Page index to look for
+ * @param head_out Receives the index of the first page of the containing block
+ * @param order_out Receives the order of the containing block
+ *
+ * Only the first page of a free block has valid is_free/order data, so we check, for every order, the one block of that order that could contain idx.
+ */
+static bool find_free_block(uint32_t idx, uint32_t* head_out, uint8_t* order_out) {
+	for (uint8_t order = 0; order <= MAX_ORDER; order++) {
+		uint32_t head = idx & ~((1u << order) - 1);
+
+		if (mem_map[head].is_free && mem_map[head].order == order) {
+			*head_out = head;
+			*order_out = order;
+			return true;
+		}
+	}
+	return false;
+}
+
+/**
+ * @brief Remove the pages [start_idx, end_idx) from the free lists
+ *
+ * Free blocks that fully sit inside the range are simply unlinked.
+ * Free blocks that only partially overlap the range are unlinked, and the parts of them outside the range are
+ * put back on the free lists, so we neither leave reserved memory allocatable nor leak the neighboring pages.
+ */
+static void carve_range(uint32_t start_idx, uint32_t end_idx) {
+	uint32_t i = start_idx;
+
+	while (i < end_idx) {
+		uint32_t head;
+		uint8_t order;
+
+		if (!find_free_block(i, &head, &order)) {
+			i++;
+			continue;
+		}
+
+		uint32_t block_end = head + (1u << order);
+
+		remove_from_list(order, head);
+		mem_map[head].is_free = false;
+
+		// Give back whatever part of the block is outside of the range
+		if (head < start_idx) {
+			add_free_pages(head, start_idx);
+		}
+		if (block_end > end_idx) {
+			add_free_pages(end_idx, block_end);
+		}
+
+		i = block_end;
 	}
 }
 
@@ -305,21 +374,14 @@ void mark_and_allocate_region(uintptr_t start, uintptr_t end, uint16_t flags) {
 		end_idx = total_system_pages;
 	}
 
-	printf_serial("[PMM] Reserving region: 0x%llx - 0x%llx (flags: 0x%x)\r\n",
-		idx_to_addr(start_idx), idx_to_addr(end_idx), flags);
+	printf_serial("[PMM] Reserving region: 0x%llx - 0x%llx (flags: 0x%x)\r\n", idx_to_addr(start_idx), idx_to_addr(end_idx), flags);
 
-	// Remove all pages in this range from free lists
+	// Remove all pages in this range from the free lists (splitting blocks that straddle the edges)
+	carve_range(start_idx, end_idx);
+
+	// Mark with appropriate flags
 	for (uint32_t i = start_idx; i < end_idx; i++) {
-		Page* page = &mem_map[i];
-
-		// If the page is currently free, remove it from its list
-		if (page->is_free) {
-			remove_from_list(page->order, i);
-			page->is_free = false;
-		}
-
-		// Mark with appropriate flags
-		page->flags = flags;
+		mem_map[i].flags = flags;
 	}
 }
 
@@ -336,9 +398,10 @@ uintptr_t scan_memory_map(struct multiboot_tag_mmap* mmap_tag) {
 		uintptr_t current_max = mmap->addr + mmap->len;
 		if (current_max > max_addr) {
 			max_addr = current_max;
-			if (mmap->type != MULTIBOOT_MEMORY_RESERVED && mmap->type != MULTIBOOT_MEMORY_BADRAM) {
-				max_usable_addr = current_max;
-			}
+		}
+		// Tracked independently of max_addr so this really is the highest usable address
+		if (mmap->type != MULTIBOOT_MEMORY_RESERVED && mmap->type != MULTIBOOT_MEMORY_BADRAM && current_max > max_usable_addr) {
+			max_usable_addr = current_max;
 		}
 		printf("[PMM] Base 0x%llx, Type %d, Length: 0x%llx\n", mmap->addr, mmap->type, mmap->len);
 	}
@@ -378,8 +441,7 @@ void Memory::reserveMemory(uintptr_t base_addr, size_t size) {
 
 	// Find insertion index
 	size_t insert = 0;
-	while (insert < reservedChunks &&
-		reservedMemory[insert].addr < base_addr) {
+	while (insert < reservedChunks && reservedMemory[insert].addr < base_addr) {
 		insert++;
 	}
 
@@ -398,10 +460,13 @@ void Memory::reserveMemory(uintptr_t base_addr, size_t size) {
 Page* find_free_region_internal(struct multiboot_tag_mmap* mmap_tag, size_t size) {
 	uintptr_t region = 0;
 
+	// The mem_map gets mapped in whole 2MB pages, so we need the whole mapping to be free, not just the bytes we use.
+	size = ALIGN_UP(size, PAGE_2MB_SIZE);
+
 	struct multiboot_mmap_entry* mmap;
 	for (mmap = mmap_tag->entries;
-		(size_t) mmap < (size_t) mmap_tag + mmap_tag->size;
-		mmap = (struct multiboot_mmap_entry*) ((size_t) mmap + mmap_tag->entry_size)) {
+		 (size_t) mmap < (size_t) mmap_tag + mmap_tag->size;
+		 mmap = (struct multiboot_mmap_entry*) ((size_t) mmap + mmap_tag->entry_size)) {
 
 		if (mmap->type != MULTIBOOT_MEMORY_AVAILABLE)
 			continue;
@@ -440,8 +505,7 @@ Page* find_free_region_internal(struct multiboot_tag_mmap* mmap_tag, size_t size
 				uintptr_t gap_end = rs;
 
 				// Align gap start to 2MB
-				uintptr_t aligned = (gap_start + PAGE_2MB_SIZE - 1) &
-					~(PAGE_2MB_SIZE - 1);
+				uintptr_t aligned = (gap_start + PAGE_2MB_SIZE - 1) & ~(PAGE_2MB_SIZE - 1);
 
 				if (aligned + size <= gap_end) {
 					region = aligned;
@@ -456,8 +520,7 @@ Page* find_free_region_internal(struct multiboot_tag_mmap* mmap_tag, size_t size
 
 		// Tail gap after last reserved region
 		if (cursor < region_end) {
-			uintptr_t aligned = (cursor + PAGE_2MB_SIZE - 1) &
-				~(PAGE_2MB_SIZE - 1);
+			uintptr_t aligned = (cursor + PAGE_2MB_SIZE - 1) & ~(PAGE_2MB_SIZE - 1);
 
 			if (aligned + size <= region_end) {
 				region = aligned;
@@ -474,7 +537,7 @@ found:
 
 	mem_map_phys = region;
 
-	size_t pages = (size + PAGE_2MB_SIZE - 1) / PAGE_2MB_SIZE;
+	size_t pages = size / PAGE_2MB_SIZE;
 	uintptr_t virt = Memory::MapSequentialKernelPages(pages, region);
 
 	printf("[PMM] Found mem_map region:\n");
@@ -511,8 +574,8 @@ void pmm_init() {
 	printf_serial("[PMM] Max address for buddy alloc: 0x%llx\r\n", max_addr);
 	printf("[PMM] Max address for buddy alloc: 0x%llx\n", max_addr);
 
-	printf_serial("[PMM] Page count for buddy alloc: 0x%llx\r\n", max_addr);
-	printf("[PMM] Page count for buddy alloc: 0x%llx\n", max_addr);
+	printf_serial("[PMM] Page count for buddy alloc: 0x%llx\r\n", (unsigned long long) total_system_pages);
+	printf("[PMM] Page count for buddy alloc: 0x%llx\n", (unsigned long long) total_system_pages);
 
 	if (max_addr == 0) panic_s("Failed to parse multiboot memory map.");
 
@@ -596,8 +659,7 @@ void pmm_init() {
 			mem_info.reserved += (end - start);
 
 		// Verbose logging for each map entry
-		printf_serial("[PMM] MMap Entry #%d: Base: 0x%llx, End: 0x%llx, Type: %s (%d)\r\n",
-			entry_count++, start, end, type_str, mmap->type);
+		printf_serial("[PMM] MMap Entry #%d: Base: 0x%llx, End: 0x%llx, Type: %s (%d)\r\n", entry_count++, start, end, type_str, mmap->type);
 
 		// CRITICAL CHECK: Ensure we don't try to initialize memory outside our mem_map range
 		if (addr_to_idx(start) >= total_system_pages) {
@@ -621,7 +683,9 @@ void pmm_init() {
 
 	// Mark special regions (kernel, mem_map itself, etc.)
 	mark_and_allocate_region((uintptr_t) (&kernel_start), buddy_phys_kernel_end, PMM_PAGE_KERNEL);
-	mark_and_allocate_region(mem_map_phys, mem_map_phys + mem_map_size, PMM_PAGE_KERNEL);
+
+	// The mem_map is mapped in whole 2MB pages, so reserve the entire mapping (not just mem_map_size bytes).
+	mark_and_allocate_region(mem_map_phys, mem_map_phys + ALIGN_UP(mem_map_size, PAGE_2MB_SIZE), PMM_PAGE_KERNEL);
 
 	for (size_t i = 0; i < reservedChunks; i++) {
 		mark_and_allocate_region(reservedMemory[i].addr, reservedMemory[i].addr + reservedMemory[i].size, PMM_PAGE_KERNEL);
@@ -666,33 +730,41 @@ void Memory::PhysicalMemInit() {
 	pmm_init();
 }
 
-uintptr_t Memory::PhysicalAlloc2MBSequential(size_t page_count) {
-	// printf_serial("\r\n[PMM] PhysicalAlloc2MBSequential ENTER\r\n");
-	// printf_serial("[PMM] requested page_count=%llu\r\n", page_count);
+#define INVALID_ORDER 0xFF
 
+/**
+ * @brief Buddy order needed to hold @page_count contiguous 2MB pages
+ *
+ * The block size has to be a power of two, so the count is rounded up (3 pages -> 4 pages' worth).
+ * Returns INVALID_ORDER for zero or for anything larger than a MAX_ORDER block.
+ * Alloc and free MUST both go through this so they always agree on the order.
+ */
+static uint8_t order_for_2mb_pages(size_t page_count) {
+	if (page_count == 0 || page_count > (1u << (MAX_ORDER - 9))) {
+		return INVALID_ORDER;
+	}
+
+	// Each order-9 block is 512 pages (2MB)
+	size_t total_pages = page_count << 9;
+
+	uint8_t order = 0;
+	while ((1U << order) < total_pages) {
+		order++;
+	}
+	return order;
+}
+
+uintptr_t Memory::PhysicalAlloc2MBSequential(size_t page_count) {
 	if (page_count == 0) {
 		return 0;
 	}
 
-	// Calculate the order needed for page_count * 2MB
-	// Each order-9 block is 512 pages (2MB)
-	// We need an order that fits page_count * 512 pages
+	uint8_t needed_order = order_for_2mb_pages(page_count);
 
-	size_t total_pages = page_count << 9; // page_count * 512
-
-	// Find the smallest order that fits
-	uint8_t needed_order = 0;
-	while ((1U << needed_order) < total_pages) {
-		needed_order++;
-	}
-
-	if (needed_order > MAX_ORDER) {
-		printf_serial("[PMM] ERROR: requested size too large (order %u > MAX %u)\r\n",
-			needed_order, MAX_ORDER);
+	if (needed_order == INVALID_ORDER) {
+		printf_serial("[PMM] ERROR: requested size too large (%llu x 2MB, max order is %u)\r\n", (unsigned long long) page_count, MAX_ORDER);
 		return 0;
 	}
-
-	// printf_serial("[PMM] Allocating order-%u block (contains %llu x 2MB)\r\n", needed_order, page_count);
 
 	uint32_t idx = buddy_alloc(needed_order);
 
@@ -701,53 +773,22 @@ uintptr_t Memory::PhysicalAlloc2MBSequential(size_t page_count) {
 		return 0;
 	}
 
-	uintptr_t result = idx_to_addr(idx);
-
-	// printf_serial("[PMM] SUCCESS addr=0x%llx\r\n", result);
-
-	return result;
+	return idx_to_addr(idx);
 }
 
-uint32_t phys_alloc_32bit(uint8_t order) {
-	for (uint8_t found_order = order; found_order <= MAX_ORDER; found_order++) {
-		uint32_t current_idx = free_lists[found_order];
-
-		while (current_idx != 0xFFFFFFFF) {
-			uintptr_t phys_addr = idx_to_addr(current_idx);
-			uintptr_t block_size = (1ULL << found_order) * PAGE_SIZE;
-
-			// Check if the block is entirely below 4GB (0xFFFFFFFF)
-			if (phys_addr + block_size <= 0x100000000ULL) {
-				// Found one
-				// Remove it from the middle of the list
-				remove_from_list(found_order, current_idx);
-
-				// Reuse existing split logic
-				uint32_t block_idx = current_idx;
-				uint8_t temp_order = found_order;
-				while (temp_order > order) {
-					temp_order--;
-					uint32_t buddy_idx = block_idx + (1 << temp_order);
-					mem_map[buddy_idx].order = temp_order;
-					mem_map[buddy_idx].is_free = true;
-					mem_map[block_idx].order = temp_order;
-					push_to_list(temp_order, buddy_idx);
-				}
-
-				mem_map[block_idx].order = order;
-				mem_map[block_idx].is_free = false;
-				return block_idx;
-			}
-			// Move to the next block in the same order list
-			current_idx = mem_map[current_idx].next;
-		}
-	}
-
-	return 0xFFFFFFFF; // No 32-bit blocks available
+uintptr_t Memory::PhysicalAlloc2MB() {
+	return PhysicalAlloc2MBSequential(1);
 }
 
 uintptr_t Memory::PhysicalAlloc2MB_32bit() {
-	return (uintptr_t) phys_alloc_32bit(9);
+	uint32_t idx = buddy_alloc_32(9);
+
+	if (idx == 0xFFFFFFFF) {
+		printf_serial("[PMM] ERROR: no 2MB block available below 4GiB\r\n");
+		return 0;
+	}
+
+	return idx_to_addr(idx);
 }
 
 uintptr_t Memory::PhysicalMarkAllocated(uintptr_t addr, size_t len) {
@@ -756,25 +797,32 @@ uintptr_t Memory::PhysicalMarkAllocated(uintptr_t addr, size_t len) {
 
 	if (end_idx > total_system_pages) end_idx = total_system_pages;
 
+	// Pull the range out of the free lists (splitting blocks that straddle the edges)
+	carve_range(start_idx, end_idx);
+
 	for (uint32_t i = start_idx; i < end_idx; i++) {
-		Page* p = &mem_map[i];
-
-		if (p->is_free) {
-			remove_from_list(p->order, i);
-			p->is_free = false;
-		}
-
-		p->flags |= PMM_PAGE_RESERVED;
+		mem_map[i].flags |= PMM_PAGE_RESERVED;
 	}
 
 	return idx_to_addr(start_idx);
 }
 
-void Memory::PhysicalDeAlloc2MB(uintptr_t phys_addr) {
+void Memory::PhysicalDeAllocSequential(uintptr_t phys_addr, size_t page_count) {
+	uint8_t order = order_for_2mb_pages(page_count);
+
+	if (order == INVALID_ORDER)
+		panic_s("PhysicalDeAllocSequential: invalid page count");
+
+	// A block of order N is always aligned to its own size
+	if ((phys_addr & (((uintptr_t) PAGE_SIZE << order) - 1)) != 0) panic_s("PhysicalDeAllocSequential: misaligned address");
+
 	uint32_t idx = addr_to_idx(phys_addr);
 
-	if (idx >= total_system_pages)
-		panic_s("PhysicalDeAlloc2MB: invalid address");
+	if (idx >= total_system_pages) panic_s("PhysicalDeAllocSequential: invalid address");
 
-	buddy_free(idx, 9);
+	buddy_free(idx, order);
+}
+
+void Memory::PhysicalDeAlloc2MB(uintptr_t phys_addr) {
+	PhysicalDeAllocSequential(phys_addr, 1);
 }
