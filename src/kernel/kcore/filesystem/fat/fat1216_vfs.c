@@ -173,6 +173,33 @@ static VFS_Status fat1216_vfs_write_file(void* fs_ctx, VFS_FD fd, const void* bu
 	return VFS_ERR_UNSUPPORTED;
 }
 
+static VFS_Status fat1216_vfs_seek_file(void* fs_ctx, VFS_FD fd, int64_t offset, VFS_Whence whence, uint64_t* out_pos) {
+	if (!fs_ctx || !out_pos) return VFS_ERR_INVALID;
+	/* Directory fds live in [VFS_FAT1216_OPEN_MAX, 2*VFS_FAT1216_OPEN_MAX) and are not seekable. */
+	if (fd < 0 || fd >= VFS_FAT1216_OPEN_MAX) return VFS_ERR_BADF;
+	vfs_fat1216_ctx_t* ctx = (vfs_fat1216_ctx_t*) fs_ctx;
+	vfs_fat1216_file_t* f = &ctx->files[fd];
+	if (!f->used) return VFS_ERR_BADF;
+
+	int64_t base;
+	switch (whence) {
+		case VFS_SEEK_SET: base = 0; break;
+		case VFS_SEEK_CUR: base = (int64_t) f->pos; break;
+		case VFS_SEEK_END: base = (int64_t) f->size; break;
+		default:           return VFS_ERR_INVALID;
+	}
+
+	/* Check both bounds before adding so the int64 math can never overflow.
+	 * FAT file offsets are 32-bit, so anything past UINT32_MAX is unrepresentable.
+	 */
+	if (offset < -base) return VFS_ERR_INVALID;
+	if (offset > (int64_t) UINT32_MAX - base) return VFS_ERR_OVERFLOW;
+
+	f->pos = (uint32_t) (base + offset);
+	*out_pos = f->pos;
+	return VFS_OK;
+}
+
 static VFS_Status fat1216_vfs_make_dir(void* fs_ctx, const char* path) {
 	(void) path;
 	if (!fs_ctx) return VFS_ERR_INVALID;
@@ -271,17 +298,18 @@ bool vfs_fat1216_probe(WDM_DriveHandle drive) {
 }
 
 const VFS_FSOps vfs_fat1216_ops = {
-    .probe = vfs_fat1216_probe,
-    .create_context = vfs_fat1216_alloc,
-    .destroy_context = vfs_fat1216_free,
-    .on_mount = fat1216_vfs_on_mount,
-    .on_unmount = fat1216_vfs_on_unmount,
-    .open_file = fat1216_vfs_open_file,
-    .close_file = fat1216_vfs_close_file,
-    .read_file = fat1216_vfs_read_file,
-    .write_file = fat1216_vfs_write_file,
-    .make_dir = fat1216_vfs_make_dir,
-    .remove_dir = fat1216_vfs_remove_dir,
-    .open_dir = fat1216_vfs_open_dir,
-    .read_dir = fat1216_vfs_read_dir,
+	.probe = vfs_fat1216_probe,
+	.create_context = vfs_fat1216_alloc,
+	.destroy_context = vfs_fat1216_free,
+	.on_mount = fat1216_vfs_on_mount,
+	.on_unmount = fat1216_vfs_on_unmount,
+	.open_file = fat1216_vfs_open_file,
+	.close_file = fat1216_vfs_close_file,
+	.read_file = fat1216_vfs_read_file,
+	.write_file = fat1216_vfs_write_file,
+	.seek_file = fat1216_vfs_seek_file,
+	.make_dir = fat1216_vfs_make_dir,
+	.remove_dir = fat1216_vfs_remove_dir,
+	.open_dir = fat1216_vfs_open_dir,
+	.read_dir = fat1216_vfs_read_dir,
 };

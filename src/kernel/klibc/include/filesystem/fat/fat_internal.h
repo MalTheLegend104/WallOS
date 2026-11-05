@@ -1,9 +1,11 @@
 #ifndef WALLOS_FAT_INTERNAL_H
 #define WALLOS_FAT_INTERNAL_H
 
+#include <filesystem/fat/fat.h>
+#include <filesystem/vfs.h>
 #include <stdbool.h>
 #include <stdint.h>
-#include <filesystem/fat/fat.h>
+#include <system/timer.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -97,6 +99,33 @@ extern "C" {
 	 */
 	void fat_pack_dirent_raw(const uint8_t raw11[11], uint8_t attributes, uint32_t first_cluster, uint32_t file_size, uint8_t raw32[32]);
 
+
+	/**
+	 * @brief Reads the wall clock and converts it to FAT date/time words.
+	 *
+	 * @param out_date Receives the packed FAT date.
+	 * @param out_time Receives the packed FAT time (2-second resolution).
+	 * @retval true The clock is valid and FAT-representable (1980-2107). Outputs are set.
+	 * @retval false The clock is unavailable or out of range. Outputs are left untouched.
+	 */
+	bool fat_now_dos(uint16_t* out_date, uint16_t* out_time);
+
+	/**
+	 * @brief Converts FAT date/time words to a wall_time_t.
+	 *
+	 * @param date   Packed FAT date. 0 (or an invalid date) yields an all-zero result (year == 0).
+	 * @param time   Packed FAT time.
+	 * @param tenths Extra tenths-of-a-second (0-199, creation time only). Pass 0 otherwise.
+	 * @param out    Receives the converted time. Members other than year..second are zeroed.
+	 */
+	void fat_dos_to_wall(uint16_t date, uint16_t time, uint8_t tenths, wall_time_t* out);
+
+	/** @brief Fills a VFS_FileStat from a raw short directory entry (size is 0 for directories). */
+	void fat_entry_to_stat(const fat_dirent_t* raw, VFS_FileStat* out);
+
+	/** @brief Fills a VFS_FileStat describing a volume root directory (FAT roots have no entry of their own). */
+	void fat_root_stat(VFS_FileStat* out);
+
 	typedef struct fat_dir_writer fat_dir_writer_t;
 
 	/**
@@ -106,7 +135,7 @@ extern "C" {
 	 */
 	typedef struct {
 		/** Returns the current number of sectors in the directory. */
-		uint32_t(*sector_count)(fat_dir_writer_t* w);
+		uint32_t (*sector_count)(fat_dir_writer_t* w);
 
 		/**
 		 * Reads sector @p idx (relative to the start of the directory) into @p buf.

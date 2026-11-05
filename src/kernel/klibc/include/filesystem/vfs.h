@@ -6,6 +6,7 @@
 #include <stdint.h>
 
 #include "wdm.h"
+#include <system/timer.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -51,43 +52,74 @@ extern "C" {
 
 	/** Error codes returned by all VFS functions. */
 	typedef enum {
-		VFS_OK = 0,                /**< Success                                                   */
-		VFS_ERR_INVALID = -1,      /**< Invalid argument (NULL pointer, bad flags)                */
-		VFS_ERR_IO = -2,           /**< I/O error propagated from the WDM layer                   */
-		VFS_ERR_NOENT = -3,        /**< No such file or directory                                 */
-		VFS_ERR_EXIST = -4,        /**< File or directory already exists                          */
-		VFS_ERR_NOTDIR = -5,       /**< A path component is not a directory                       */
-		VFS_ERR_ISDIR = -6,        /**< Expected a file, got a directory                          */
-		VFS_ERR_NOTEMPTY = -7,     /**< Directory is not empty                                    */
-		VFS_ERR_NOMNT = -8,        /**< Path does not map to any mounted filesystem               */
-		VFS_ERR_BADF = -9,         /**< Bad file descriptor                                       */
-		VFS_ERR_BUSY = -10,        /**< Resource busy (open fds, active mount point)              */
-		VFS_ERR_NOSPACE = -11,     /**< No space left on device                                   */
-		VFS_ERR_TOOLONG = -12,     /**< Path exceeds VFS_PATH_MAX                                 */
-		VFS_ERR_OVERFLOW = -13,    /**< Read/write offset exceeds file bounds                     */
-		VFS_ERR_MNTFULL = -14,     /**< Mount table is full (VFS_MOUNT_MAX reached)               */
-		VFS_ERR_FDFULL = -15,      /**< FD table is full (VFS_FD_MAX reached)                     */
-		VFS_ERR_UNSUPPORTED = -16, /**< Operation not supported by this filesystem                */
-		VFS_ERR_WOULDBLOCK = -17   /**< VFS_O_NONBLOCK was set, and the function would've blocked */
+		VFS_OK = 0,                /**< Success                                            */
+		VFS_ERR_INVALID = -1,      /**< Invalid argument (NULL pointer, bad flags)         */
+		VFS_ERR_IO = -2,           /**< I/O error propagated from the WDM layer            */
+		VFS_ERR_NOENT = -3,        /**< No such file or directory                          */
+		VFS_ERR_EXIST = -4,        /**< File or directory already exists                   */
+		VFS_ERR_NOTDIR = -5,       /**< A path component is not a directory                */
+		VFS_ERR_ISDIR = -6,        /**< Expected a file, got a directory                   */
+		VFS_ERR_NOTEMPTY = -7,     /**< Directory is not empty                             */
+		VFS_ERR_NOMNT = -8,        /**< Path does not map to any mounted filesystem        */
+		VFS_ERR_BADF = -9,         /**< Bad file descriptor                                */
+		VFS_ERR_BUSY = -10,        /**< Resource busy (open fds, active mount point)       */
+		VFS_ERR_NOSPACE = -11,     /**< No space left on device                            */
+		VFS_ERR_TOOLONG = -12,     /**< Path exceeds VFS_PATH_MAX                          */
+		VFS_ERR_OVERFLOW = -13,    /**< Read/write offset exceeds file bounds              */
+		VFS_ERR_MNTFULL = -14,     /**< Mount table is full (VFS_MOUNT_MAX reached)        */
+		VFS_ERR_FDFULL = -15,      /**< FD table is full (VFS_FD_MAX reached)              */
+		VFS_ERR_UNSUPPORTED = -16, /**< Operation not supported by this filesystem         */
+		VFS_ERR_XDEV = -17,        /**< Operation spans two different mounts               */
+		VFS_ERR_PERM = -18,        /**< Generic operation not permitted (write to RO file) */
 	} VFS_Status;
 
 	/** Flags passed to VFS_Open. May be OR'd together. */
 	typedef enum {
-		VFS_O_RDONLY = 0x00,   /**< Open for reading only                                                  */
-		VFS_O_WRONLY = 0x01,   /**< Open for writing only                                                  */
-		VFS_O_RDWR = 0x02,     /**< Open for reading and writing                                           */
-		VFS_O_CREAT = 0x04,    /**< Create file if it does not exist                                       */
-		VFS_O_TRUNC = 0x08,    /**< Truncate file to zero length on open                                   */
-		VFS_O_EXCL = 0x10,     /**< With VFS_O_CREAT: fail if file already exists                          */
-		VFS_O_APPEND = 0x20,   /**< Writes always go to end of file                                        */
-		VFS_O_NONBLOCK = 0x40, /**< I/O on this fd returns VFS_ERR_WOULDBLOCK instead of blocking the task */
+		VFS_O_RDONLY = 0x00, /**< Open for reading only                            */
+		VFS_O_WRONLY = 0x01, /**< Open for writing only                            */
+		VFS_O_RDWR = 0x02,   /**< Open for reading and writing                     */
+		VFS_O_CREAT = 0x04,  /**< Create file if it does not exist                 */
+		VFS_O_TRUNC = 0x08,  /**< Truncate file to zero length on open             */
+		VFS_O_EXCL = 0x10,   /**< With VFS_O_CREAT: fail if file already exists    */
+		VFS_O_APPEND = 0x20, /**< Writes always go to end of file                  */
 	} VFS_OpenFlags;
 
+	/** Reference point for VFS_Seek. */
+	typedef enum {
+		VFS_SEEK_SET = 0, /**< Offset is relative to the start of the file */
+		VFS_SEEK_CUR = 1, /**< Offset is relative to the current position  */
+		VFS_SEEK_END = 2, /**< Offset is relative to the end of the file   */
+	} VFS_Whence;
+
 	typedef struct {
-		char name[VFS_PATH_MAX]; /**< Null-terminated filename. */
+		char name[VFS_PATH_MAX]; /**< Null-terminated filename.                    */
 		bool is_directory;       /**< True if entry is a directory, false if file. */
-		size_t size;             /**< File size in bytes (if applicable). */
+		size_t size;             /**< File size in bytes (if applicable).          */
 	} VFS_DirEnt;
+
+	/** Attribute flags reported in VFS_FileStat::attributes. May be OR'd together.  */
+	typedef enum {
+		VFS_ATTR_READONLY = 0x01, /**< File may not be written, unlinked or replaced */
+		VFS_ATTR_HIDDEN = 0x02,   /**< Existence need not be advertised to the user  */
+		VFS_ATTR_SYSTEM = 0x04,   /**< Operating system file                         */
+		VFS_ATTR_ARCHIVE = 0x08,  /**< Modified since last backup (FAT archive bit)  */
+	} VFS_Attr;
+
+	/**
+	 * Metadata returned by VFS_Stat() and VFS_Fstat().
+	 *
+	 * Timestamps are wall_time_t, with no timezone adjustment.
+	 * If a filesystem doesnt record a specific timestamp (or it's unset), year == 0.
+	 * Members of wall_time_t other than year/month/day/hour/minute/second are zeroed.
+	 */
+	typedef struct {
+		bool is_directory;      /**< True if this is a directory                  */
+		uint64_t size;          /**< Size in bytes. Always 0 for directories.     */
+		uint32_t attributes;    /**< VFS_Attr flags                               */
+		wall_time_t created;    /**< Creation time                                */
+		wall_time_t modified;   /**< Last modification time                       */
+		wall_time_t accessed;   /**< Last access time (FAT only records the date) */
+	} VFS_FileStat;
 
 	// ------------------------------------------------------------------------------------------------
 	// ------------------------------------------------------------------------------------------------
@@ -282,6 +314,103 @@ extern "C" {
 		 * @retval VFS_OK with out_ent->name[0] == '\0' if end of directory reached.
 		 */
 		VFS_Status (*read_dir)(void* fs_ctx, VFS_FD fd, VFS_DirEnt* out_ent);
+
+		/**
+		 * @brief Reposition the offset of an open file. **Optional.**
+		 *
+		 * Set to NULL if the filesystem does not support seeking.
+		 * VFS_Seek() then returns VFS_ERR_UNSUPPORTED.
+		 *
+		 * The driver computes the new position from @p whence and @p offset, stores it, and writes it to @p *out_pos.
+		 * Seeking past the end of the file is allowed, a later write extends the file.
+		 * A resulting position below zero must fail with VFS_ERR_INVALID and leave the position unchanged.
+		 * The VFS validates @p whence and guarantees @p out_pos is non-NULL.
+		 *
+		 * @param fs_ctx  Opaque driver context.
+		 * @param fd      Driver-level file descriptor.
+		 * @param offset  Signed byte offset relative to @p whence.
+		 * @param whence  Reference point for @p offset.
+		 * @param out_pos Receives the new absolute position.
+		 *
+		 * @return VFS_OK on success.
+		 * @retval VFS_ERR_BADF    if @p fd is not an open file descriptor.
+		 * @retval VFS_ERR_INVALID if the resulting position would be negative.
+		 * @retval VFS_ERR_IO      on hardware failure.
+		 */
+		VFS_Status (*seek_file)(void* fs_ctx, VFS_FD fd, int64_t offset, VFS_Whence whence, uint64_t* out_pos);
+
+		/**
+		 * @brief Fill @p out with metadata for the file or directory at @p path. **Optional.**
+		 *
+		 * The mount root ("/") must be statable and reported as a directory.
+		 *
+		 * @retval VFS_ERR_NOENT  if the path does not exist.
+		 * @retval VFS_ERR_NOTDIR if a non-final component is not a directory.
+		 * @retval VFS_ERR_IO     on hardware failure.
+		 */
+		VFS_Status (*stat_path)(void* fs_ctx, const char* path, VFS_FileStat* out);
+
+		/**
+		 * @brief Fill @p out with metadata for an open file or directory descriptor. **Optional.**
+		 *
+		 * Must accept descriptors returned by both open_file and open_dir.
+		 * For files the reported size is the current logical size, including unflushed writes.
+		 *
+		 * @retval VFS_ERR_BADF if @p fd is not open.
+		 */
+		VFS_Status (*stat_file)(void* fs_ctx, VFS_FD fd, VFS_FileStat* out);
+
+		/**
+		 * @brief Commit any buffered data and metadata for one descriptor to the device. **Optional.**
+		 *
+		 * Drivers with nothing buffered (read-only filesystems) should still implement this and return VFS_OK.
+		 *
+		 * @retval VFS_ERR_BADF if @p fd is not open.
+		 * @retval VFS_ERR_IO   on hardware failure.
+		 */
+		VFS_Status (*flush_file)(void* fs_ctx, VFS_FD fd);
+
+		/**
+		 * @brief Commit everything buffered for the whole filesystem to the device. **Optional.**
+		 *
+		 * Called by VFS_SyncAll(). NULL means the filesystem has nothing to sync.
+		 *
+		 * @retval VFS_ERR_IO on hardware failure.
+		 */
+		VFS_Status (*sync)(void* fs_ctx);
+
+		/**
+		 * @brief Remove a regular file. **Optional.**
+		 *
+		 * Must fail with VFS_ERR_BUSY if the file is currently open.
+		 *
+		 * @retval VFS_ERR_NOENT  if the file does not exist.
+		 * @retval VFS_ERR_ISDIR  if the path names a directory (use remove_dir).
+		 * @retval VFS_ERR_NOTDIR if a non-final component is not a directory.
+		 * @retval VFS_ERR_PERM   if the file is read-only.
+		 * @retval VFS_ERR_BUSY   if the file is open.
+		 * @retval VFS_ERR_IO     on hardware failure.
+		 */
+		VFS_Status (*unlink_file)(void* fs_ctx, const char* path);
+
+		/**
+		 * @brief Rename or move a file or directory within this filesystem. **Optional.**
+		 *
+		 * Follows POSIX rename():
+		 *     - An existing target is replaced (a file by a file, an empty directory by a directory).
+		 *     - Renaming a path onto itself succeeds and does nothing.
+		 *     - Both paths are relative to the mount root.
+		 *
+		 * @retval VFS_ERR_NOENT    if the source or the target's parent does not exist.
+		 * @retval VFS_ERR_NOTDIR   if a path component is not a directory, or a directory would replace a file.
+		 * @retval VFS_ERR_ISDIR    if a file would replace a directory.
+		 * @retval VFS_ERR_NOTEMPTY if the target is a non-empty directory.
+		 * @retval VFS_ERR_INVALID  if a directory would be moved into itself or one of its descendants.
+		 * @retval VFS_ERR_PERM     if the target is read-only.
+		 * @retval VFS_ERR_BUSY     if the source or target file is open.
+		 * @retval VFS_ERR_IO       on hardware failure.
+		 */
+		VFS_Status (*rename)(void* fs_ctx, const char* old_path, const char* new_path);
 	} VFS_FSOps;
 
 	// ------------------------------------------------------------------------------------------------
@@ -453,6 +582,130 @@ extern "C" {
 	 * @retval VFS_ERR_IO      on hardware failure.
 	 */
 	VFS_Status VFS_Write(VFS_FD fd, const void* buf, size_t size, size_t* out_written);
+
+	/**
+	 * @brief Reposition the offset of an open file.
+	 *
+	 * Sets the position of @p fd to @p offset bytes relative to @p whence.
+	 * Seeking past the end of the file is allowed, a subsequent write extends it.
+	 * Seeking to a negative absolute position fails and leaves the position unchanged.
+	 * Files opened with VFS_O_APPEND still write at end-of-file regardless of position.
+	 *
+	 * @param fd      Open file descriptor.
+	 * @param offset  Signed byte offset relative to @p whence.
+	 * @param whence  VFS_SEEK_SET, VFS_SEEK_CUR or VFS_SEEK_END.
+	 * @param out_pos Receives the new absolute position. May be NULL if not needed.
+	 *
+	 * @return VFS_OK on success.
+	 * @retval VFS_ERR_BADF        if @p fd is not a valid open descriptor.
+	 * @retval VFS_ERR_INVALID     if @p whence is invalid or the resulting position is negative.
+	 * @retval VFS_ERR_UNSUPPORTED if the filesystem does not implement seeking.
+	 * @retval VFS_ERR_IO          on hardware failure.
+	 */
+	VFS_Status VFS_Seek(VFS_FD fd, int64_t offset, VFS_Whence whence, uint64_t* out_pos);
+
+	/**
+	 * @brief Commit one open descriptor's buffered state to the underlying device.
+	 *
+	 * @param fd Open file or directory descriptor.
+	 *
+	 * @return VFS_OK on success.
+	 * @retval VFS_ERR_BADF        if @p fd is not a valid open descriptor.
+	 * @retval VFS_ERR_UNSUPPORTED if the filesystem does not implement flushing.
+	 * @retval VFS_ERR_IO          on hardware failure.
+	 */
+	VFS_Status VFS_Flush(VFS_FD fd);
+
+	/**
+	 * @brief Commit all buffered state on every mounted filesystem.
+	 *
+	 * Visits every mount even if one fails, and returns the first error encountered.
+	 * Filesystems that do not implement sync are skipped.
+	 *
+	 * @return VFS_OK if every sync succeeded.
+	 * @retval VFS_ERR_IO on the first hardware failure.
+	 */
+	VFS_Status VFS_SyncAll(void);
+
+	/**
+	 * @brief Get metadata for an open descriptor (file or directory).
+	 *
+	 * @param fd  Open descriptor.
+	 * @param out Receives the metadata.
+	 *
+	 * @return VFS_OK on success.
+	 * @retval VFS_ERR_INVALID     if @p out is NULL.
+	 * @retval VFS_ERR_BADF        if @p fd is not a valid open descriptor.
+	 * @retval VFS_ERR_UNSUPPORTED if the filesystem does not implement stat.
+	 */
+	VFS_Status VFS_Fstat(VFS_FD fd, VFS_FileStat* out);
+
+	/**
+	 * @brief Get metadata for a file or directory by path.
+	 *
+	 * @param path Absolute path.
+	 * @param out  Receives the metadata.
+	 *
+	 * @return VFS_OK on success.
+	 * @retval VFS_ERR_INVALID     if @p path or @p out is invalid.
+	 * @retval VFS_ERR_TOOLONG     if @p path exceeds VFS_PATH_MAX.
+	 * @retval VFS_ERR_NOMNT       if the path does not map to any mount.
+	 * @retval VFS_ERR_NOENT       if the path does not exist.
+	 * @retval VFS_ERR_NOTDIR      if a non-final component is not a directory (/asdf.txt/directory where asdf.txt is not a dir).
+	 * @retval VFS_ERR_UNSUPPORTED if the filesystem does not implement stat.
+	 * @retval VFS_ERR_IO          on hardware failure.
+	 */
+	VFS_Status VFS_Stat(const char* path, VFS_FileStat* out);
+
+	/**
+	 * @brief Remove a regular file.
+	 *
+	 * Use VFS_Rmdir() for directories.
+	 * Fails if the file is open. Close every descriptor first.
+	 *
+	 * @param path Absolute path of the file.
+	 *
+	 * @return VFS_OK on success.
+	 * @retval VFS_ERR_INVALID     if @p path is NULL or not absolute.
+	 * @retval VFS_ERR_TOOLONG     if @p path exceeds VFS_PATH_MAX.
+	 * @retval VFS_ERR_NOMNT       if the path does not map to any mount.
+	 * @retval VFS_ERR_NOENT       if the file does not exist.
+	 * @retval VFS_ERR_ISDIR       if the path names a directory.
+	 * @retval VFS_ERR_PERM        if the file is read-only.
+	 * @retval VFS_ERR_BUSY        if the file is open, or the path is a mount point.
+	 * @retval VFS_ERR_UNSUPPORTED if the filesystem is read-only or does not implement unlink.
+	 * @retval VFS_ERR_IO          on hardware failure.
+	 */
+	VFS_Status VFS_Unlink(const char* path);
+
+	/**
+	 * @brief Rename or move a file or directory, like POSIX rename().
+	 *
+	 * Both paths must be on the same mount.
+	 * An existing target is replaced:
+	 *     - a file replaces a file
+	 *     - a directory replaces an empty directory
+	 * Renaming a path onto itself succeeds and does nothing.
+	 * Fails if the source or the replaced target is an open file.
+	 *
+	 * @param old_path Absolute path of the existing file or directory.
+	 * @param new_path Absolute path it should have afterwards.
+	 *
+	 * @return VFS_OK on success.
+	 * @retval VFS_ERR_INVALID     if a path is invalid, or a directory would be moved into itself.
+	 * @retval VFS_ERR_TOOLONG     if a path exceeds VFS_PATH_MAX.
+	 * @retval VFS_ERR_NOMNT       if a path does not map to any mount.
+	 * @retval VFS_ERR_XDEV        if the paths are on different mounts.
+	 * @retval VFS_ERR_NOENT       if the source or the target's parent does not exist.
+	 * @retval VFS_ERR_NOTDIR      if a directory would replace a file, or a path component is a file.
+	 * @retval VFS_ERR_ISDIR       if a file would replace a directory.
+	 * @retval VFS_ERR_NOTEMPTY    if the target is a non-empty directory.
+	 * @retval VFS_ERR_PERM        if the target is read-only.
+	 * @retval VFS_ERR_BUSY        if a file involved is open, or either path is or contains a mount point.
+	 * @retval VFS_ERR_UNSUPPORTED if the filesystem is read-only or does not implement rename.
+	 * @retval VFS_ERR_IO          on hardware failure.
+	 */
+	VFS_Status VFS_Rename(const char* old_path, const char* new_path);
 
 	// ------------------------------------------------------------------------------------------------
 	// ------------------------------------------------------------------------------------------------

@@ -1,9 +1,9 @@
-#include <stdio.h>
-#include <string.h>
-#include <stdlib.h>
 #include <filesystem/fat/fat.h>
 #include <filesystem/fat/fat_internal.h>
 #include <memory/kernel_alloc.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
 
 
 uint16_t fat_internal_read16(const uint8_t* buf, const size_t offset) {
@@ -11,10 +11,7 @@ uint16_t fat_internal_read16(const uint8_t* buf, const size_t offset) {
 }
 
 uint32_t fat_internal_read32(const uint8_t* buf, const size_t offset) {
-	return (uint32_t) buf[offset] |
-		((uint32_t) buf[offset + 1] << 8) |
-		((uint32_t) buf[offset + 2] << 16) |
-		((uint32_t) buf[offset + 3] << 24);
+	return (uint32_t) buf[offset] | ((uint32_t) buf[offset + 1] << 8) | ((uint32_t) buf[offset + 2] << 16) | ((uint32_t) buf[offset + 3] << 24);
 }
 
 void fat_internal_write16(uint8_t* buf, const size_t offset, const uint16_t val) {
@@ -75,9 +72,9 @@ fat_type_t get_fat_type(const uint8_t* sector_buf) {
 
 	// Extract necessary FAT BPB fields
 	uint16_t bytes_per_sector = fat_internal_read16(sector_buf, 11);
-	uint8_t  sectors_per_cluster = sector_buf[13];
+	uint8_t sectors_per_cluster = sector_buf[13];
 	uint16_t reserved_sectors = fat_internal_read16(sector_buf, 14);
-	uint8_t  num_fats = sector_buf[16];
+	uint8_t num_fats = sector_buf[16];
 	uint16_t root_dir_entries = fat_internal_read16(sector_buf, 17);
 
 	uint16_t sectors_per_fat16 = fat_internal_read16(sector_buf, 22);
@@ -130,7 +127,7 @@ const char* print_fat_type(const fat_type_t type) {
 		case FAT_TYPE_FAT16: return "FAT16";
 		case FAT_TYPE_FAT32: return "FAT32";
 		case FAT_TYPE_EXFAT: return "EXFAT";
-		default: return "UNKNOWN";
+		default:             return "UNKNOWN";
 	}
 }
 
@@ -219,11 +216,19 @@ void fat_lfn_run_accumulate(fat_lfn_run_t* run, const uint8_t* raw32) {
 	e.name3[1] = fat_internal_read16(raw32, 30);
 
 	uint16_t* dst = run->chars[idx];
-	dst[0] = e.name1[0]; dst[1] = e.name1[1]; dst[2] = e.name1[2];
-	dst[3] = e.name1[3]; dst[4] = e.name1[4];
-	dst[5] = e.name2[0]; dst[6] = e.name2[1]; dst[7] = e.name2[2];
-	dst[8] = e.name2[3]; dst[9] = e.name2[4]; dst[10] = e.name2[5];
-	dst[11] = e.name3[0]; dst[12] = e.name3[1];
+	dst[0] = e.name1[0];
+	dst[1] = e.name1[1];
+	dst[2] = e.name1[2];
+	dst[3] = e.name1[3];
+	dst[4] = e.name1[4];
+	dst[5] = e.name2[0];
+	dst[6] = e.name2[1];
+	dst[7] = e.name2[2];
+	dst[8] = e.name2[3];
+	dst[9] = e.name2[4];
+	dst[10] = e.name2[5];
+	dst[11] = e.name3[0];
+	dst[12] = e.name3[1];
 	run->present[idx] = true;
 }
 
@@ -427,6 +432,76 @@ bool fat_pack_short_name_raw(const char* name, uint8_t raw11[11]) {
 
 #include <system/timer.h>
 
+bool fat_now_dos(uint16_t* out_date, uint16_t* out_time) {
+	wall_time_t time;
+	wallclock_read(&time);
+
+	// Validate that the returned time makes sense
+	if (time.year == 0 || time.month < 1 || time.month > 12 || time.day < 1 || time.day > 31 || time.hour > 23 || time.minute > 59 || time.second > 59) {
+		return false;
+	}
+
+	// FAT year is stored relative to 1980
+	// FAT date range is January 1, 1980 through December 31, 2107
+	if (time.year < 1980 || time.year > 2107) {
+		return false;
+	}
+
+	// FAT stores seconds in 2-second increments
+	*out_time = ((uint16_t) time.hour << 11) | ((uint16_t) time.minute << 5) | ((uint16_t) time.second / 2);
+	*out_date = ((uint16_t) (time.year - 1980) << 9) | ((uint16_t) time.month << 5) | (uint16_t) time.day;
+	return true;
+}
+
+void fat_dos_to_wall(uint16_t date, uint16_t time, uint8_t tenths, wall_time_t* out) {
+	memset(out, 0, sizeof(*out));
+
+	unsigned month = (date >> 5) & 0x0F;
+	unsigned day = date & 0x1F;
+
+	// date == 0 means "not set"
+	// Anything else out of range is corrupt
+	if (date == 0 || month < 1 || month > 12 || day < 1 || day > 31) {
+		return;
+	}
+
+	unsigned hour = time >> 11;
+	unsigned minute = (time >> 5) & 0x3F;
+	unsigned second = (time & 0x1F) * 2 + tenths / 100;
+
+	if (hour > 23) hour = 23;
+	if (minute > 59) minute = 59;
+	if (second > 59) second = 59;
+
+	out->year = 1980 + (date >> 9);
+	out->month = month;
+	out->day = day;
+	out->hour = hour;
+	out->minute = minute;
+	out->second = second;
+}
+
+void fat_entry_to_stat(const fat_dirent_t* raw, VFS_FileStat* out) {
+	memset(out, 0, sizeof(*out));
+
+	out->is_directory = (raw->attributes & FAT_ATTR_DIRECTORY) != 0;
+	out->size = out->is_directory ? 0 : raw->file_size;
+
+	if (raw->attributes & FAT_ATTR_READ_ONLY) out->attributes |= VFS_ATTR_READONLY;
+	if (raw->attributes & FAT_ATTR_HIDDEN) out->attributes |= VFS_ATTR_HIDDEN;
+	if (raw->attributes & FAT_ATTR_SYSTEM) out->attributes |= VFS_ATTR_SYSTEM;
+	if (raw->attributes & FAT_ATTR_ARCHIVE) out->attributes |= VFS_ATTR_ARCHIVE;
+
+	fat_dos_to_wall(raw->creation_date, raw->creation_time, raw->creation_time_tenths, &out->created);
+	fat_dos_to_wall(raw->write_date, raw->write_time, 0, &out->modified);
+	fat_dos_to_wall(raw->last_access_date, 0, 0, &out->accessed); // FAT only stores the access *date*
+}
+
+void fat_root_stat(VFS_FileStat* out) {
+	memset(out, 0, sizeof(*out));
+	out->is_directory = true; // No timestamps. FAT roots have no entry of their own (year stays 0)
+}
+
 void fat_pack_dirent_raw(const uint8_t raw11[11], uint8_t attributes, uint32_t first_cluster, uint32_t file_size, uint8_t raw32[32]) {
 	memset(raw32, 0, 32);
 	memcpy(raw32, raw11, 11);
@@ -435,26 +510,10 @@ void fat_pack_dirent_raw(const uint8_t raw11[11], uint8_t attributes, uint32_t f
 	raw32[12] = 0;  // nt_reserved
 	raw32[13] = 0;  // creation_time_tenths
 
-	wall_time_t time;
-	wallclock_read(&time);
-
 	// Default to FAT epoch if the wall clock is invalid/unavailable
 	uint16_t fat_time = FAT_EPOCH_TIME;
 	uint16_t fat_date = FAT_EPOCH_DATE;
-
-	// We validate that the returned time makes sense
-	if (time.year != 0 && time.month >= 1 && time.month <= 12 && time.day >= 1 && time.day <= 31 && time.hour <= 23 && time.minute <= 59 && time.second <= 59) {
-		// FAT stores seconds in 2-second increments.
-		fat_time = ((uint16_t) time.hour << 11) | ((uint16_t) time.minute << 5) | ((uint16_t) time.second / 2);
-
-		// FAT year is stored relative to 1980.
-		if (time.year >= 1980 && time.year <= 2107) {
-			fat_date = ((uint16_t) (time.year - 1980) << 9) | ((uint16_t) time.month << 5) | (uint16_t) time.day;
-		} else {
-			fat_time = FAT_EPOCH_TIME;
-			fat_date = FAT_EPOCH_DATE;
-		}
-	}
+	fat_now_dos(&fat_date, &fat_time);
 
 	fat_internal_write16(raw32, 14, fat_time);  // creation_time
 	fat_internal_write16(raw32, 16, fat_date);  // creation_date
@@ -486,7 +545,7 @@ bool fat_dir_locate_or_reserve_slot(fat_dir_writer_t* w, const uint8_t target_ra
 	if (!sector) return false;
 
 	bool have_free_slot = false;
-	fat_dirent_slot_t free_slot = { 0, 0 };
+	fat_dirent_slot_t free_slot = {0, 0};
 	bool free_slot_is_terminator = false;
 	bool hit_terminator = false;
 
@@ -570,10 +629,16 @@ bool fat_dir_locate_or_reserve_slot(fat_dir_writer_t* w, const uint8_t target_ra
 		if (next_sector < current_total) {
 			uint8_t* nbuf = kalloc(bps);
 			if (!nbuf) return false;
-			if (!w->ops->read_sector(w, next_sector, nbuf)) { kfree(nbuf); return false; }
+			if (!w->ops->read_sector(w, next_sector, nbuf)) {
+				kfree(nbuf);
+				return false;
+			}
 			if (nbuf[next_offset] != FAT_DIRENT_END_MARKER) {
 				memset(nbuf + next_offset, 0, 32);
-				if (!w->ops->write_sector(w, next_sector, nbuf)) { kfree(nbuf); return false; }
+				if (!w->ops->write_sector(w, next_sector, nbuf)) {
+					kfree(nbuf);
+					return false;
+				}
 			}
 			kfree(nbuf);
 		}
@@ -622,7 +687,7 @@ int fat_pack_lfn_entries(const char* long_name, const uint8_t raw11[11], uint8_t
 	if (n == 0) return 0;
 
 	uint8_t checksum = fat_short_name_checksum(raw11);
-	size_t  name_len = strlen(long_name);
+	size_t name_len = strlen(long_name);
 
 	for (int seq = n; seq >= 1; seq--) {
 		// Characters covered by this LFN slot (0-based into the name).
@@ -640,9 +705,11 @@ int fat_pack_lfn_entries(const char* long_name, const uint8_t raw11[11], uint8_t
 		fat_internal_write16(slot, 26, 0x0000); // Cluster is always 0 for LFN
 
 		/* Offsets of the three name fields within the LFN entry. */
+		// clang-format off
 		static const int field_offsets[] = { 1, 3, 5, 7, 9,          /* name1: 5 chars */
 											 14, 16, 18, 20, 22, 24, /* name2: 6 chars */
 											 28, 30 };               /* name3: 2 chars */
+		// clang-format on
 
 		for (int i = 0; i < FAT_LFN_MAX_CHARS_PER_ENTRY; i++) {
 			int name_idx = char_start + i;
@@ -687,10 +754,10 @@ bool fat_generate_short_name(const char* long_name, const fat_dirent_list_t* exi
 	// A leading dot is not an extension separator.
 	if (last_dot == long_name) last_dot = NULL;
 
-	char base_raw[9] = { 0 };
-	char ext_raw[4] = { 0 };
-	int  base_raw_len = 0;
-	int  ext_raw_len = 0;
+	char base_raw[9] = {0};
+	char ext_raw[4] = {0};
+	int base_raw_len = 0;
+	int ext_raw_len = 0;
 
 	// Fill ext (up to 3 uppercase legal chars after the last dot).
 	if (last_dot) {
@@ -721,7 +788,7 @@ bool fat_generate_short_name(const char* long_name, const fat_dirent_list_t* exi
 	// Try ~1 .. ~999999
 	for (int n = 1; n <= 999999; n++) {
 		char tail[8];
-		int  tail_len = snprintf(tail, sizeof(tail), "~%d", n);
+		int tail_len = snprintf(tail, sizeof(tail), "~%d", n);
 
 		// base prefix length = min(6, 8 - tail_len)
 		int prefix_len = 8 - tail_len;
@@ -729,8 +796,8 @@ bool fat_generate_short_name(const char* long_name, const fat_dirent_list_t* exi
 		if (prefix_len < 0) prefix_len = 0;
 
 		// Assemble candidate short name string for collision check.
-		char candidate[13] = { 0 };
-		int  cand_len = 0;
+		char candidate[13] = {0};
+		int cand_len = 0;
 		for (int i = 0; i < prefix_len; i++)
 			candidate[cand_len++] = base_raw[i];
 		for (int i = 0; i < tail_len; i++)
@@ -776,8 +843,8 @@ bool fat_dir_reserve_slot_run(fat_dir_writer_t* w, int need, fat_dirent_slot_t* 
 	if (!sector) return false;
 
 	uint32_t total_sectors = w->ops->sector_count(w);
-	int      run_len = 0;
-	fat_dirent_slot_t run_start = { 0, 0 };
+	int run_len = 0;
+	fat_dirent_slot_t run_start = {0, 0};
 	bool found = false;
 	bool replaced_end_marker = false;
 	bool in_end_zone = false;

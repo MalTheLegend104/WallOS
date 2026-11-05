@@ -1,9 +1,9 @@
-#include <stdio.h>
-#include <string.h>
-#include <stdlib.h>
 #include <filesystem/fat/fat.h>
 #include <filesystem/fat/fat_internal.h>
 #include <memory/kernel_alloc.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
 
 
 void fill_fat32(const uint8_t* buf, fat32_ebr_t* fat32) {
@@ -212,7 +212,8 @@ void fat32_tree_recurse(WDM_DriveHandle drive, const fat32_ebr_t* fat32, uint32_
 
 	// Count visible entries up front so the last one gets "└──" instead of "├──"
 	size_t visible_count = 0;
-	for (size_t i = 0; i < listing.count; i++) if (!fat_is_dot_entry(&listing.entries[i])) visible_count++;
+	for (size_t i = 0; i < listing.count; i++)
+		if (!fat_is_dot_entry(&listing.entries[i])) visible_count++;
 
 	size_t visible_index = 0;
 	for (size_t i = 0; i < listing.count; i++) {
@@ -579,12 +580,10 @@ bool fat32_write_file_data(WDM_DriveHandle drive, const fat32_ebr_t* fat32, fat3
 
 			if (fsinfo) {
 				fsinfo->search_cluster_num = new_cluster + 1;
-				if (fsinfo->last_known_free_cluster != 0xFFFFFFFF &&
-					fsinfo->last_known_free_cluster > 0)
+				if (fsinfo->last_known_free_cluster != 0xFFFFFFFF && fsinfo->last_known_free_cluster > 0)
 					fsinfo->last_known_free_cluster--;
 				fat32_write_fsinfo(drive, fat32, fsinfo);
 			}
-
 		}
 
 		if (first_cluster == 0) first_cluster = target_cluster;
@@ -740,8 +739,7 @@ static bool fat32_dw_extend(fat_dir_writer_t* w) {
 
 	if (ctx->fsinfo) {
 		ctx->fsinfo->search_cluster_num = new_cluster + 1;
-		if (ctx->fsinfo->last_known_free_cluster != 0xFFFFFFFF &&
-			ctx->fsinfo->last_known_free_cluster > 0) {
+		if (ctx->fsinfo->last_known_free_cluster != 0xFFFFFFFF && ctx->fsinfo->last_known_free_cluster > 0) {
 			ctx->fsinfo->last_known_free_cluster--;
 		}
 		fat32_write_fsinfo(ctx->drive, ctx->fat32, ctx->fsinfo);
@@ -960,7 +958,7 @@ bool fat32_write_directory(WDM_DriveHandle drive, const fat32_ebr_t* fat32, fat3
 	if (!drive || !fat32 || !out_cluster) return false;
 
 	uint16_t bps = fat32->bpb.bytes_per_sector;
-	uint8_t  spc = fat32->bpb.sectors_per_cluster;
+	uint8_t spc = fat32->bpb.sectors_per_cluster;
 	if (bps == 0 || spc == 0) return false;
 
 	uint32_t start_hint = 2;
@@ -1025,7 +1023,7 @@ bool fat32_write_dir_entry(WDM_DriveHandle drive, const fat32_ebr_t* fat32, fat3
 	if (parent_cluster < 2) return false;
 
 	uint16_t bps = fat32->bpb.bytes_per_sector;
-	uint8_t  spc = fat32->bpb.sectors_per_cluster;
+	uint8_t spc = fat32->bpb.sectors_per_cluster;
 	if (bps == 0 || spc == 0) return false;
 
 	uint32_t entries_per_sector = bps / 32;
@@ -1049,7 +1047,7 @@ bool fat32_write_dir_entry(WDM_DriveHandle drive, const fat32_ebr_t* fat32, fat3
 
 			for (uint32_t e = 0; e < entries_per_sector; e++) {
 				uint8_t* slot = sector_buf + e * 32;
-				uint8_t  first = slot[0];
+				uint8_t first = slot[0];
 
 				// End-of-directory marker, we can use this slot
 				if (first == FAT_DIRENT_END_MARKER) {
@@ -1226,7 +1224,7 @@ bool fat32_unlink_entry(WDM_DriveHandle drive, const fat32_ebr_t* fat32, uint32_
 
 // holy function signature batman....
 
-bool fat32_add_dirent_chain(WDM_DriveHandle drive, const fat32_ebr_t* fat32, fat32_fsinfo_t* fsinfo, uint32_t parent_cluster, const char* filename, uint8_t attributes, uint32_t first_cluster, uint32_t file_size, fat_resolved_dirent_t* out_entry) {
+static bool fat32_add_dirent_chain_impl(WDM_DriveHandle drive, const fat32_ebr_t* fat32, fat32_fsinfo_t* fsinfo, uint32_t parent_cluster, const char* filename, uint8_t attributes, uint32_t first_cluster, uint32_t file_size, fat_resolved_dirent_t* out_entry, const fat_dirent_t* preserve_times) {
 	uint8_t raw11[11];
 	bool is_83 = fat_pack_short_name_raw(filename, raw11);
 
@@ -1242,7 +1240,7 @@ bool fat32_add_dirent_chain(WDM_DriveHandle drive, const fat32_ebr_t* fat32, fat
 	int lfn_count = is_83 ? 0 : (int) ((strlen(filename) + FAT_LFN_MAX_CHARS_PER_ENTRY - 1) / FAT_LFN_MAX_CHARS_PER_ENTRY);
 	int slots_needed = lfn_count + 1;
 
-	fat32_dir_writer_ctx_t ctx = { .drive = drive, .fat32 = fat32, .fsinfo = fsinfo, .start_cluster = parent_cluster };
+	fat32_dir_writer_ctx_t ctx = {.drive = drive, .fat32 = fat32, .fsinfo = fsinfo, .start_cluster = parent_cluster};
 	fat_dir_writer_t w;
 	fat_dir_writer_init(&w, &fat32_dir_writer_ops, &ctx, fat32->bpb.bytes_per_sector);
 
@@ -1274,6 +1272,16 @@ bool fat32_add_dirent_chain(WDM_DriveHandle drive, const fat32_ebr_t* fat32, fat
 
 	uint8_t new_raw32[32];
 	fat_pack_dirent_raw(raw11, attributes, first_cluster, file_size, new_raw32);
+
+	// A rename must not touch the file's timestamps, so overwrite the "now" stamps with the originals.
+	if (preserve_times) {
+		fat_internal_write16(new_raw32, 14, preserve_times->creation_time);
+		fat_internal_write16(new_raw32, 16, preserve_times->creation_date);
+		fat_internal_write16(new_raw32, 18, preserve_times->last_access_date);
+		fat_internal_write16(new_raw32, 22, preserve_times->write_time);
+		fat_internal_write16(new_raw32, 24, preserve_times->write_date);
+		new_raw32[13] = preserve_times->creation_time_tenths;
+	}
 	if (!fat_dir_write_slot(&w, short_slot, new_raw32)) return false;
 
 	if (out_entry) {
@@ -1290,11 +1298,20 @@ bool fat32_add_dirent_chain(WDM_DriveHandle drive, const fat32_ebr_t* fat32, fat
 	return true;
 }
 
+bool fat32_add_dirent_chain(WDM_DriveHandle drive, const fat32_ebr_t* fat32, fat32_fsinfo_t* fsinfo, uint32_t parent_cluster, const char* filename, uint8_t attributes, uint32_t first_cluster, uint32_t file_size, fat_resolved_dirent_t* out_entry) {
+	return fat32_add_dirent_chain_impl(drive, fat32, fsinfo, parent_cluster, filename, attributes, first_cluster, file_size, out_entry, NULL);
+}
+
+bool fat32_add_dirent_chain_preserve(WDM_DriveHandle drive, const fat32_ebr_t* fat32, fat32_fsinfo_t* fsinfo, uint32_t parent_cluster, const char* filename, const fat_resolved_dirent_t* src, fat_resolved_dirent_t* out_entry) {
+	if (!src) return false;
+	return fat32_add_dirent_chain_impl(drive, fat32, fsinfo, parent_cluster, filename, src->raw.attributes, src->first_cluster, src->raw.file_size, out_entry, &src->raw);
+}
+
 bool fat32_patch_dirent(WDM_DriveHandle drive, const fat32_ebr_t* fat32, uint32_t parent_cluster, const uint8_t raw11[11], const uint8_t raw32[32]) {
 	if (!drive || !fat32 || !raw11 || !raw32) return false;
 
 	uint16_t bps = fat32->bpb.bytes_per_sector;
-	uint8_t  spc = fat32->bpb.sectors_per_cluster;
+	uint8_t spc = fat32->bpb.sectors_per_cluster;
 	uint32_t cur = parent_cluster;
 	uint8_t* sector_buf = (uint8_t*) kalloc(bps);
 	if (!sector_buf) return false;
