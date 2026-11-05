@@ -23,7 +23,7 @@ extern "C" {
 	static const syscall_def_t common_syscalls[] = {
 		SYSCALL_DEF(SYS_EXIT, exit, 1),
 		SYSCALL_DEF(SYS_YIELD, yield, 0),
-		SYSCALL_DEF(SYS_DEBUG_LOG, debug_log, 1),
+		SYSCALL_DEF(SYS_DEBUG_LOG, debug_log, 2),
 	};
 
 #ifdef __cplusplus
