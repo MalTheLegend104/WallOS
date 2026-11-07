@@ -1,9 +1,9 @@
 #include <filesystem/iso9660/iso9660.h>
 #include <filesystem/vfs.h>
 
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <stdio.h>
 
 #include <memory/kernel_alloc.h>
 
@@ -120,7 +120,7 @@ static VFS_Status iso_read_file(void* fs_ctx, VFS_FD fd, void* buf, size_t size,
 	iso_fd_entry_t* entry = _get_fd(m, fd);
 
 	if (!entry || entry->kind != ISO_FD_FILE) return VFS_ERR_BADF;
-	if (!buf || !out_read)                    return VFS_ERR_INVALID;
+	if (!buf || !out_read) return VFS_ERR_INVALID;
 
 	*out_read = 0;
 
@@ -132,7 +132,7 @@ static VFS_Status iso_read_file(void* fs_ctx, VFS_FD fd, void* buf, size_t size,
 
 	uint8_t sector_buf[ISO_SECTOR_SIZE];
 	uint8_t* dst = (uint8_t*) buf;
-	size_t   to_go = size;
+	size_t to_go = size;
 
 	while (to_go > 0) {
 		uint32_t sector_index = entry->offset / ISO_SECTOR_SIZE;
@@ -154,17 +154,51 @@ static VFS_Status iso_read_file(void* fs_ctx, VFS_FD fd, void* buf, size_t size,
 }
 
 static VFS_Status iso_write_file(void* fs_ctx, VFS_FD fd, const void* buf, size_t size, size_t* out_written) {
-	(void) fs_ctx; (void) fd; (void) buf; (void) size; (void) out_written;
+	(void) fs_ctx;
+	(void) fd;
+	(void) buf;
+	(void) size;
+	(void) out_written;
 	return VFS_ERR_UNSUPPORTED; /* ISO 9660 is read-only */
 }
 
+static VFS_Status iso_seek_file(void* fs_ctx, VFS_FD fd, int64_t offset, VFS_Whence whence, uint64_t* out_pos) {
+	iso_mount_t* m = (iso_mount_t*) fs_ctx;
+	iso_fd_entry_t* entry = _get_fd(m, fd);
+
+	/* Directory descriptors are not seekable through this op. */
+	if (!entry || entry->kind != ISO_FD_FILE) return VFS_ERR_BADF;
+	if (!out_pos) return VFS_ERR_INVALID;
+
+	int64_t base;
+	switch (whence) {
+		case VFS_SEEK_SET: base = 0; break;
+		case VFS_SEEK_CUR: base = (int64_t) entry->offset; break;
+		case VFS_SEEK_END: base = (int64_t) entry->extent_size; break;
+		default:           return VFS_ERR_INVALID;
+	}
+
+	/* Check both bounds before adding so the int64 math can never overflow.
+	 * Offsets are 32-bit, so anything past UINT32_MAX is unrepresentable.
+	 */
+	if (offset < -base) return VFS_ERR_INVALID;
+	if (offset > (int64_t) UINT32_MAX - base) return VFS_ERR_OVERFLOW;
+
+	/* Seeking past EOF is allowed. iso_read_file already reports EOF in that case. */
+	entry->offset = (uint32_t) (base + offset);
+	*out_pos = entry->offset;
+	return VFS_OK;
+}
+
 static VFS_Status iso_make_dir(void* fs_ctx, const char* path) {
-	(void) fs_ctx; (void) path;
+	(void) fs_ctx;
+	(void) path;
 	return VFS_ERR_UNSUPPORTED;
 }
 
 static VFS_Status iso_remove_dir(void* fs_ctx, const char* path) {
-	(void) fs_ctx; (void) path;
+	(void) fs_ctx;
+	(void) path;
 	return VFS_ERR_UNSUPPORTED;
 }
 
@@ -202,7 +236,7 @@ static VFS_Status iso_read_dir(void* fs_ctx, VFS_FD fd, VFS_DirEnt* out_ent) {
 	iso_fd_entry_t* entry = _get_fd(m, fd);
 
 	if (!entry || entry->kind != ISO_FD_DIR) return VFS_ERR_BADF;
-	if (!out_ent)                            return VFS_ERR_INVALID;
+	if (!out_ent) return VFS_ERR_INVALID;
 
 	/* End-of-directory sentinel */
 	if (entry->offset >= entry->extent_size) {
@@ -287,6 +321,7 @@ const VFS_FSOps iso9660_vfs_ops = {
 	.close_file = iso_close_file,
 	.read_file = iso_read_file,
 	.write_file = iso_write_file,
+	.seek_file = iso_seek_file,
 	.make_dir = iso_make_dir,
 	.remove_dir = iso_remove_dir,
 	.open_dir = iso_open_dir,

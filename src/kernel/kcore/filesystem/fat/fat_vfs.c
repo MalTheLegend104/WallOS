@@ -1,4 +1,3 @@
-
 #include <filesystem/fat/fat32_vfs.h>
 #include <filesystem/fat/fat_internal.h>
 #include <stdlib.h>
@@ -265,6 +264,7 @@ static VFS_Status fat32_vfs_write_file(void* fs_ctx, VFS_FD fd, const void* buf,
 	if (f->flags & VFS_O_APPEND) f->pos = f->size;
 
 	uint32_t new_end = f->pos + (uint32_t) size;
+	if (new_end < f->pos || size > UINT32_MAX) return VFS_ERR_OVERFLOW; // uint32_t wrap
 
 	// Grow in-memory buffer if the write extends past the current size.
 	// We don't have realloc (and really realloc would just be this in wrapper)
@@ -277,6 +277,10 @@ static VFS_Status fat32_vfs_write_file(void* fs_ctx, VFS_FD fd, const void* buf,
 			memcpy(nb, f->buf, f->size);
 			kfree(f->buf);
 		}
+
+		// Zero everything past the old end
+		// If the cursor was seeked beyond EOF, this is the hole between the old size and the write position, which must read as zeros
+		memset(nb + f->size, 0, new_end - f->size);
 
 		f->buf = nb;
 		f->size = new_end;
@@ -302,6 +306,33 @@ static VFS_Status fat32_vfs_write_file(void* fs_ctx, VFS_FD fd, const void* buf,
 	}
 
 	*out_written = size;
+	return VFS_OK;
+}
+
+static VFS_Status fat32_vfs_seek_file(void* fs_ctx, VFS_FD fd, int64_t offset, VFS_Whence whence, uint64_t* out_pos) {
+	if (!fs_ctx || !out_pos) return VFS_ERR_INVALID;
+	/* Directory fds live in [VFS_FAT32_OPEN_MAX, 2*VFS_FAT32_OPEN_MAX) and are not seekable. */
+	if (fd < 0 || fd >= VFS_FAT32_OPEN_MAX) return VFS_ERR_BADF;
+	vfs_fat32_ctx_t* ctx = (vfs_fat32_ctx_t*) fs_ctx;
+	vfs_fat32_file_t* f = &ctx->files[fd];
+	if (!f->used) return VFS_ERR_BADF;
+
+	int64_t base;
+	switch (whence) {
+		case VFS_SEEK_SET: base = 0; break;
+		case VFS_SEEK_CUR: base = (int64_t) f->pos; break;
+		case VFS_SEEK_END: base = (int64_t) f->size; break;
+		default:           return VFS_ERR_INVALID;
+	}
+
+	/* Check both bounds before adding so the int64 math can never overflow.
+	 * FAT file offsets are 32-bit, so anything past UINT32_MAX is unrepresentable.
+	 */
+	if (offset < -base) return VFS_ERR_INVALID;
+	if (offset > (int64_t) UINT32_MAX - base) return VFS_ERR_OVERFLOW;
+
+	f->pos = (uint32_t) (base + offset);
+	*out_pos = f->pos;
 	return VFS_OK;
 }
 
@@ -462,17 +493,18 @@ void vfs_fat32_free(void* ctx) {
 }
 
 const VFS_FSOps vfs_fat32_ops = {
-    .create_context = vfs_fat32_alloc,
-    .destroy_context = vfs_fat32_free,
-    .probe = fat32_vfs_probe,
-    .on_mount = fat32_vfs_on_mount,
-    .on_unmount = fat32_vfs_on_unmount,
-    .open_file = fat32_vfs_open_file,
-    .close_file = fat32_vfs_close_file,
-    .read_file = fat32_vfs_read_file,
-    .write_file = fat32_vfs_write_file,
-    .make_dir = fat32_vfs_make_dir,
-    .remove_dir = fat32_vfs_remove_dir,
-    .open_dir = fat32_vfs_open_dir,
-    .read_dir = fat32_vfs_read_dir,
+	.create_context = vfs_fat32_alloc,
+	.destroy_context = vfs_fat32_free,
+	.probe = fat32_vfs_probe,
+	.on_mount = fat32_vfs_on_mount,
+	.on_unmount = fat32_vfs_on_unmount,
+	.open_file = fat32_vfs_open_file,
+	.close_file = fat32_vfs_close_file,
+	.read_file = fat32_vfs_read_file,
+	.write_file = fat32_vfs_write_file,
+	.seek_file = fat32_vfs_seek_file,
+	.make_dir = fat32_vfs_make_dir,
+	.remove_dir = fat32_vfs_remove_dir,
+	.open_dir = fat32_vfs_open_dir,
+	.read_dir = fat32_vfs_read_dir,
 };

@@ -65,7 +65,7 @@ typedef enum {
 
 typedef struct slab_header_t {
 	size_t object_size;
-	slab_header_t* next_slab;
+	struct slab_header_t* next_slab;
 
 	uintptr_t chunk_base;
 	size_t chunk_count; // There will be this / 8 entries in bitlist
@@ -83,8 +83,8 @@ typedef struct allocated_span_t {
 	uintptr_t ptr;
 	size_t size;
 	slab_header_t* slab_header;
-	allocated_span_t* prev;
-	allocated_span_t* next;
+	struct allocated_span_t* prev;
+	struct allocated_span_t* next;
 } allocated_span_t;
 
 slab_header_t* span_slab_start;
@@ -97,21 +97,21 @@ slab_header_t* dma_slab_head = NULL;
 
 // Forward declarations: kalloc_dma()/kfree_dma() reuse the same bitlist/span
 // helpers as kalloc()/kfree(), but those are defined further down the file.
-void setChunkUsed(slab_header_t* header, size_t chunk);
-void setChunkFree(slab_header_t* header, size_t chunk);
-allocated_span_t* allocateSpan();
-void addSpan(uintptr_t ptr, size_t count);
-allocated_span_t* findSpan(uintptr_t ptr);
-void removeSpan(allocated_span_t* span);
+static void setChunkUsed(slab_header_t* header, size_t chunk);
+static void setChunkFree(slab_header_t* header, size_t chunk);
+static allocated_span_t* allocateSpan(void);
+static void addSpan(uintptr_t ptr, size_t count);
+static allocated_span_t* findSpan(uintptr_t ptr);
+static void removeSpan(allocated_span_t* span);
 
-uint64_t calculatePadding(uint64_t bitlist_size, uint64_t chunksize) {
+static uint64_t calculatePadding(uint64_t bitlist_size, uint64_t chunksize) {
 	return PAGE_2MB_SIZE - sizeof(slab_header_t) - bitlist_size - (bitlist_size * chunksize * 8);
 }
 
 // This will leave up to 7 * chunksize of bytes left over.
 // This would cause more memory wastage than it's worth to keep track of the rest.
 // It would use another byte, plus another few bytes to keep track of how many bits in that int are used.
-uint64_t calculateBitlistSize(uint64_t chunksize) {
+static uint64_t calculateBitlistSize(uint64_t chunksize) {
 	// P/8C+1
 	// We round down
 	// P is the page size - the header
@@ -131,8 +131,8 @@ void printSlabInfo(slab_header_t* info, uintptr_t base, size_t bls, size_t paddi
 	printf("\tPADDING: %llu\n", padding);
 }
 
-void createSpanList() {
-	uintptr_t base = Memory::NewKernelPage();
+static void createSpanList(void) {
+	uintptr_t base = vmm_alloc_direct();
 	slab_header_t* header = (slab_header_t*) base;
 	header->object_size = sizeof(allocated_span_t);
 	header->next_slab = NULL;
@@ -163,9 +163,9 @@ void createSpanList() {
  *
  * @param object_size Amount of bytes per chunk.
  */
-void initSlab(uint64_t object_size) {
+static void initSlab(uint64_t object_size) {
 	// printf_serial("[KALLOC] initSlab called with obj_size: 0x%llx\r\n", object_size);
-	uintptr_t base = Memory::NewKernelPage();
+	uintptr_t base = vmm_alloc_direct();
 	slab_header_t* header = (slab_header_t*) base;
 	header->object_size = object_size;
 	header->next_slab = NULL;
@@ -193,7 +193,7 @@ void initSlab(uint64_t object_size) {
 	// printSlabInfo(header, base, bls, padding);
 }
 
-#include <memory/physical_mem.hpp>
+#include <memory/physical_mem.h>
 
 /**
  * @brief Initializes a new 2MB DMA slab of object_size byte chunks
@@ -202,11 +202,11 @@ void initSlab(uint64_t object_size) {
  * @param zone DMA_ZONE_* bits (already masked with DMA_ZONE_MASK) describing the required physical placement.
  * @param map_flags Page-table flags to map this slab's pages with.
  */
-slab_header_t* initSlabDMA(uint64_t object_size, uint32_t zone, uint64_t map_flags) {
-	uintptr_t phys = (zone & DMA_ZONE_32BIT) ? Memory::PhysicalAlloc2MB_32bit() : Memory::PhysicalAlloc2MBSequential(1);
+static slab_header_t* initSlabDMA(uint64_t object_size, uint32_t zone, uint64_t map_flags) {
+	uintptr_t phys = (zone & DMA_ZONE_32BIT) ? pmm_alloc_2mb_32bit() : pmm_alloc_2mb_sequential(1);
 	if (!phys) return NULL;
 
-	uintptr_t base = Memory::MapSequentialKernelPagesWithFlags(1, phys, map_flags);
+	uintptr_t base = mapSequentialKernelPagesWithFlags(1, phys, map_flags);
 	if (!base) return NULL;
 
 	slab_header_t* header = (slab_header_t*) base;
@@ -392,7 +392,7 @@ void kfree_dma(void* ptr) {
 /**
  * @brief Initializes the kernel allocator. Creates a 2, 4, 8, and 4096 cache.
  */
-void initKernelAllocator() {
+void initKernelAllocator(void) {
 	printf_color(PRINT_COLOR_LIGHT_GREEN, PRINT_DEFAULT_BG, "Initializing Kernel Slab Allocator.\n");
 
 	display_set_colors(PRINT_COLOR_GREEN, PRINT_DEFAULT_BG);
@@ -444,7 +444,7 @@ void initKernelAllocator() {
  * @param header Header containing the chunk
  * @param chunk chunk number in the slab
  */
-void setChunkUsed(slab_header_t* header, size_t chunk) {
+static void setChunkUsed(slab_header_t* header, size_t chunk) {
 	// We can divide the chunk by 8 to get which spot in the bitlist it is
 	size_t bitlist_spot = chunk / 8;
 	// Anything that's 8 % 8 = 0 will produce a number 1 too high
@@ -472,7 +472,7 @@ void setChunkUsed(slab_header_t* header, size_t chunk) {
  * @param header Header containing the chunk
  * @param chunk chunk number in the slab
  */
-void setChunkFree(slab_header_t* header, size_t chunk) {
+static void setChunkFree(slab_header_t* header, size_t chunk) {
 	size_t bitlist_spot = chunk / 8;
 	if (chunk % 8 == 0) bitlist_spot--;
 
@@ -482,7 +482,7 @@ void setChunkFree(slab_header_t* header, size_t chunk) {
 	CLEAR_BIT(BITLIST_BASE(header)[bitlist_spot], index);
 }
 
-allocated_span_t* allocateSpan() {
+static allocated_span_t* allocateSpan(void) {
 	slab_header_t* header = span_slab_start;
 	size_t chunk_number = 0;
 	while (header != NULL) {
@@ -521,7 +521,7 @@ span_finish:
 	}
 }
 
-void addSpan(uintptr_t ptr, size_t count) {
+static void addSpan(uintptr_t ptr, size_t count) {
 	allocated_span_t* span = allocateSpan();
 	if (span == NULL) return;
 
@@ -541,7 +541,7 @@ void addSpan(uintptr_t ptr, size_t count) {
 	// printf("added span: addr: 0x%llx -> ptr: 0x%llx -> size: %llu\n", (uintptr_t) span, span->ptr, span->size);
 }
 
-allocated_span_t* findSpan(uintptr_t ptr) {
+static allocated_span_t* findSpan(uintptr_t ptr) {
 	allocated_span_t* span = first_span;
 	while (span != NULL) {
 		if (span->ptr == ptr) return span;
@@ -550,7 +550,7 @@ allocated_span_t* findSpan(uintptr_t ptr) {
 	return span;
 }
 
-void removeSpan(allocated_span_t* span) {
+static void removeSpan(allocated_span_t* span) {
 	// printf_serial("removeSpan ptr:0x%llx size:0x%llx next:0x%llx hdr:0x%llx hdr_obj:0x%llx\r\n", span, span->size, span->next, span->slab_header, span->slab_header->object_size);
 
 	if (span->prev != NULL)
@@ -616,7 +616,7 @@ void kfree(void* ptr) {
 #include <drivers/serial.h>
 void* kalloc(size_t bytes) {
 	// A 0-byte request would make amount_of_objects 0, which the chunk-search loop can never satisfy.
-	// I really want to try to avoid touching any logic in this file when it comes to the chunks. 
+	// I really want to try to avoid touching any logic in this file when it comes to the chunks.
 	// We normalize it to 1 byte (which will turn into a 2 byte allocation), like regular malloc(0).
 	if (bytes == 0) bytes = 1;
 
@@ -624,7 +624,7 @@ void* kalloc(size_t bytes) {
 
 	if (bytes > PAGE_2MB_SIZE) {
 		printf_serial("[KALLOC] Requested memory allocation.\r\n\tBytes: 0x%llx ", bytes);
-		void* ret = (void*) Memory::MapSequentialKernelPages(((int) (bytes / PAGE_2MB_SIZE)) + 1);
+		void* ret = (void*) vmm_map_sequential_pages(((int) (bytes / PAGE_2MB_SIZE)) + 1);
 		printf_serial("virt: 0x%llx", (uint64_t) ret);
 		spinlock_unlock(memlock);
 		return ret;
@@ -767,7 +767,7 @@ void* krealloc(void* ptr, size_t new_size) {
 	}
 
 	spinlock_unlock(memlock);
-	// ptr wasn't found in any tracked slab. 
+	// ptr wasn't found in any tracked slab.
 	// Large allocations bypass slab tracking,  so their size is unknown here.
 	// We refuse rather than guess and risk an out-of-bounds copy.
 	printf_serial("[KALLOC] krealloc() called on untracked pointer (0x%llx) - large (>2MB) allocations can't be resized.\r\n", (uint64_t) ptr);

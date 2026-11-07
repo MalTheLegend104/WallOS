@@ -8,7 +8,7 @@
 
 #include <klibc/features.hpp>
 #include <klibc/kprint.h>
-#include <memory/physical_mem.hpp>
+#include <memory/physical_mem.h>
 #include <memory/virtual_mem.h>
 
 #include <terminal/commands/system_commands.h>
@@ -82,8 +82,8 @@ void printUptime() {
 // When mapping physical memory, it automatically marks pages as taken if the memory map runs into them.
 // We only want to check the raw kernel end then add the pages after
 void printMemInfo() {
-	const mmap_info* info = Memory::Info::getMMapInfo();
-	size_t used_bytes = Memory::Info::getTotalUsedBytes();
+	const mmap_info* info = pmm_get_mmap_info();
+	size_t used_bytes = pmm_total_used_bytes();
 	size_t usable_bytes = info->usable;
 
 	// Convert to appropriate units

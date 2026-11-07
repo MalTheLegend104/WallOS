@@ -1,5 +1,5 @@
-#include <x86_64/ioapic.h>
 #include <memory/virtual_mem.h>
+#include <x86_64/ioapic.h>
 
 #include <drivers/serial.h>
 #include <string.h>
@@ -7,6 +7,10 @@
 static IOAPIC_Device ioapics[WALLOS_IOAPIC_MAX];
 static uint32_t ioapic_count = 0;
 static MADTTable* madt_ref = NULL;
+
+// GSI of the ACPI SCI, set by ioapic_note_sci()
+// Used for panics
+static uint32_t sci_gsi = 0xFFFFFFFF;
 
 // Direct Register Access
 uint32_t ioapic_read_reg(uintptr_t base, uint32_t reg_index) {
@@ -78,7 +82,10 @@ IOAPIC_Device* ioapic_find_for_gsi(uint32_t gsi) {
 		if (gsi >= start && gsi < end) {
 			printf_serial(
 				"[IOAPIC] GSI %u handled by IOAPIC id=%u (range %u-%u)\r\n",
-				gsi, ioapics[i].id, start, end - 1
+				gsi,
+				ioapics[i].id,
+				start,
+				end - 1
 			);
 
 			return &ioapics[i];
@@ -90,27 +97,40 @@ IOAPIC_Device* ioapic_find_for_gsi(uint32_t gsi) {
 	return NULL;
 }
 
-void ioapic_route_irq(uint8_t irq, uint8_t vector, uint8_t cpu_apic_id, bool masked) {
-	printf_serial(
-		"[IOAPIC] Routing IRQ %u -> vector %u cpu_apic=%u masked=%u\r\n",
-		irq, vector, cpu_apic_id, masked
-	);
-
+// Translate an ISA IRQ to its GSI, applying any MADT interrupt source override.
+// `flags` (optional) receives the override's polarity/trigger flags, 0 if there is none.
+static uint32_t ioapic_irq_to_gsi(uint8_t irq, uint16_t* flags) {
 	uint32_t gsi = irq;
 	uint16_t acpi_flags = 0;
 
-	for (uint32_t i = 0; i < madt_ref->entry_count; i++) {
-		if (madt_ref->entries[i].type == 2 &&
-			madt_ref->entries[i].override.irq_source == irq) {
+	if (madt_ref) {
+		for (uint32_t i = 0; i < madt_ref->entry_count; i++) {
+			if (madt_ref->entries[i].type == 2 && madt_ref->entries[i].override.irq_source == irq) {
 
-			gsi = madt_ref->entries[i].override.gsi;
-			acpi_flags = madt_ref->entries[i].override.flags;
+				gsi = madt_ref->entries[i].override.gsi;
+				acpi_flags = madt_ref->entries[i].override.flags;
 
-			printf_serial("[IOAPIC] Override: IRQ %u -> GSI %u flags=0x%x\r\n", irq, gsi, acpi_flags);
-
-			break;
+				printf_serial("[IOAPIC] Override: IRQ %u -> GSI %u flags=0x%x\r\n", irq, gsi, acpi_flags);
+				break;
+			}
 		}
 	}
+
+	if (flags) *flags = acpi_flags;
+	return gsi;
+}
+
+void ioapic_route_irq(uint8_t irq, uint8_t vector, uint8_t cpu_apic_id, bool masked) {
+	printf_serial(
+		"[IOAPIC] Routing IRQ %u -> vector %u cpu_apic=%u masked=%u\r\n",
+		irq,
+		vector,
+		cpu_apic_id,
+		masked
+	);
+
+	uint16_t acpi_flags;
+	uint32_t gsi = ioapic_irq_to_gsi(irq, &acpi_flags);
 
 	IOAPIC_Device* dev = ioapic_find_for_gsi(gsi);
 	if (!dev) {
@@ -165,9 +185,69 @@ void ioapic_set_mask(uint32_t gsi, bool masked) {
 	printf_serial("[IOAPIC] Current RTE low=0x%x\r\n", low);
 
 	if (masked) low |= IOAPIC_RTE_MASK;
-	else        low &= ~IOAPIC_RTE_MASK;
+	else low &= ~IOAPIC_RTE_MASK;
 
 	printf_serial("[IOAPIC] Updated RTE low=0x%x\r\n", low);
 
+	ioapic_write_reg(dev->mmio_base, IOAPIC_REDTBL(pin), low);
+}
+
+void ioapic_mask_irq(uint8_t irq) {
+	ioapic_set_mask(ioapic_irq_to_gsi(irq, NULL), true);
+}
+
+// ------------------------------------------------------------------------------------------------
+// Panic stuff
+// ------------------------------------------------------------------------------------------------
+
+void ioapic_note_sci(uint8_t irq) {
+	sci_gsi = ioapic_irq_to_gsi(irq, NULL);
+}
+
+// Same as ioapic_find_for_gsi() but silent
+static IOAPIC_Device* ioapic_find_for_gsi_quiet(uint32_t gsi) {
+	for (uint32_t i = 0; i < ioapic_count; i++) {
+		uint32_t start = ioapics[i].gsi_base;
+		if (gsi >= start && gsi < start + ioapics[i].max_redirection_entries) return &ioapics[i];
+	}
+	return NULL;
+}
+
+void ioapic_mask_all_except_sci(void) {
+	for (uint32_t i = 0; i < ioapic_count; i++) {
+		IOAPIC_Device* dev = &ioapics[i];
+		for (uint32_t pin = 0; pin < dev->max_redirection_entries; pin++) {
+			if (dev->gsi_base + pin == sci_gsi) continue;
+
+			uint32_t low = ioapic_read_reg(dev->mmio_base, IOAPIC_REDTBL(pin));
+			ioapic_write_reg(dev->mmio_base, IOAPIC_REDTBL(pin), low | IOAPIC_RTE_MASK);
+		}
+	}
+}
+
+void ioapic_route_sci_to(uint32_t apic_id) {
+	IOAPIC_Device* dev = ioapic_find_for_gsi_quiet(sci_gsi);
+	if (!dev) return;
+
+	uint32_t pin = sci_gsi - dev->gsi_base;
+	uint32_t low = ioapic_read_reg(dev->mmio_base, IOAPIC_REDTBL(pin));
+
+	// Mask first so nothing gets routed incorrectly while we're editing it
+	ioapic_write_reg(dev->mmio_base, IOAPIC_REDTBL(pin), low | IOAPIC_RTE_MASK);
+
+	// Level-triggered + Remote IRR set means a CPU we just halted was inside the SCI handler and never sent EOI, so the line would stay stuck forever
+	// Switching to edge and back clears Remote IRR
+	if ((low & IOAPIC_RTE_TRIGGER) && (low & IOAPIC_RTE_REMIRR)) {
+		ioapic_write_reg(dev->mmio_base, IOAPIC_REDTBL(pin), (low & ~IOAPIC_RTE_TRIGGER) | IOAPIC_RTE_MASK);
+	}
+
+	// Destination first
+	uint32_t high = (uint32_t) apic_id << 24;
+	ioapic_write_reg(dev->mmio_base, IOAPIC_REDTBL(pin) + 1, high);
+
+	// Keep vector, polarity and trigger exactly as ioapic_route_irq() programmed them
+	// Force fixed delivery, physical destination, and unmask
+	low &= ~(IOAPIC_RTE_DELMOD | IOAPIC_RTE_DESTMOD | IOAPIC_RTE_MASK | IOAPIC_RTE_REMIRR | IOAPIC_RTE_DELIVS);
+	low |= IOAPIC_DELMOD_FIXED;
 	ioapic_write_reg(dev->mmio_base, IOAPIC_REDTBL(pin), low);
 }

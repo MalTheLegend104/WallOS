@@ -1,8 +1,8 @@
 #ifndef MULTIBOOT_HPP
 #define MULTIBOOT_HPP
-#include <stdint.h>
 #include <multiboot.h>
 #include <stdbool.h>
+#include <stdint.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -50,7 +50,7 @@ extern "C" {
 #ifdef __cplusplus
 
 class MultibootManager {
-private:
+  private:
 	static uint32_t magic;
 	static multiboot_info* mbt_info;
 	static multiboot_header* header;
@@ -59,7 +59,8 @@ private:
 	static multiboot_tag_framebuffer* framebuffer_tag;
 	static multiboot_tag_module* module_tag;
 	static void loadTags();
-public:
+
+  public:
 	static multiboot_tag_mmap* getMMap() { return mmap; }
 	static multiboot_tag_framebuffer* getFramebufferTag() { return framebuffer_tag; }
 	static multiboot_info* getMultibootInfo() { return mbt_info; }
@@ -71,6 +72,7 @@ public:
 	static bool validateMagic();
 	static bool validateInfo();
 	static bool validateAll();
+	static const char* getCmdLine();
 };
 
 multiboot_tag_bootdev* getBootDev();
@@ -80,6 +82,7 @@ extern "C" {
 #endif
 
 	void* getAcpiRoot();
+	// const char* getMBCmdline();
 
 #ifdef __cplusplus
 }

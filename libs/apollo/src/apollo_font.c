@@ -7,96 +7,86 @@
 #include <apollo.h>
 
 #define GET_BIT(byte, bit) ((byte & (1 << bit)) >> bit)
-
-extern int printf_serial(const char* restrict format, ...);
+// Writes one glyph row (already expanded into 'bits') into the framebuffer.
+// 'bits' holds the row's bytes as a little-endian integer, so the leftmost pixel is bit 'top'  and the rightmost is bit 'bot'.
+static inline void apollo_glyph_row(uint8_t* q, uint32_t bits, int top, int bot, int x_scale, uint32_t fg, uint32_t bg, unsigned bpp) {
+	if (bpp == 4) {
+		uint32_t* d = (uint32_t*) q;
+		for (int b = top; b >= bot; b--) {
+			const uint32_t v = ((bits >> b) & 1u) ? fg : bg;
+			for (int sx = 0; sx < x_scale; sx++) *d++ = v;
+		}
+	} else if (bpp == 2) {
+		uint16_t* d = (uint16_t*) q;
+		for (int b = top; b >= bot; b--) {
+			const uint16_t v = (uint16_t) (((bits >> b) & 1u) ? fg : bg);
+			for (int sx = 0; sx < x_scale; sx++) *d++ = v;
+		}
+	} else if (bpp == 1) {
+		for (int b = top; b >= bot; b--) {
+			const uint8_t v = (uint8_t) (((bits >> b) & 1u) ? fg : bg);
+			for (int sx = 0; sx < x_scale; sx++) *q++ = v;
+		}
+	} else { // 3 bytes per pixel
+		for (int b = top; b >= bot; b--) {
+			const uint32_t v = ((bits >> b) & 1u) ? fg : bg;
+			for (int sx = 0; sx < x_scale; sx++) {
+				q[0] = (uint8_t) v;
+				q[1] = (uint8_t) (v >> 8);
+				q[2] = (uint8_t) (v >> 16);
+				q += 3;
+			}
+		}
+	}
+}
 
 void apollo_print_char(framebuffer_t* fb, const apollo_font_instance* font_inst, int c, coordinate_pair p, apollo_font_color_t color) {
-	if (fb == NULL || fb->info == NULL || font_inst == NULL || font_inst->font == NULL) return;
+	if (fb == NULL || fb->info == NULL || fb->buffer == NULL) return;
+	if (font_inst == NULL || font_inst->font == NULL) return;
 
 	const apollo_font* font = font_inst->font;
-	uint8_t x_scale = font_inst->x_scaling;
-	uint8_t y_scale = font_inst->y_scaling;
+	const framebuffer_info_t* info = fb->info;
 
-	if (c > (int) font->max_char) { printf_serial("above max char?\r\n"); return; }
-	if (c < 0) { printf_serial("negative\r\n"); return; }
+	const int x_scale = font_inst->x_scaling;
+	const int y_scale = font_inst->y_scaling;
+	if (x_scale == 0 || y_scale == 0) return;
+	if (c < 0 || c > (int) font->max_char) return;
 
-	apollo_color_t foreground = color.foreground;
-	if (foreground.type != fb->info->type) {
-		apollo_switch_color(fb->info->type, &foreground);
-	}
+	const int scaled_width = font->font_width * x_scale;
+	const int scaled_height = font->font_height * y_scale;
 
-	apollo_color_t background = color.background;
-	if (background.type != fb->info->type) {
-		apollo_switch_color(fb->info->type, &background);
-	}
+	// Don't draw anything that isn't entirely on screen
+	if (p.x < 0 || p.y < 0) return;
+	if (p.x + scaled_width > info->width) return;
+	if (p.y + scaled_height > info->height) return;
 
-	int32_t scaled_width = font->font_width * x_scale;
-	int32_t scaled_height = font->font_height * y_scale;
+	// Glyph rows are width_bytes wide.
+	// Fonts whose width isn't a multiple of 8 are centered in the next multiple of 8, so 'ignored' unused bits sit on each side (width must be even)
+	const int width_bytes = (font->font_width + 7) / 8;
+	if (width_bytes > 4) return; // a row must fit in a uint32_t
+	const int ignored = (font->font_width % 8 != 0) ? (8 - (font->font_width % 8)) / 2 : 0;
+	const int top = 8 * width_bytes - 1 - ignored; // leftmost pixel's bit
+	const int bot = ignored;                       // rightmost pixel's bit
 
-	if (scaled_width > fb->info->width) return;
-	if (scaled_height > fb->info->height) return;
+	const unsigned bpp = info->pixel_width;
+	const uint32_t fg = apollo_pack_color(info, color.foreground);
+	const uint32_t bg = apollo_pack_color(info, color.background);
 
-	// We aren't writing across the edge of the screen
-	if (p.x + scaled_width > fb->info->width) return;
-	// Writing past height is a buffer overflow
-	if (p.y + scaled_height > fb->info->height) return;
-
-	uint8_t* pixel = apollo_get_point(fb, p);
-	bool not_exact = false;
-	uint8_t ignored = 0;
-	uint8_t width_bytes;
-	int row_width;
-
-	if (font->font_width % 8 != 0) {
-		// We assume that any bitmap font that's not at a multiple of 8 will be CENTERED in the nearest upper multiple of 8
-		// A 20 bit font would be in a 24 bit spot, it just wouldn't use the 2 leftmost and 2 rightmost bits.
-		// A 10 bit font would be in a 16 bit spot, it wouldn't use the left most 3 or the right most 3
-		// Font widths MUST be a multiple of 2
-		not_exact = true;
-		ignored = (8 - (font->font_width % 8)) / 2;
-		width_bytes = (font->font_width / 8) + 1;
-		// I do not understand why I have to subtract 1 for it to work.
-		// It just does, and I ain't going to question it.
-		// It should work on any width font (unless it's divisible by 8).
-		// Tested on 2-14 bit fonts. In theory, it works on higher bit fonts as well.
-		row_width = (font->font_width - 1) * fb->info->pixel_width * x_scale;
-	} else {
-		width_bytes = font->font_width / 8;
-		row_width = font->font_width * fb->info->pixel_width * x_scale;
-	}
-
-	// I apparently don't use this? Idk, maybe got factored out in a rewrite a while ago and didn't notice
-	// I don't have time to go through and figure out what happened to it, and font printing works fine
-	// I do this here to avoid a compiler warning from GCC, all the stuff writing to this will get compiled out regardless
-	(void) row_width;
-
-	// Bitmap fonts are directly through.
-	// The offset to the char we're printing is at the offset of c * font_height * font_width(in bytes, not bits)
-	// We're going to find the position, then check each bit
-	uint8_t* char_start = font->bitmap_base + width_bytes * c * font->font_height;
+	uint8_t* pixel = fb->buffer + (size_t) p.y * info->pitch + (size_t) p.x * bpp;
+	const uint8_t* char_start = font->bitmap_base + (size_t) width_bytes * c * font->font_height;
 
 	for (int h = 0; h < font->font_height; h++) {
+		// The last byte of the row is the leftmost 8 pixels, so treating the row as a little-endian integer puts the leftmost pixel at the top bit
+		uint32_t bits = 0;
+		for (int i = 0; i < width_bytes; i++) {
+			bits |= (uint32_t) char_start[h * width_bytes + i] << (8 * i);
+		}
+
+		// Rebuild the row for each vertical repeat instead of copying the first one down
+		// This keeps it write-only, which matters when the target is write-combined VRAM
 		for (int sy = 0; sy < y_scale; sy++) {
-			uint8_t* row_pixel = pixel;
-			for (int i = width_bytes - 1; i >= 0; i--) {
-				for (int w = 8; w > 0; w--) {
-					if (not_exact && i == width_bytes - 1) { if ((w - 1) + ignored > 7) continue; }
-					if (not_exact && i == 0) { if ((w - 1) < ignored) continue; }
-
-					apollo_color_t pixel_color;
-					if (GET_BIT(char_start[(h * width_bytes) + i], (w - 1)) == 1) {
-						pixel_color = foreground;
-					} else {
-						pixel_color = background;
-					}
-
-					for (int sx = 0; sx < x_scale; sx++) {
-						apollo_set_pixel(fb->info, row_pixel, pixel_color);
-						row_pixel += fb->info->pixel_width;
-					}
-				}
-			}
-			pixel += fb->info->pitch;
+			apollo_glyph_row(pixel, bits, top, bot, x_scale, fg, bg, bpp);
+			pixel += info->pitch;
 		}
 	}
 }
@@ -127,7 +117,7 @@ coordinate_pair apollo_print_string(framebuffer_t* fb, const apollo_font_instanc
 		apollo_switch_color(fb->info->type, &background);
 	}
 
-	coordinate_pair pair = { p.x, p.y };
+	coordinate_pair pair = {p.x, p.y};
 	bool not_exact = false;
 
 	if (font->font_width % 8 != 0) {
@@ -153,7 +143,7 @@ coordinate_pair apollo_print_string(framebuffer_t* fb, const apollo_font_instanc
 			pair.y += scaled_height;
 		}
 
-		apollo_print_char(fb, font_inst, current_char, pair, (apollo_font_color_t) { foreground, background });
+		apollo_print_char(fb, font_inst, current_char, pair, (apollo_font_color_t) {foreground, background});
 
 		i++;
 		current_char = s[i];

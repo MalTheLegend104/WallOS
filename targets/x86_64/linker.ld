@@ -30,25 +30,29 @@ SECTIONS
 	. += KERNAL_VIRTUAL_BASE;
 
 	.text ALIGN(4096) : AT(ADDR(.text) - KERNAL_VIRTUAL_BASE) {
-		_text_start_ = .;
-		*(.text)
-	}
+        __kernel_text_start = .;
+        *(.text .text.*)
+        . = ALIGN(4096);
+        __kernel_text_end = .;
+    }
 
-	.rodata ALIGN(4096) : AT(ADDR(.rodata) - KERNAL_VIRTUAL_BASE) {
-		_rodata_start_ = .;
-		*(.rodata)
-	}
+    .rodata ALIGN(4096) : AT(ADDR(.rodata) - KERNAL_VIRTUAL_BASE) {
+        __kernel_rodata_start = .;
+        *(.rodata .rodata.*)
+        . = ALIGN(4096);
+        __kernel_rodata_end = .;
+    }
 
-	.data ALIGN(4096) : AT(ADDR(.data) - KERNAL_VIRTUAL_BASE) {
-		_data_start_ = .;
-		*(.data)
-	}
+    .data ALIGN(4096) : AT(ADDR(.data) - KERNAL_VIRTUAL_BASE) {
+        _data_start_ = .;
+        *(.data .data.*)
+    }
 
-	.bss ALIGN(4096) : AT(ADDR(.bss) - KERNAL_VIRTUAL_BASE) {
-		_bss_start_ = .;
-		*(.bss)
-		_bss_end_ = .;
-	}
+    .bss ALIGN(4096) : AT(ADDR(.bss) - KERNAL_VIRTUAL_BASE) {
+        _bss_start_ = .;
+        *(.bss .bss.*)
+        _bss_end_ = .;
+    }
 	
 	/* TODO: THIS NEEDS TO BE REMOVED. */
 	.initrd ALIGN(4096) : {

@@ -1,17 +1,18 @@
 #include <stdint.h>
 #include <stdlib.h>
 
-#include <x86_64/lapic.h>
 #include <stddef.h>
+#include <wallos_attributes.h>
+#include <x86_64/lapic.h>
 
 static volatile uint64_t* lapic_base = NULL;
 static volatile uint64_t* lapic_phys = NULL;
 
-uint32_t lapic_read(uint32_t offset) {
+WALLOS_NO_CALLER_SAVED uint32_t lapic_read(uint32_t offset) {
 	return *(volatile uint32_t*) ((uintptr_t) lapic_base + offset);
 }
 
-void lapic_write(uint32_t offset, uint32_t value) {
+WALLOS_NO_CALLER_SAVED void lapic_write(uint32_t offset, uint32_t value) {
 	*(volatile uint32_t*) ((uintptr_t) lapic_base + offset) = value;
 
 	// Ensure the write completes before returning
@@ -71,20 +72,24 @@ void bsp_init_lapic() {
 	// Task Priority Register = 0 (accept all interrupts)
 	lapic_write(LAPIC_TPR, 0);
 
+	// technically we should check the MADT to see if this is active low or level
+	// if that becomes a problem I'll deal with it
+	lapic_write(LAPIC_LVT_LINT1, LAPIC_ICR_DM_NMI); // NMI delivery mode, unmasked, vector ignored
+
 	// Clear any pending EOI
 	lapic_write(LAPIC_EOI, 0);
 }
 
 void ap_init_lapic() {
 	// Enable the LAPIC via MSR (IA32_APIC_BASE)
-	// Bit 11 is the Global Enable bit. 
+	// Bit 11 is the Global Enable bit.
 	// We use the standard base 0xFEE00000 unless your MADT said otherwise.
 	enable_lapic_msr((uintptr_t) lapic_phys);
 
 	// Set Spurious Vector and Software Enable (Bit 8)
 	lapic_write(LAPIC_SVR, SPURIOUS_VECTOR | (1 << 8));
 
-	// Setup LVT entries. 
+	// Setup LVT entries.
 	// We mask them initially to prevent "stray" interrupts before  the AP is fully ready for the timer.
 	lapic_write(LAPIC_LVT_TIMER, 1 << 16);
 	lapic_write(LAPIC_LVT_LINT0, 1 << 16);
@@ -98,6 +103,8 @@ void ap_init_lapic() {
 	lapic_write(LAPIC_ESR, 0);
 	lapic_write(LAPIC_ESR, 0);
 
+	lapic_write(LAPIC_LVT_LINT1, LAPIC_ICR_DM_NMI);
+
 	// Signal EOI just in case there's a stale interrupt from a warm reboot
 	lapic_write(LAPIC_EOI, 0);
 }
@@ -107,10 +114,10 @@ void lapic_sleep_us(uint64_t lapic_freq, uint64_t us) {
 	uint64_t ticks = (effective_freq / 1000) * us / 1000;
 
 	if (ticks == 0) return;
-	if (ticks > 0xFFFFFFFF) ticks = 0xFFFFFFFF;	// clamp to 32-bit counter
+	if (ticks > 0xFFFFFFFF) ticks = 0xFFFFFFFF; // clamp to 32-bit counter
 
-	lapic_write(LAPIC_DIVIDE_CONFIG, 0x3);		// divide by 16
-	lapic_write(LAPIC_LVT_TIMER, (1 << 16));	// masked, one-shot
+	lapic_write(LAPIC_DIVIDE_CONFIG, 0x3);  // divide by 16
+	lapic_write(LAPIC_LVT_TIMER, (1 << 16)); // masked, one-shot
 	lapic_write(LAPIC_INITIAL_COUNT, (uint32_t) ticks);
 
 	while (lapic_read(LAPIC_CURRENT_COUNT) != 0) __asm__ volatile("pause");
@@ -132,4 +139,19 @@ uint64_t calibrate_lapic_timer_with_tsc(uint64_t tsc_freq) {
 
 	// return (uint64_t) elapsed * 100 * 16;            // LAPIC bus Hz
 	return (uint64_t) elapsed * 100;
+}
+
+/* These are for panics */
+
+uint32_t lapic_current_id(void) {
+	return lapic_read(LAPIC_ID) >> 24;
+}
+
+void lapic_broadcast_nmi_excluding_self(void) {
+	lapic_send_ipi(0, LAPIC_ICR_DM_NMI | LAPIC_ICR_LEVEL_ASSERT | LAPIC_ICR_SH_ALL_EXC);
+}
+
+void lapic_timer_stop(void) {
+	lapic_write(LAPIC_LVT_TIMER, 1 << 16);  // mask
+	lapic_write(LAPIC_INITIAL_COUNT, 0);    // stop counting
 }

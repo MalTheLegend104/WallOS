@@ -1,11 +1,12 @@
 /**
  * Wallos VFS (Virtual File System).
  * TODO: Spinlocks should be on table accesses
+ * TODO: VFS_O_NONBLOCK
  */
 #include <filesystem/vfs.h>
-#include <stdint.h>
 #include <stdbool.h>
 #include <stddef.h>
+#include <stdint.h>
 #include <string.h>
 
 // ------------------------------------------------------------------------------------------------
@@ -16,28 +17,28 @@
 
 /** One entry in the global mount table. */
 typedef struct {
-	bool             active;
-	char             path[VFS_PATH_MAX]; /**< Absolute mount point, e.g. "/mnt/usb" */
-	size_t           path_len;           /**< strlen(path), cached                  */
-	WDM_DriveHandle  drive;
+	bool active;
+	char path[VFS_PATH_MAX]; /**< Absolute mount point, e.g. "/mnt/usb" */
+	size_t path_len;           /**< strlen(path), cached                  */
+	WDM_DriveHandle drive;
 	const VFS_FSOps* ops;
 	void* fs_ctx;
-	uint32_t         mount_seq;          /**< Insertion order, for reverse unmount  */
-	uint32_t         open_count;         /**< Number of live FDs on this mount      */
+	uint32_t mount_seq;          /**< Insertion order, for reverse unmount  */
+	uint32_t open_count;         /**< Number of live FDs on this mount      */
 } VFS_MountEntry;
 
 /** One entry in the global FD table. */
 typedef struct {
-	bool           active;
+	bool active;
 	VFS_MountEntry* mount;   /**< Back-pointer to the owning mount      */
-	VFS_FD         drv_fd;   /**< The fd value returned by the driver   */
-	VFS_OpenFlags  flags;    /**< Flags this descriptor was opened with */
+	VFS_FD drv_fd;   /**< The fd value returned by the driver   */
+	VFS_OpenFlags flags;    /**< Flags this descriptor was opened with */
 } VFS_FDEntry;
 
 static VFS_MountEntry vfs_mounts[VFS_MOUNT_MAX];
-static VFS_FDEntry    vfs_fds[VFS_FD_MAX];
-static bool           wdm_initialized = false;
-static uint32_t       vfs_mount_seq = 0;
+static VFS_FDEntry vfs_fds[VFS_FD_MAX];
+static bool wdm_initialized = false;
+static uint32_t vfs_mount_seq = 0;
 
 // ------------------------------------------------------------------------------------------------
 // ------------------------------------------------------------------------------------------------
@@ -74,7 +75,7 @@ static VFS_Status validate_path(const char* path) {
  */
 static VFS_MountEntry* resolve_mount(const char* path) {
 	VFS_MountEntry* best = NULL;
-	size_t          best_len = 0;
+	size_t best_len = 0;
 
 	for (int i = 0; i < VFS_MOUNT_MAX; i++) {
 		VFS_MountEntry* m = &vfs_mounts[i];
@@ -160,7 +161,7 @@ static bool validate_fd(VFS_FD fd) {
  */
 static VFS_Status close_fd_entry(VFS_FDEntry* entry) {
 	VFS_MountEntry* m = entry->mount;
-	VFS_Status      st = m->ops->close_file(m->fs_ctx, entry->drv_fd);
+	VFS_Status st = m->ops->close_file(m->fs_ctx, entry->drv_fd);
 
 	m->open_count--;
 	memset(entry, 0, sizeof(*entry));
@@ -236,12 +237,7 @@ VFS_Status VFS_Mount(const char* path, WDM_DriveHandle drive, const VFS_FSOps* o
 
 	// All operations are required.
 	// Yes this is ugly. Yes this is the easiest way to do this.
-	if (!ops->on_mount || !ops->on_unmount ||
-		!ops->create_context || !ops->destroy_context ||
-		!ops->open_file || !ops->close_file ||
-		!ops->read_file || !ops->write_file ||
-		!ops->make_dir || !ops->remove_dir ||
-		!ops->open_dir || !ops->read_dir) {
+	if (!ops->on_mount || !ops->on_unmount || !ops->create_context || !ops->destroy_context || !ops->open_file || !ops->close_file || !ops->read_file || !ops->write_file || !ops->make_dir || !ops->remove_dir || !ops->open_dir || !ops->read_dir) {
 		return VFS_ERR_INVALID;
 	}
 
@@ -329,7 +325,7 @@ VFS_Status VFS_Open(const char* path, VFS_OpenFlags flags, VFS_FD* out_fd) {
 
 	if (vfd == VFS_FD_INVALID) return VFS_ERR_FDFULL;
 
-	VFS_FD     drv_fd = VFS_FD_INVALID;
+	VFS_FD drv_fd = VFS_FD_INVALID;
 	VFS_Status dst = m->ops->open_file(m->fs_ctx, driver_path(m, path), flags, &drv_fd);
 
 	if (dst != VFS_OK) {
@@ -406,6 +402,190 @@ VFS_Status VFS_Write(VFS_FD fd, const void* buf, size_t size, size_t* out_writte
 	return m->ops->write_file(m->fs_ctx, entry->drv_fd, buf, size, out_written);
 }
 
+VFS_Status VFS_Seek(VFS_FD fd, int64_t offset, VFS_Whence whence, uint64_t* out_pos) {
+	if (!validate_fd(fd)) {
+		return VFS_ERR_BADF;
+	}
+
+	if (whence != VFS_SEEK_SET && whence != VFS_SEEK_CUR && whence != VFS_SEEK_END) {
+		return VFS_ERR_INVALID;
+	}
+
+	VFS_FDEntry* entry = &vfs_fds[fd];
+	VFS_MountEntry* m = entry->mount;
+
+	/* Seeking is optional for drivers. */
+	if (!m->ops->seek_file) {
+		return VFS_ERR_UNSUPPORTED;
+	}
+
+	/* The driver contract guarantees a non-NULL out_pos, but ours is optional. */
+	uint64_t new_pos = 0;
+	VFS_Status st = m->ops->seek_file(m->fs_ctx, entry->drv_fd, offset, whence, &new_pos);
+
+	if (st != VFS_OK) {
+		return st;
+	}
+
+	if (out_pos) {
+		*out_pos = new_pos;
+	}
+
+	return VFS_OK;
+}
+
+/**
+ * True if `path` is an active mount point or contains one (path="/mnt" while "/mnt/usb" is mounted)
+ */
+static bool path_touches_mount(const char* path) {
+	size_t plen = strlen(path);
+
+	for (int i = 0; i < VFS_MOUNT_MAX; i++) {
+		const VFS_MountEntry* m = &vfs_mounts[i];
+
+		if (!m->active || m->path_len < plen) {
+			continue;
+		}
+
+		if (strncmp(m->path, path, plen) != 0) {
+			continue;
+		}
+
+		if (m->path_len == plen || m->path[plen] == '/' || plen == 1) {
+			return true;
+		}
+	}
+
+	return false;
+}
+
+VFS_Status VFS_Flush(VFS_FD fd) {
+	if (!validate_fd(fd)) {
+		return VFS_ERR_BADF;
+	}
+
+	VFS_FDEntry* entry = &vfs_fds[fd];
+	VFS_MountEntry* m = entry->mount;
+
+	if (!m->ops->flush_file) {
+		return VFS_ERR_UNSUPPORTED;
+	}
+
+	return m->ops->flush_file(m->fs_ctx, entry->drv_fd);
+}
+
+VFS_Status VFS_SyncAll(void) {
+	VFS_Status first_err = VFS_OK;
+
+	/* Keep going after a failure so one bad device cannot stop the others from being synced. */
+	for (int i = 0; i < VFS_MOUNT_MAX; i++) {
+		VFS_MountEntry* m = &vfs_mounts[i];
+
+		if (!m->active || !m->ops->sync) {
+			continue;
+		}
+
+		VFS_Status st = m->ops->sync(m->fs_ctx);
+
+		if (st != VFS_OK && first_err == VFS_OK) {
+			first_err = st;
+		}
+	}
+
+	return first_err;
+}
+
+VFS_Status VFS_Fstat(VFS_FD fd, VFS_FileStat* out) {
+	if (!out) {
+		return VFS_ERR_INVALID;
+	}
+
+	if (!validate_fd(fd)) {
+		return VFS_ERR_BADF;
+	}
+
+	VFS_FDEntry* entry = &vfs_fds[fd];
+	VFS_MountEntry* m = entry->mount;
+
+	if (!m->ops->stat_file) {
+		return VFS_ERR_UNSUPPORTED;
+	}
+
+	memset(out, 0, sizeof(*out));
+	return m->ops->stat_file(m->fs_ctx, entry->drv_fd, out);
+}
+
+VFS_Status VFS_Stat(const char* path, VFS_FileStat* out) {
+	if (!out) {
+		return VFS_ERR_INVALID;
+	}
+
+	VFS_Status st = validate_path(path);
+
+	if (st != VFS_OK) return st;
+
+	VFS_MountEntry* m = resolve_mount(path);
+
+	if (!m) return VFS_ERR_NOMNT;
+
+	if (!m->ops->stat_path) {
+		return VFS_ERR_UNSUPPORTED;
+	}
+
+	memset(out, 0, sizeof(*out));
+	return m->ops->stat_path(m->fs_ctx, driver_path(m, path), out);
+}
+
+VFS_Status VFS_Unlink(const char* path) {
+	VFS_Status st = validate_path(path);
+
+	if (st != VFS_OK) return st;
+
+	/* A mount point is never a removable file. */
+	if (path_touches_mount(path)) {
+		return VFS_ERR_BUSY;
+	}
+
+	VFS_MountEntry* m = resolve_mount(path);
+
+	if (!m) return VFS_ERR_NOMNT;
+
+	if (!m->ops->unlink_file) {
+		return VFS_ERR_UNSUPPORTED;
+	}
+
+	return m->ops->unlink_file(m->fs_ctx, driver_path(m, path));
+}
+
+VFS_Status VFS_Rename(const char* old_path, const char* new_path) {
+	VFS_Status st = validate_path(old_path);
+
+	if (st != VFS_OK) return st;
+
+	st = validate_path(new_path);
+
+	if (st != VFS_OK) return st;
+
+	/* Moving or replacing a mount point, or a directory that contains one, is never allowed. */
+	if (path_touches_mount(old_path) || path_touches_mount(new_path)) {
+		return VFS_ERR_BUSY;
+	}
+
+	VFS_MountEntry* mo = resolve_mount(old_path);
+	VFS_MountEntry* mn = resolve_mount(new_path);
+
+	if (!mo || !mn) return VFS_ERR_NOMNT;
+
+	/* No cross-mount moves; like POSIX, the caller must copy and unlink. */
+	if (mo != mn) return VFS_ERR_XDEV;
+
+	if (!mo->ops->rename) {
+		return VFS_ERR_UNSUPPORTED;
+	}
+
+	return mo->ops->rename(mo->fs_ctx, driver_path(mo, old_path), driver_path(mo, new_path));
+}
+
 // ------------------------------------------------------------------------------------------------
 // ------------------------------------------------------------------------------------------------
 // Directory operations
@@ -442,7 +622,7 @@ VFS_Status VFS_Rmdir(const char* path) {
 
 	VFS_MountEntry* m = resolve_mount(path);
 
-	if (!m)	return VFS_ERR_NOMNT;
+	if (!m) return VFS_ERR_NOMNT;
 
 	return m->ops->remove_dir(m->fs_ctx, driver_path(m, path));
 }

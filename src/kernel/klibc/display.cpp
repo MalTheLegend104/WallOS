@@ -52,7 +52,6 @@ static apollo_color_t display_color_to_apollo(display_color_t color) {
 
 	switch (color) {
 		case DISPLAY_COLOR_BLACK:
-			result.alpha = 0;
 			result.red = 0;
 			result.green = 0;
 			result.blue = 0;
@@ -208,22 +207,35 @@ static inline void fast_memmove(void* dest, const void* src, size_t n) {
 }
 
 // ------------------------------------------------------------------------------------------------
-// Framebuffer Mode Helpers
+// Flushing
 // ------------------------------------------------------------------------------------------------
 void display_flush_rect(int x, int y, int width, int height) {
 	if (!use_backbuffer) return;
 
-	int bpp = fb_info.pixel_width;
-	size_t pitch = fb_info.pitch;
+	if (x < 0) {
+		width += x;
+		x = 0;
+	}
+	if (y < 0) {
+		height += y;
+		y = 0;
+	}
+	if (x + width > fb_info.width) width = fb_info.width - x;
+	if (y + height > fb_info.height) height = fb_info.height - y;
+	if (width <= 0 || height <= 0) return;
+
+	const size_t bpp = fb_info.pixel_width;
+	const size_t pitch = fb_info.pitch;
+
+	// Full-width rectangle: rows are contiguous, so it's one copy
+	if (x == 0 && (size_t) width * bpp == pitch) {
+		fast_memmove(front_buffer.buffer + (size_t) y * pitch, back_buffer.buffer + (size_t) y * pitch, (size_t) height * pitch);
+		return;
+	}
 
 	for (int row = 0; row < height; row++) {
-		int current_y = y + row;
-		if (current_y >= fb_info.height) break; // Don't draw off the bottom
-
-		uint8_t* dst = front_buffer.buffer + (current_y * pitch) + (x * bpp);
-		uint8_t* src = back_buffer.buffer + (current_y * pitch) + (x * bpp);
-
-		fast_memmove(dst, src, width * bpp);
+		const size_t off = (size_t) (y + row) * pitch + (size_t) x * bpp;
+		fast_memmove(front_buffer.buffer + off, back_buffer.buffer + off, (size_t) width * bpp);
 	}
 }
 
@@ -243,6 +255,48 @@ void display_flush() {
 	asm volatile("sfence" ::: "memory");
 }
 
+
+// ------------------------------------------------------------------------------------------------
+// Dirty Rectangle Tracking
+// ------------------------------------------------------------------------------------------------
+static bool dirty_any = false;
+static int dirty_x0, dirty_y0, dirty_x1, dirty_y1;
+
+static void mark_dirty(int x, int y, int w, int h) {
+	if (!use_backbuffer) return; // drawing straight to VRAM, nothing to present
+
+	int x1 = x + w, y1 = y + h;
+	if (x < 0) x = 0;
+	if (y < 0) y = 0;
+	if (x1 > fb_info.width) x1 = fb_info.width;
+	if (y1 > fb_info.height) y1 = fb_info.height;
+	if (x1 <= x || y1 <= y) return;
+
+	if (!dirty_any) {
+		dirty_x0 = x;
+		dirty_y0 = y;
+		dirty_x1 = x1;
+		dirty_y1 = y1;
+		dirty_any = true;
+		return;
+	}
+	if (x < dirty_x0) dirty_x0 = x;
+	if (y < dirty_y0) dirty_y0 = y;
+	if (x1 > dirty_x1) dirty_x1 = x1;
+	if (y1 > dirty_y1) dirty_y1 = y1;
+}
+
+static void present_dirty(void) {
+	if (!dirty_any) return;
+	dirty_any = false;
+	if (!use_backbuffer) return;
+	display_flush_rect(dirty_x0, dirty_y0, dirty_x1 - dirty_x0, dirty_y1 - dirty_y0);
+}
+
+// ------------------------------------------------------------------------------------------------
+// Framebuffer Mode Helpers
+// ------------------------------------------------------------------------------------------------
+
 static void fb_scroll(void) {
 	if (!font_instance.font) return;
 
@@ -259,9 +313,7 @@ static void fb_scroll(void) {
 	coordinate_pair bottom_left = {0, fb_info.height - font_height};
 	apollo_set_rect(render_target, bottom_left, PAIR_TOP_LEFT, fb_info.width, font_height, bg);
 
-	if (use_backbuffer) {
-		display_flush();
-	}
+	mark_dirty(0, 0, fb_info.width, fb_info.height);
 }
 
 static void fb_putc_internal(uint8_t c) {
@@ -301,6 +353,7 @@ static void fb_putc_internal(uint8_t c) {
 				fb_cursor_y * char_height
 			};
 			apollo_set_rect(render_target, pos, PAIR_TOP_LEFT, char_width, char_height, colors.background);
+			mark_dirty(pos.x, pos.y, char_width, char_height);
 		}
 		return;
 	}
@@ -324,7 +377,7 @@ static void fb_putc_internal(uint8_t c) {
 	};
 	apollo_print_char(render_target, &font_instance, c, pos, colors);
 
-	display_flush_rect(pos.x, pos.y, char_width, char_height);
+	mark_dirty(pos.x, pos.y, char_width, char_height);
 
 	fb_cursor_x++;
 	if (fb_cursor_x >= chars_per_line) {
@@ -464,11 +517,11 @@ static apollo_pixel_type apollo_pixel_type_from_multiboot(const struct multiboot
 }
 
 #include <string.h>
-
 void apollo_draw_buffer(framebuffer_t* buffer) {
-	printf_serial("Framebuffer DEST: %p\r\nFramebuffer SRC:  %p\r\n", front_buffer.buffer, buffer->buffer);
+	if (!buffer || !buffer->buffer || !front_buffer.info) return;
 
-	memcpy(front_buffer.buffer, buffer->buffer, front_buffer.info->height * front_buffer.info->width * front_buffer.info->pixel_width);
+	size_t size = (size_t) front_buffer.info->height * front_buffer.info->pitch;
+	memcpy(front_buffer.buffer, buffer->buffer, size);
 }
 
 void apollo_get_info(framebuffer_info_t* fb_info) {
@@ -541,7 +594,7 @@ static void fb_toggle_cursor(int cx, int cy) {
 	}
 
 	// Flush just this tiny changed rectangle to VRAM
-	display_flush_rect(px, py, char_width, char_height);
+	mark_dirty(px, py, char_width, char_height);
 }
 
 static void fb_erase_cursor(void) {
@@ -633,6 +686,7 @@ void display_init_late() {
 		use_backbuffer = true;
 
 		fb_draw_cursor();
+		present_dirty();
 
 		printf_serial("[FB] Switched to back buffer.\r\n");
 	}
@@ -667,6 +721,7 @@ void display_putc(unsigned char c) {
 		fb_erase_cursor();
 		fb_putc_internal(c);
 		fb_draw_cursor();
+		present_dirty();
 	}
 }
 
@@ -677,6 +732,7 @@ void display_putc_unfiltered(char c) {
 		fb_erase_cursor();
 		fb_putc_internal(c);
 		fb_draw_cursor();
+		present_dirty();
 	}
 }
 
@@ -689,6 +745,7 @@ void display_puts(const char* str) {
 			fb_putc_internal(*p);
 		}
 		fb_draw_cursor();
+		present_dirty();
 	}
 }
 
@@ -707,7 +764,8 @@ void display_clear(void) {
 		fb_cursor_y = 0;
 
 		fb_draw_cursor();
-		if (use_backbuffer) display_flush();
+		mark_dirty(0, 0, fb_info.width, fb_info.height);
+		present_dirty();
 	}
 }
 
@@ -728,7 +786,8 @@ void display_clear_row(void) {
 		fb_cursor_x = 0;
 
 		fb_draw_cursor();
-		if (use_backbuffer) display_flush();
+		mark_dirty(0, fb_cursor_y * char_height, fb_info.width, char_height);
+		present_dirty();
 	}
 }
 
@@ -770,7 +829,7 @@ void display_enable_cursor(uint8_t cursor_start, uint8_t cursor_end) {
 	} else {
 		fb_cursor_visible = true;
 		fb_draw_cursor();
-		if (use_backbuffer) display_flush();
+		present_dirty();
 	}
 }
 
@@ -780,7 +839,7 @@ void display_disable_cursor(void) {
 	} else {
 		fb_cursor_visible = false;
 		fb_erase_cursor();
-		if (use_backbuffer) display_flush();
+		present_dirty();
 	}
 }
 
@@ -792,7 +851,7 @@ void display_update_cursor(int x, int y) {
 		fb_cursor_x = x;
 		fb_cursor_y = y;
 		fb_draw_cursor();
-		if (use_backbuffer) display_flush();
+		present_dirty();
 	}
 }
 
@@ -869,18 +928,23 @@ int display_get_chars_per_line() {
 }
 
 #ifdef __is_kernel_
+static void panic_prepare(display_color_t bg) {
+	use_backbuffer = false;
+	render_target = &front_buffer;
+	fb_cursor_visible = false;
+	fb_cursor_drawn = false;
+
+	apollo_fill_buffer(&front_buffer, display_color_to_apollo(bg));
+	fb_cursor_x = 0;
+	fb_cursor_y = 0;
+	display_set_colors(DISPLAY_COLOR_WHITE, bg);
+}
+
 void display_panic(const char* error) {
 	if (display_mode == DISPLAY_MODE_VGA_TEXT) {
 		pink_screen(error);
 	} else {
-		use_backbuffer = false;
-		// Implement framebuffer panic screen
-		apollo_color_t pink = display_color_to_apollo(DISPLAY_COLOR_PINK);
-		apollo_fill_buffer(&front_buffer, pink);
-
-		fb_cursor_x = 0;
-		fb_cursor_y = 0;
-		display_set_colors(DISPLAY_COLOR_WHITE, DISPLAY_COLOR_PINK);
+		panic_prepare(DISPLAY_COLOR_PINK);
 		display_puts(error);
 	}
 }
@@ -889,14 +953,7 @@ void display_panic_array(const char** errors, uint8_t length) {
 	if (display_mode == DISPLAY_MODE_VGA_TEXT) {
 		pink_screen_sa(errors, length);
 	} else {
-		use_backbuffer = false;
-		apollo_color_t pink = display_color_to_apollo(DISPLAY_COLOR_PINK);
-		apollo_fill_buffer(&front_buffer, pink);
-
-		fb_cursor_x = 0;
-		fb_cursor_y = 0;
-		display_set_colors(DISPLAY_COLOR_WHITE, DISPLAY_COLOR_PINK);
-
+		panic_prepare(DISPLAY_COLOR_PINK);
 		for (uint8_t i = 0; i < length; i++) {
 			display_puts(errors[i]);
 			display_putc('\n');

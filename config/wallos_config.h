@@ -1,0 +1,172 @@
+/* This file is forcefully included along with every single file.
+ *
+ * This is meant to serve as VERY BASIC config file to enable/disable modules.
+ * This is mostly to get around the mess I've created with makefiles.
+ */
+#pragma once
+
+// ------------------------------------------------------------------------------------------------
+// Versioning
+// ------------------------------------------------------------------------------------------------
+#include "wallos_version.h"
+
+// TODO: need a better wrapper for architecture flags.
+// I don't really want to throw around ifdef __X86_64__ or other flags like that, but do want a common interface
+#define WALLOS_ARCH_X86_64
+
+/* Detect native CPU byte order. */
+#if defined(__BYTE_ORDER__) && defined(__ORDER_BIG_ENDIAN__) && (__BYTE_ORDER__ == __ORDER_BIG_ENDIAN__)
+#define WALLOS_BIG_ENDIAN 1
+#else
+#define WALLOS_BIG_ENDIAN 0
+#endif
+
+// ------------------------------------------------------------------------------------------------
+// ------------------------------------------------------------------------------------------------
+// ACPI
+// ------------------------------------------------------------------------------------------------
+// ------------------------------------------------------------------------------------------------
+
+/* ACPI Modules.
+ *
+ * I intend on supporting both ACPICA (for correctness), and uACPI (for ease of development).
+ *
+ * They both require a pretty much identical interface.
+ * ACPICA tends to be way better at helping diagnose system problems, uACPI doesn't supply great error information.
+ * uACPI is significantly less resource intensive and much quicker to run.
+ *
+ * Only one of these can be built at a time (intentionally). I was considering letting them both exist,
+ * and still could "relatively" easily, but think it would just cause more problems than it's worth.
+ */
+#define WALLOS_USE_ACPICA 1
+// #define WALLOS_USE_UACPI 1
+
+// ------------------------------------------------------------------------------------------------
+// ------------------------------------------------------------------------------------------------
+// Scheduling/CPU related
+// ------------------------------------------------------------------------------------------------
+// ------------------------------------------------------------------------------------------------
+
+// Defines the amount of IOAPIC we allow.
+// This is defined statically for simplicity.
+// If it becomes a problem, it can be made dynamic.
+// My weird dual-socket server only has a 3 of these, 8 should be plenty.
+#define WALLOS_IOAPIC_MAX 8
+
+// This tells the OS that we have 64 bit write/read rather than needing to split it up into 32bit write/read
+#define WALLOS_HAS_64_BIT_MMIO
+
+// Depth of each per-device-type event queue
+// This means this number is the max amount of events for each device type
+// For example, if a keyboard driver pushes 100 events before the input system is drained, the last 46 will be dropped
+#define WALLOS_INPUT_QUEUE_CAPACITY 64
+
+// Max amount of drives that we can have at once.
+#define WDM_MAX_DRIVES 32
+
+// ------------------------------------------------------------------------------------------------
+// ------------------------------------------------------------------------------------------------
+// Scheduler Config
+// ------------------------------------------------------------------------------------------------
+// ------------------------------------------------------------------------------------------------
+
+// I see ZERO reason WallOS will run on anything with more than 64 cores.
+// If it does, this is easy to change and recompile.
+#define WALLOS_SYSTEM_MAX_CPU 64
+
+/* Base scheduling unit (16 ms). */
+#define SCHED_QUANTUM_US 16000u
+
+/* Stack size for a new task when its creator doesn't specify one (32 KiB). */
+#define SCHED_DEFAULT_STACK (32u * 1024u)
+
+/* Maximum quanta a single kernel task may be given per run (64 x 16 ms = 1024 ms).
+ * Larger requests are clamped to this value.
+ * Use KTASK_RUN_TO_COMPLETION for work that must not be time-sliced.
+ */
+#define SCHED_KERNEL_MAX_QUANTA 64u
+
+// Everything below this comment should probably be tuned and tested as we get more tasks
+// These were baselines that felt right, but will probably cause problems eventually
+
+/* How often an idle CPU wakes itself (1 ms, equal to the P9 quantum).
+ * It is the worst-case delay before an idle CPU notices work if a wake-up IPI was missed, and how often it retries stealing.
+ */
+#define SCHED_IDLE_WAKE_US (SCHED_QUANTUM_US / 16)
+
+/* Time between periodic rebalance passes on each CPU (3s. The spec says "every few seconds"). */
+#define SCHED_REBALANCE_US 3000000ull
+
+/* Minimum task-count gap between the busiest and least busy CPU before a periodic rebalance moves anything.
+ * Prevents shuffling tasks back and forth over tiny differences.
+ */
+#define SCHED_IMBALANCE_MIN 4u
+
+/* Maximum number of tasks an idle CPU will steal from other CPUs in one attempt. */
+#define SCHED_STEAL_BATCH 4u
+
+/* Steal cooldown after a CPU's first failed attempt.
+ * It doubles with each further consecutive failure, up to the cap below, and resets after a successful steal. */
+#define SCHED_STEAL_COOLDOWN_BASE_US SCHED_QUANTUM_US
+
+/* Upper bound on the steal cooldown (1 s), no matter how many attempts in a row have failed. */
+#define SCHED_STEAL_COOLDOWN_CAP_US 1000000ull
+
+/* Task spawning has a helper for functions in the form `int fn(int, char**)`.
+ * This caps the max size of the char** array in those cases.
+ * This IS NOT a hard limit for general user main functions. Those are handled entirely differently.
+ * This only applies to tasks being created for the kernel by the kernel.
+ */
+#ifndef TASK_ARGV_MAX_BYTES
+#define TASK_ARGV_MAX_BYTES 4096u
+#endif
+
+// ------------------------------------------------------------------------------------------------
+// ------------------------------------------------------------------------------------------------
+// Syscall Config
+// ------------------------------------------------------------------------------------------------
+// ------------------------------------------------------------------------------------------------
+
+/* Set to 1 to enable syscall logging.
+ * This will print to the serial log every time a syscall is called, with the arguments.
+ */
+#define WALLOS_SYSCALL_LOG 0
+
+// ------------------------------------------------------------------------------------------------
+// ------------------------------------------------------------------------------------------------
+// VMM & PMM Config
+// ------------------------------------------------------------------------------------------------
+// ------------------------------------------------------------------------------------------------
+// Early table pool, in .bss.
+// Page tables allocated before the PMM exists come from here, and so does the whole direct map.
+// With 1GB pages the direct map of 256GB needs a couple of pages, with only 2MB pages it needs one page per GB.
+// This can comfortably be made lower if you are building for a dedicated system.
+#define VMM_EARLY_POOL_PAGES 512
+
+// Supervisor Mode Access Prevention.
+// With it on, kernel code can only touch user memory through copy_to_user() and similar
+// Anything that pokes user pointers directly will fault.
+// If the CPU does not support SMAP, this means nothing.
+#define VMM_ENABLE_SMAP 1
+
+
+// Amount of pages of unmapped VA kept below a growing stack, so it can't grow into whatever sits under it.
+// This is the only protection against stack based attacks I will bother implementing.
+#define VMM_STACK_GUARD_GAP (16 * PAGE_4KB_SIZE)
+
+// Max size a stack is allowed to grow.
+// Applies to both user and kernel space tasks
+#define VMM_DEFAULT_STACK_LIMIT (8ULL * 1024 * 1024)
+
+// ------------------------------------------------------------------------------------------------
+// ------------------------------------------------------------------------------------------------
+// Error Checking
+// Checks for critical config items to make sure they are defined to sensible values
+// ------------------------------------------------------------------------------------------------
+// ------------------------------------------------------------------------------------------------
+/* 1 and only 1 ACPI subsystem should ever be present. */
+#if !defined(WALLOS_USE_ACPICA) && !defined(WALLOS_USE_UACPI)
+#error "Must have one ACPI subsystem enabled."
+#elif defined(WALLOS_USE_ACPICA) && defined(WALLOS_USE_UACPI)
+#error "Must have only one ACPI subsystem enabled, not both."
+#endif

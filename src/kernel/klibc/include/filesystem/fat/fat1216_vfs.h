@@ -1,8 +1,8 @@
 #ifndef WALLOS_VFS_FAT1216_H
 #define WALLOS_VFS_FAT1216_H
 
-#include <filesystem/vfs.h>
 #include <filesystem/fat/fat1216.h>
+#include <filesystem/vfs.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -10,7 +10,7 @@ extern "C" {
 
 #ifndef VFS_FAT1216_OPEN_MAX
 /** Maximum simultaneously open files *and* directories (each). */
-#  define VFS_FAT1216_OPEN_MAX 32
+#define VFS_FAT1216_OPEN_MAX 32
 #endif
 
 	/* Per file state. Read-only, so no write cursor bookkeeping beyond pos. */

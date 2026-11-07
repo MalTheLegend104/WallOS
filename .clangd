@@ -5,3 +5,6 @@ Completion:
   AllScopes: true
   HeaderInsertion: IWYU
   ArgumentLists: None
+
+Documentation:
+  CommentFormat: Doxygen

@@ -122,10 +122,16 @@ enable_paging:
 	or eax, 1 << 5
 	mov cr4, eax
 	
-	; enable long mode
-	mov ecx, 0xC0000080
-	rdmsr
-	or eax, 1 << 8
+	; enable long mode, plus NX only if the CPU has it (writing EFER.NXE without NX is a #GP)
+	mov eax, 0x80000001
+	cpuid               ; clobbers eax, ebx, ecx, edx. ebx was already saved to multiboot_data_address
+	bt edx, 20          ; CPUID.80000001h:EDX[20] = NX
+	mov ecx, 0xC0000080 ; EFER
+	rdmsr               ; rdmsr and mov don't touch flags, so CF from bt survives
+	jnc .no_nx
+	or eax, 1 << 11     ; NXE
+.no_nx:
+	or eax, 1 << 8      ; LME
 	wrmsr
 
 	; enable paging

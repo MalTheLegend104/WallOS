@@ -370,14 +370,12 @@ static void process_serial_byte(char c) {
 	}
 }
 
+#include <wallos_attributes.h>
 // ---------------------------------------------------------------------------
 // IRQ 4 handler (COM1)
-//
-//
 // ---------------------------------------------------------------------------
-WALLOS_INTERRUPT_HANDLER
-void serial_irq_handler(struct interrupt_frame* frame) {
-	(void) frame; // we dont use it, but GCC requires it on __attribute__((interrupt))
+WALLOS_INTERRUPT_HANDLER void serial_irq_handler(struct interrupt_regs* frame) {
+	(void) frame;
 	uint16_t port = COM1;
 
 	// Drain the FIFO completely before returning.
@@ -385,6 +383,12 @@ void serial_irq_handler(struct interrupt_frame* frame) {
 		char c = inb(REG_DATA(port));
 
 		write_serial_port(port, c); // echo input
+		if (c == 0x7F) {
+			// send backspace to the terminal
+			write_serial_port(port, '\b'); // move cursor back
+			write_serial_port(port, ' '); // overwrite the character
+			write_serial_port(port, '\b'); // re-move cursor back
+		}
 		if (c == '\r') write_serial_port(port, '\n'); // we need the \n
 
 		process_serial_byte(c);

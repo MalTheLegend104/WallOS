@@ -1,8 +1,10 @@
 #ifndef STRING_H
 #define STRING_H
 
+#include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
+
 
 #ifdef __cplusplus
 extern "C" {
@@ -41,6 +43,32 @@ extern "C" {
 	void memsetw(void* dest, unsigned short val, int count);
 
 	void* memmove(void* dest, const void* src, size_t n);
+
+	/**
+	 * @brief Check if a string contains a substring
+	 *
+	 * @param str String to search
+	 * @param substring Substring to search for
+	 * @return true If the string contains the substring
+	 * @return false String or Substring are invalid or empty, or substring wasn't found.
+	 */
+	static inline bool str_contains(const char* str, const char* substring) {
+		if (str == NULL || substring == NULL) return false;
+		if (*substring == '\0') return true;
+
+		for (; *str != '\0'; str++) {
+			const char* h = str;
+			const char* n = substring;
+			while (*h != '\0' && *n != '\0' && *h == *n) {
+				h++;
+				n++;
+			}
+			if (*n == '\0') {
+				return true;
+			}
+		}
+		return false;
+	}
 
 #ifdef __cplusplus
 }
