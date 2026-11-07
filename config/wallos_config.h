@@ -121,10 +121,42 @@
 #define TASK_ARGV_MAX_BYTES 4096u
 #endif
 
+// ------------------------------------------------------------------------------------------------
+// ------------------------------------------------------------------------------------------------
+// Syscall Config
+// ------------------------------------------------------------------------------------------------
+// ------------------------------------------------------------------------------------------------
+
 /* Set to 1 to enable syscall logging.
  * This will print to the serial log every time a syscall is called, with the arguments.
  */
 #define WALLOS_SYSCALL_LOG 0
+
+// ------------------------------------------------------------------------------------------------
+// ------------------------------------------------------------------------------------------------
+// VMM & PMM Config
+// ------------------------------------------------------------------------------------------------
+// ------------------------------------------------------------------------------------------------
+// Early table pool, in .bss.
+// Page tables allocated before the PMM exists come from here, and so does the whole direct map.
+// With 1GB pages the direct map of 256GB needs a couple of pages, with only 2MB pages it needs one page per GB.
+// This can comfortably be made lower if you are building for a dedicated system.
+#define VMM_EARLY_POOL_PAGES 512
+
+// Supervisor Mode Access Prevention.
+// With it on, kernel code can only touch user memory through copy_to_user() and similar
+// Anything that pokes user pointers directly will fault.
+// If the CPU does not support SMAP, this means nothing.
+#define VMM_ENABLE_SMAP 1
+
+
+// Amount of pages of unmapped VA kept below a growing stack, so it can't grow into whatever sits under it.
+// This is the only protection against stack based attacks I will bother implementing.
+#define VMM_STACK_GUARD_GAP (16 * PAGE_4KB_SIZE)
+
+// Max size a stack is allowed to grow.
+// Applies to both user and kernel space tasks
+#define VMM_DEFAULT_STACK_LIMIT (8ULL * 1024 * 1024)
 
 // ------------------------------------------------------------------------------------------------
 // ------------------------------------------------------------------------------------------------

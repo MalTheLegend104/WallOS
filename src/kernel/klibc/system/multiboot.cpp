@@ -1,10 +1,10 @@
-#include <stdio.h>
-#include <panic.h>
-#include <string.h>
 #include <drivers/serial.h>
 #include <klibc/logger.h>
 #include <klibc/multiboot.h>
 #include <memory/virtual_mem.h>
+#include <panic.h>
+#include <stdio.h>
+#include <string.h>
 uint32_t MultibootManager::magic;
 multiboot_header* MultibootManager::header;
 multiboot_info* MultibootManager::mbt_info;
@@ -15,6 +15,9 @@ acpi_tag* MultibootManager::acpi;
 multiboot_tag_framebuffer* MultibootManager::framebuffer_tag;
 
 multiboot_tag_bootdev* bootdev;
+
+bool cmdline_args = false;
+char* cmdline_str;
 
 multiboot_tag_bootdev* getBootDev() {
 	return bootdev;
@@ -30,7 +33,6 @@ multiboot_tag_mmap internal_mmap;
 void copy_mmap(multiboot_tag_mmap* map) {
 	memcpy((void*) ((uint64_t) (&internal_mmap) - KERNEL_VIRTUAL_BASE), map, map->size);
 }
-
 
 static XSDP_t base_rsdp;
 
@@ -51,6 +53,8 @@ void MultibootManager::loadTags() {
 				return;
 			case MULTIBOOT_TAG_TYPE_CMDLINE:
 				logExists("CMDLINE");
+				cmdline_args = true;
+				cmdline_str = ((multiboot_tag_string*) tag)->string;
 				break;
 			case MULTIBOOT_TAG_TYPE_BOOT_LOADER_NAME:
 				logExists("BOOT_LOADER_NAME");
@@ -72,7 +76,7 @@ void MultibootManager::loadTags() {
 				// printf("mmap internal addr: 0x%llx", (uint64_t) (&internal_mmap) - KERNEL_VIRTUAL_BASE);
 				// copy_mmap((multiboot_tag_mmap*) tag);
 				// mmap = (multiboot_tag_mmap*) ((uint64_t) (&internal_mmap) - KERNEL_VIRTUAL_BASE);
-				//asm("hlt");
+				// asm("hlt");
 				mmap = (multiboot_tag_mmap*) tag;
 				break;
 			case MULTIBOOT_TAG_TYPE_VBE:
@@ -154,6 +158,16 @@ void MultibootManager::initialize(uint32_t m, multiboot_info* info) {
 	}
 }
 
+const char* MultibootManager::getCmdLine() {
+	if (!cmdline_args) return NULL;
+	return (const char*) cmdline_str;
+}
+
+// extern "C" const char* getMBCmdline() {
+// 	if (!cmdline_args) return NULL;
+// 	return (const char*) cmdline_str;
+// }
+
 /**
  * @brief Checks the validity of the header.
  *
@@ -162,7 +176,7 @@ void MultibootManager::initialize(uint32_t m, multiboot_info* info) {
  */
 bool MultibootManager::validateHeader() {
 	// Grub ALWAYS loads the header into this address. We verify it exists here.
-	//verify the multiboot
+	// verify the multiboot
 	uint32_t checkheader = header->architecture + header->header_length + header->magic + header->checksum;
 	if (checkheader == 0) {
 		puts_vga("    ");

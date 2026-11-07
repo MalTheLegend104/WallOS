@@ -6,56 +6,25 @@ THIS_FILE := $(lastword $(MAKEFILE_LIST)) # useful for if the user tries to incl
 # Other makefiles for other components
 include libs/libs.mk
 include src/initrd/initrd.mk
+-include config/make/terminal.mk # adds console colors if found
 
-# Define our framebuffer request.
-# GRUB will almost always give us what we request, as long as the UEFI/BIOS lets us
-# Default is 1920x1080x32bpp, basically everything will support it ant looks good enough
-# FRAMEBUFFER_WIDTH  := 1280
-# FRAMEBUFFER_HEIGHT := 720
-# FRAMEBUFFER_BPP    := 32
+# If we have a config file, include it, same for qemu config
+-include config/make/config.mk
+-include config/make/qemu_args.mk
 
-# This is for qemu:
+# Default args from qemu
+# If they weren't already defined in config/make/qemu_args.mk
 ARGS ?= -vga std -m 5G -M hpet=on -machine q35 -cpu max -smp 4 -serial stdio
 
-# This adds one of each type of USB host controllers
-# OHCI, UHCI, EHCI, and XHCI
-ARGS += \
-  -device qemu-xhci,id=xhci \
-  -device usb-kbd
-#   -device piix3-usb-uhci,id=uhci0
-#   -device usb-mouse
-#   -device usb-ehci,id=ehci0 \
-#   -device pci-ohci,id=ohci \
-
-ARGS += -device ahci,id=ahci0 \
-  -drive file=disk.img,if=none,id=d1 \
-  -device ide-hd,drive=d1,bus=ahci0.0
-#   -drive file=hda2.img,if=none,id=d2 \
-#   -device ide-hd,drive=d2,bus=ahci0.1
-
-# This filters the outputs from -d int (very poorly), to at least attempt to remove the timer interrupts
-# -d int -dfilter 0x0..0x1f,0x21..0xff 2>&1 | sed '/v=20/,/EFER=/d'
-
-# To add more devices, simply put them at any index 0-3, excluding 2.
-# Qemu mounts the cd drive at index 2 (secondary master drive)
-# ARGS += -drive file=hda.img,if=ide,media=disk,format=raw,index=0 \
-#         -drive file=hda2.img,if=ide,media=disk,format=raw,index=1 \
-#         -drive file=hda3.img,if=ide,media=disk,format=raw,index=3
-
-# Uncomment this to add audio devices to the system.
-ARGS +=  -audiodev sdl,id=snd0 \
-  -device sb16,audiodev=snd0 \
-  -device es1370,audiodev=snd0 \
-  -device ac97,audiodev=snd0
-
-# ARGS += -d int -dfilter 0x0..0x1f,0x21..0xff 2>&1 | sed '/v=20/,/EFER=/d'
-
-# These make it much easier to change things whenever we are finally self hosted.
-WALLOS_C_COMPILER 	:= x86_64-wallos-gcc
-WALLOS_CXX_COMPILER := x86_64-wallos-g++
-WALLOS_ASSEMBLER 	:= nasm
+# Distcc is pulled in from config.mk if we have it. If not, it just uses the local system
+WALLOS_C_COMPILER 	:= $(DISTCC) x86_64-wallos-gcc
+WALLOS_CXX_COMPILER := $(DISTCC) x86_64-wallos-g++
+WALLOS_ASSEMBLER 	:= $(DISTCC) nasm
 WALLOS_LINKER 		:= x86_64-wallos-ld
 WALLOS_OBJCOPY 		:= x86_64-wallos-objcopy
+# The final link goes through the gcc driver (not ld directly) so the LTO plugin and backend run.
+# No distcc here, linking is local.
+WALLOS_LINK_DRIVER	:= x86_64-wallos-gcc
 
 # We export them to make them available to other makefiles that this one will call.
 export WALLOS_C_COMPILER
@@ -64,25 +33,7 @@ export WALLOS_ASSEMBLER
 export WALLOS_LINKER
 export WALLOS_OBJCOPY
 
-
-# To make builds look nicer and easier to follow, we define and export the following:
-COLOR_GREEN	  ?= \033[0;32m
-COLOR_YELLOW  ?= \033[0;93m
-COLOR_RED	  ?= \033[0;31m
-COLOR_BLUE	  ?= \033[0;34m
-COLOR_CYAN	  ?= \033[0;96m
-COLOR_MAGENTA ?= \033[0;95m
-END_COLOR	  ?= \033[0m
-
-export COLOR_GREEN
-export COLOR_YELLOW
-export COLOR_RED
-export COLOR_BLUE
-export COLOR_CYAN
-export COLOR_MAGENTA
-export END_COLOR
-
-FORCED_INCLUDES = -include $(CURDIR)/wallos_debug_macros.h -include $(CURDIR)/wallos_config.h
+FORCED_INCLUDES = -include $(CURDIR)/config/wallos_debug_macros.h -include $(CURDIR)/config/wallos_config.h
 
 # Default things for all platforms. This includes things like LIBC, the WallOS, and compile flags.
 DEBUG_SYMBOLS   :=
@@ -90,6 +41,28 @@ C_FLAGS 		:= -ffreestanding -std=gnu99 -Wall -Wextra -Wno-format -nostdlib -lgcc
 CPP_FLAGS 		:= -ffreestanding -std=c++11 -fno-rtti -Wall -Wextra -Wno-format -nostdlib -lgcc -mno-red-zone -O2 -mcmodel=kernel $(DEBUG_SYMBOLS) $(FORCED_INCLUDES)
 NASM_FLAGS 		:= $(DEBUG_SYMBOLS)
 LINKER_FLAGS 	:=
+
+# ----------------------------------------------------
+# LTO
+# ----------------------------------------------------
+# LTO is opt-in per object
+LTO_FLAGS       := -flto -ffat-lto-objects
+
+# Source files (matched by file name, in any directory) that get link time optimized.
+# Be selective with this
+LTO_SOURCES     := display.cpp
+
+# ----------------------------------------------------
+# Flags for libs.mk
+# ----------------------------------------------------
+WALLOS_C_FLAGS   := $(C_FLAGS)
+WALLOS_CXX_FLAGS := $(CPP_FLAGS)
+WALLOS_ASM_FLAGS := $(NASM_FLAGS)
+WALLOS_LTO_FLAGS := $(LTO_FLAGS)
+export WALLOS_C_FLAGS
+export WALLOS_CXX_FLAGS
+export WALLOS_ASM_FLAGS
+export WALLOS_LTO_FLAGS
 
 # Framebuffer settings
 # We want to make sure they are all set, and don't want the defines unless they are
@@ -236,6 +209,22 @@ $(IDT_C_OBJ): build/x86_64/%.o : src/kernel/x86_64/%.c
 	$(WALLOS_C_COMPILER) -c $< -o $@ -mgeneral-regs-only -I $(x86_64_INCLUDE) $(LIBRARY_INCLUDES) -I $(x86_64_INCLUDE) -I $(KCORE_INCLUDE) -I $(KLIBC_INCLUDE) -I $(LIBC_INCLUDE) $(C_FLAGS) -D__is_kernel_
 
 # ----------------------------------------------------
+# LTO OBJECT SELECTION
+# ----------------------------------------------------
+# Turn LTO_SOURCES into object paths
+LTO_CANDIDATES := $(LIBC_OBJ) $(KLIBC_OBJ) $(KCORE_OBJ) $(x86_64_OBJ)
+LTO_OBJS       := $(foreach src,$(LTO_SOURCES),$(filter %/$(basename $(src)).o,$(LTO_CANDIDATES)))
+
+# These only apply while building the listed objects
+$(LTO_OBJS): C_FLAGS   += $(LTO_FLAGS)
+$(LTO_OBJS): CPP_FLAGS += $(LTO_FLAGS)
+
+# Handy to check that the right files were picked up: make lto_list
+.PHONY: lto_list
+lto_list:
+	echo "LTO objects: $(LTO_OBJS)"
+
+# ----------------------------------------------------
 # COMMANDS
 # ---------------------------------------------------------
 # All the commands for building, cleaning, running, etc.
@@ -258,7 +247,10 @@ build: $(LIBC_OBJ) $(KLIBC_OBJ) $(KCORE_OBJ) $(x86_64_OBJ) $(IDT_C_OBJ) initrd_t
 	echo "$(COLOR_CYAN)<--------------------------------------------------------->$(END_COLOR)"
 	mkdir -p dist/x86_64
 	echo "<---------------Linking--------------->"
-	$(WALLOS_LINKER) -n -o dist/x86_64/WallOS.bin -T targets/x86_64/linker.ld font.o dist/initrd.o $(LIBC_OBJ) $(KLIBC_OBJ) $(x86_64_OBJ) $(IDT_C_OBJ) $(KCORE_OBJ) $(LIBRARY_FLAGS)
+	$(WALLOS_LINK_DRIVER) -flto=auto -O2 -mcmodel=kernel -mno-red-zone \
+	    -ffreestanding -nostdlib -static -Wl,-n \
+	    -T targets/x86_64/linker.ld -o dist/x86_64/WallOS.bin \
+	    dist/initrd.o $(LIBC_OBJ) $(KLIBC_OBJ) $(x86_64_OBJ) $(IDT_C_OBJ) $(KCORE_OBJ) $(LIBRARY_FLAGS) $(LINKER_FLAGS) -lgcc
 	echo "<------------Compiling ISO------------>"
 # 	cp dist/x86_64/WallOS.bin targets/x86_64/iso/boot/WallOS.bin && \
 #	grub-mkrescue /usr/lib/grub/i386-pc -o dist/x86_64/WallOS.iso targets/x86_64/iso

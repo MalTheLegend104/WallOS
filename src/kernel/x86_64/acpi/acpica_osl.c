@@ -15,6 +15,8 @@
 #include <klibc/logger.h>
 #include <memory/virtual_mem.h>
 
+#include <x86_64/ioapic.h>
+
 #pragma GCC diagnostic ignored "-Wunused-parameter"
 
 // All of these are just stubs for ACPICA.
@@ -726,6 +728,8 @@ ACPI_STATUS AcpiOsInstallInterruptHandler(UINT32 irq, ACPI_OSD_HANDLER handler, 
 		if (irq == 9) {
 			irq_set_level_triggered(9);
 		}
+
+		ioapic_note_sci(irq);
 		info->installed = true;
 	}
 

@@ -92,6 +92,9 @@ extern "C" {
 	 * @param irq_number IRQ number we are servicing (0-15).
 	 */
 	void interrupt_eoi(uint8_t irq_number);
+
+	void task_fault(int code);
+
 #ifdef __cplusplus
 }
 #endif

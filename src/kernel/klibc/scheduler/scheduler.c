@@ -447,6 +447,9 @@ __attribute__((noreturn)) void sched_ap_entry(void) {
 
 	cpu_t* c = cpu_current();
 
+	// cpu isn't "online" until after everything is set up.
+	vmm_cpu_online();
+
 	// Stay masked until the first switch, which restores the interrupt state from the new task's frame
 	// That's why the returned state is never restored here
 	arch_irq_save();

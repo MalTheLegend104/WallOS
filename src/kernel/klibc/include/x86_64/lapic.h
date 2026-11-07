@@ -175,118 +175,140 @@
 #define LAPIC_ICR_SH_ALL_INC (0x2 << 18) // Send to all processors including self.
 #define LAPIC_ICR_SH_ALL_EXC (0x3 << 18) // Send to all processors except self.
 
-/**
- * @brief Read from the LAPIC.
- *
- * @param offset Register in the LAPIC to read.
- * @return uint32_t Value in the register.
- */
-WALLOS_NO_CALLER_SAVED uint32_t lapic_read(uint32_t offset);
+#ifdef __cplusplus
+extern "C" {
+#endif
 
-/**
- * @brief Write to the LAPIC
- *
- * @param offset Register in the LAPIC to write to
- * @param value Value to write to the register
- */
-WALLOS_NO_CALLER_SAVED void lapic_write(uint32_t offset, uint32_t value);
+	/**
+	 * @brief Read from the LAPIC.
+	 *
+	 * @param offset Register in the LAPIC to read.
+	 * @return uint32_t Value in the register.
+	 */
+	WALLOS_NO_CALLER_SAVED uint32_t lapic_read(uint32_t offset);
 
-/**
- * @brief Send an Inter-Processor Interrupt (IPI).
- *
- * Writes the destination APIC ID to ICR_HIGH and the provided
- * control bits to ICR_LOW. This function internally waits
- * for the Delivery Status bit to clear before returning.
- *
- * @param apic_id Physical APIC ID of the target processor.
- * @param icr_low Pre-constructed ICR low value (vector + flags).
- */
-void lapic_send_ipi(uint8_t apic_id, uint32_t icr_low);
+	/**
+	 * @brief Write to the LAPIC
+	 *
+	 * @param offset Register in the LAPIC to write to
+	 * @param value Value to write to the register
+	 */
+	WALLOS_NO_CALLER_SAVED void lapic_write(uint32_t offset, uint32_t value);
 
-/**
- * @brief Set the virtual base address of the mapped LAPIC.
- *
- * The base should be mapped into the kernel's virtual address space.
- * Should only be called once by the BSP during init, unless the base gets remapped.
- *
- * @param base Virtual address of the mapped LAPIC registers.
- */
-void set_lapic_base(uint64_t* base);
+	/**
+	 * @brief Send an Inter-Processor Interrupt (IPI).
+	 *
+	 * Writes the destination APIC ID to ICR_HIGH and the provided
+	 * control bits to ICR_LOW. This function internally waits
+	 * for the Delivery Status bit to clear before returning.
+	 *
+	 * @param apic_id Physical APIC ID of the target processor.
+	 * @param icr_low Pre-constructed ICR low value (vector + flags).
+	 */
+	void lapic_send_ipi(uint8_t apic_id, uint32_t icr_low);
 
-/**
- * @brief Set the physical base address of the LAPIC from our MADT.
- *
- * @param phys Physical address of the LAPIC registers.
- */
-void set_lapic_phys(uint64_t* phys);
+	/**
+	 * @brief Set the virtual base address of the mapped LAPIC.
+	 *
+	 * The base should be mapped into the kernel's virtual address space.
+	 * Should only be called once by the BSP during init, unless the base gets remapped.
+	 *
+	 * @param base Virtual address of the mapped LAPIC registers.
+	 */
+	void set_lapic_base(uint64_t* base);
 
-/**
- * @brief Initialize the LAPIC on the Bootstrap Processor (BSP).
- *
- * This function does the following:
- *  - Setting the Spurious Interrupt Vector
- *  - Configuring LVT entries
- *  - Clearing pending errors
- *
- * It is expected that the caller has already enabled enabled the LAPIC using enable_lapic_msr().
- * This should only be called once on the BSP during early SMP setup.
- */
-void bsp_init_lapic();
+	/**
+	 * @brief Set the physical base address of the LAPIC from our MADT.
+	 *
+	 * @param phys Physical address of the LAPIC registers.
+	 */
+	void set_lapic_phys(uint64_t* phys);
 
-/**
- * @brief Initialize the LAPIC on the APs.
- *
- * This function does the following:
- *  - calls enable_lapic_msr();
- *  - Setting the Spurious Interrupt Vector
- *  - Configuring LVT entries
- *  - Clearing pending errors
- *
- * This should be called once per AP during bringup.
- */
-void ap_init_lapic();
+	/**
+	 * @brief Initialize the LAPIC on the Bootstrap Processor (BSP).
+	 *
+	 * This function does the following:
+	 *  - Setting the Spurious Interrupt Vector
+	 *  - Configuring LVT entries
+	 *  - Clearing pending errors
+	 *
+	 * It is expected that the caller has already enabled enabled the LAPIC using enable_lapic_msr().
+	 * This should only be called once on the BSP during early SMP setup.
+	 */
+	void bsp_init_lapic();
 
-/**
- * @brief Initialize the LAPIC on an Application Processor (AP).
- *
- * Performs per-core LAPIC setup after the AP has started via SIPI.
- * Typically enables the LAPIC, sets the spurious vector, and
- * configures required LVT entries.
- *
- * Should be called during AP startup after switching to long mode.
- */
-void ap_init_lapic();
+	/**
+	 * @brief Initialize the LAPIC on the APs.
+	 *
+	 * This function does the following:
+	 *  - calls enable_lapic_msr();
+	 *  - Setting the Spurious Interrupt Vector
+	 *  - Configuring LVT entries
+	 *  - Clearing pending errors
+	 *
+	 * This should be called once per AP during bringup.
+	 */
+	void ap_init_lapic();
 
-/**
- * @brief Calibrate the LAPIC timer using the TSC.
- *
- * Measures LAPIC timer decrement rate against the Time Stamp Counter to determine the LAPIC timer frequency.
- *
- * @param tsc_freq Known TSC frequency in Hz.
- * @return uint64_t Calculated LAPIC timer frequency in Hz.
- */
-uint64_t calibrate_lapic_timer_with_tsc(uint64_t tsc_freq);
+	/**
+	 * @brief Initialize the LAPIC on an Application Processor (AP).
+	 *
+	 * Performs per-core LAPIC setup after the AP has started via SIPI.
+	 * Typically enables the LAPIC, sets the spurious vector, and
+	 * configures required LVT entries.
+	 *
+	 * Should be called during AP startup after switching to long mode.
+	 */
+	void ap_init_lapic();
 
-/**
- * @brief Sleep using the LAPIC timer.
- *
- * This should only be used for very short delay, while the normal system timer isn't setup.
- *
- * @param lapic_freq LAPIC timer frequency in Hz.
- * @param us Duration to sleep in microseconds.
- */
-void lapic_sleep_us(uint64_t lapic_freq, uint64_t us);
+	/**
+	 * @brief Calibrate the LAPIC timer using the TSC.
+	 *
+	 * Measures LAPIC timer decrement rate against the Time Stamp Counter to determine the LAPIC timer frequency.
+	 *
+	 * @param tsc_freq Known TSC frequency in Hz.
+	 * @return uint64_t Calculated LAPIC timer frequency in Hz.
+	 */
+	uint64_t calibrate_lapic_timer_with_tsc(uint64_t tsc_freq);
 
-/**
- * @brief Enable the LAPIC via the IA32_APIC_BASE MSR.
- *
- * Sets the APIC Global Enable bit in the APIC base MSR and
- * configures the physical base address if required.
- *
- * Must be called before accessing LAPIC registers.
- *
- * @param phys_addr Physical address of the LAPIC register page.
- */
-void enable_lapic_msr(uintptr_t phys_addr);
+	/**
+	 * @brief Sleep using the LAPIC timer.
+	 *
+	 * This should only be used for very short delay, while the normal system timer isn't setup.
+	 *
+	 * @param lapic_freq LAPIC timer frequency in Hz.
+	 * @param us Duration to sleep in microseconds.
+	 */
+	void lapic_sleep_us(uint64_t lapic_freq, uint64_t us);
 
+	/**
+	 * @brief Enable the LAPIC via the IA32_APIC_BASE MSR.
+	 *
+	 * Sets the APIC Global Enable bit in the APIC base MSR and
+	 * configures the physical base address if required.
+	 *
+	 * Must be called before accessing LAPIC registers.
+	 *
+	 * @param phys_addr Physical address of the LAPIC register page.
+	 */
+	void enable_lapic_msr(uintptr_t phys_addr);
+
+	/**
+	 * @brief Get the APIC ID of the calling CPU (xAPIC mode, 8-bit ID).
+	 */
+	uint32_t lapic_current_id(void);
+
+	/**
+	 * @brief Send an NMI to every CPU except the caller (ICR shorthand "all excluding self").
+	 */
+	void lapic_broadcast_nmi_excluding_self(void);
+
+	/**
+	 * @brief Mask the calling CPU's LAPIC timer and stop it counting.
+	 */
+	void lapic_timer_stop(void);
+
+#ifdef __cplusplus
+}
+#endif
 #endif // WALLOS_LAPIC_H

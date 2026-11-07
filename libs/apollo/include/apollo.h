@@ -7,8 +7,8 @@
 #ifndef WALLOS_APOLLO_H
 #define WALLOS_APOLLO_H
 
-#include <stdint.h>
 #include <stdbool.h>
+#include <stdint.h>
 
 // The user of the library has to maintain their own buffer
 // The entire framework is just dedicated to helper functions and kernel API
@@ -28,8 +28,8 @@ extern "C" {
 	// ------------------------------------------------------------------------------------------------
 	// ------------------------------------------------------------------------------------------------
 	typedef enum {
-		APOLLO_PIXEL_TYPE_UNKNOWN = 0,  	// Unknown pixel type
-		APOLLO_PIXEL_TYPE_ARGB8888 = 1,	// 32-bit ARGB 	(8 bits per channel, including alpha)
+		APOLLO_PIXEL_TYPE_UNKNOWN = 0,   // Unknown pixel type
+		APOLLO_PIXEL_TYPE_ARGB8888 = 1, // 32-bit ARGB 	(8 bits per channel, including alpha)
 		APOLLO_PIXEL_TYPE_RGB32 = 2,    // 32-bit RGB 	(8 bits per channel, no alpha) Essentially RGBA in memory (lower bits are reserved instead of alpha)
 		APOLLO_PIXEL_TYPE_RGBA32 = 3,    // 32-bit RGBA 	(8 bits per channel, including alpha)
 		APOLLO_PIXEL_TYPE_BGR32 = 4,    // 32-bit BGR 	(8 bits per channel, no alpha) Essentially BGRA in memory (lower bits are reserved instead of alpha)
@@ -40,11 +40,11 @@ extern "C" {
 		APOLLO_PIXEL_TYPE_RGB16_555 = 9,    // 16-bit RGB 	(5 bits red, 5 bits green, 5 bits blue, 1 unused bit)
 		APOLLO_PIXEL_TYPE_BGR16_565 = 10,   // 16-bit BGR 	(5 bits blue, 6 bits green, 5 bits red)
 		APOLLO_PIXEL_TYPE_BGR16_555 = 11,   // 16-bit BGR  	(5 bits blue, 5 bits green, 5 bits red, 1 unused bit)
-		APOLLO_PIXEL_TYPE_ARGB4444 = 12,	// 16-bit ARGB 	(4 bits per channel, including alpha)
-		APOLLO_PIXEL_TYPE_RGBA4444 = 13,	// 16-bit RGBA 	(4 bits per channel, including alpha)
-		APOLLO_PIXEL_TYPE_ABGR4444 = 14,	// 16-bit RGBA 	(4 bits per channel, including alpha)
-		APOLLO_PIXEL_TYPE_BGRA4444 = 15,	// 16-bit RGBA 	(4 bits per channel, including alpha)
-		APOLLO_PIXEL_TYPE_RGB332 = 16	// 8-bit  RGB	(3 bits red, 3 bits green, 2 bits blue, no alpha)
+		APOLLO_PIXEL_TYPE_ARGB4444 = 12, // 16-bit ARGB 	(4 bits per channel, including alpha)
+		APOLLO_PIXEL_TYPE_RGBA4444 = 13, // 16-bit RGBA 	(4 bits per channel, including alpha)
+		APOLLO_PIXEL_TYPE_ABGR4444 = 14, // 16-bit RGBA 	(4 bits per channel, including alpha)
+		APOLLO_PIXEL_TYPE_BGRA4444 = 15, // 16-bit RGBA 	(4 bits per channel, including alpha)
+		APOLLO_PIXEL_TYPE_RGB332 = 16 // 8-bit  RGB	(3 bits red, 3 bits green, 2 bits blue, no alpha)
 	} apollo_pixel_type;
 
 	typedef struct {
@@ -90,7 +90,7 @@ extern "C" {
 		uint8_t* bitmap_base; // The base pointer to the array holding the bitmap data.
 		uint8_t font_width;   // The width of the font in pixels (a 8x8 font would have 8 height and 8 width)
 		uint8_t font_height;  // The height of the font in pixels
-		uint32_t max_char; 	  // The maximum character supported by the font.
+		uint32_t max_char;    // The maximum character supported by the font.
 	} apollo_font;
 
 	typedef struct {
@@ -153,6 +153,30 @@ extern "C" {
 	 * @param color Color of the pixel. Automatically converted if the format does not match the framebuffer type.
 	 */
 	void apollo_set_pixel(const framebuffer_info_t* info, uint8_t* pixel, apollo_color_t color);
+
+	/**
+	 * @brief Get a pixel value based on the color.
+	 * Essentially a wrapper around apollo_set_pixel(), letting you call it once per color, rather than once per pixel.
+	 *
+	 * @param info The information related to the buffer containing the pixel.
+	 * @param c Color to set the pixel to
+	 * @return uint32_t Value representing a pixel of that color in that framebuffer
+	 */
+	uint32_t apollo_pack_color(const framebuffer_info_t* info, apollo_color_t c);
+
+	/**
+	 * @brief Fills a horizontal run of pixels with an already-packed color.
+	 *
+	 * The span is clipped to the framebuffer, meaning rows outside [0, height) are ignored and the run is trimmed to [0, width).
+	 * Nothing is written if nothing remains after clipping.
+	 *
+	 * @param fb     Framebuffer to write to.
+	 * @param x      X coordinate of the leftmost pixel (may be negative; the span is clipped).
+	 * @param y      Y coordinate of the row.
+	 * @param len    Number of pixels in the span. Values <= 0 do nothing.
+	 * @param packed Color already packed for the framebuffer's pixel format, as returned by apollo_pack_color(). Only the low (pixel_width * 8) bits are used. It is NOT converted.
+	 */
+	void apollo_fill_span(framebuffer_t* fb, int x, int y, int len, uint32_t packed);
 
 	/**
 	 * @brief Sets the provided point to the provided color.

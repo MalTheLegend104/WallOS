@@ -231,11 +231,24 @@ EXCEPTION_FAULT(simd_floating_point_exception_handler, "SIMD Floating-Point Exce
 // These are all the panics
 EXCEPTION_PANIC(debug_handler, "Debug Exception has occurred.") // this should probably be handled differently but I didnt feel like it
 // The rest of these are mostly in the "hardware" category of exceptions, and I just don't want to deal with them (exception being #DF, I was just lazy with that)
-EXCEPTION_PANIC(nmi_handler, "NMI (Non-Maskable Interrupt) has occurred.")
 EXCEPTION_PANIC(double_fault_handler, "Double Fault Exception has occurred.")
 EXCEPTION_PANIC(machine_check_handler, "Machine Check Exception has occurred.")
 EXCEPTION_PANIC(virtualization_exception_handler, "Virtualization Exception has occurred.")
 EXCEPTION_PANIC(control_protection_exception_handler, "Control Protection Exception has occurred.")
+
+extern WALLOS_INTERRUPT_HANDLER bool panic_nmi_hook();
+WALLOS_INTERRUPT_HANDLER void nmi_handler(struct interrupt_regs* regs) {
+	(void) regs;
+	if (panic_nmi_hook()) { return; } // we are the panic CPU, ignore the stray NMI
+
+	// Real hardware NMI
+	// Legacy sources (IOCHK/SERR) report status in port 0x61
+	uint8_t status;
+	__asm__ volatile("inb %1, %0" : "=a"(status) : "Nd"((uint16_t) 0x61));
+	printf_serial("[NMI] Hardware NMI, port 0x61 = 0x%x\r\n", status);
+
+	panic_s("Unhandled NMI");
+}
 
 WALLOS_INTERRUPT_HANDLER void general_protection_fault_handler(struct interrupt_regs* regs) {
 	if (interrupt_from_user(regs)) task_fault((int) ((regs->vector & 0xFF) | ((regs->error_code & 0xFFFF) << 8)));
@@ -289,51 +302,9 @@ WALLOS_INTERRUPT_HANDLER void general_protection_fault_handler(struct interrupt_
 	}
 }
 
-WALLOS_INTERRUPT_HANDLER void page_fault_handler(struct interrupt_regs* regs) {
-	// TODO: whenever I get to actually rewriting the VMM, demand paging goes here
-	if (interrupt_from_user(regs)) task_fault((int) ((regs->vector & 0xFF) | ((regs->error_code & 0xFFFF) << 8)));
-
-	uword_t error_code = regs->error_code;
-	unsigned long cr2;
-	asm volatile("movq %%cr2, %0" : "=r"(cr2));
-
-	// unsigned long error_code;
-	// asm volatile ("pop %0" : "=r" (error_code));
-	char err[65];
-	itoa(error_code, err, 2);
-	int present = error_code & 0b1;
-	error_code = error_code >> 1;
-	int write = error_code & 0b1;
-	error_code = error_code >> 1;
-	int user_mode = error_code & 0b1;
-	error_code = error_code >> 1;
-	int reserved = error_code & 0b1;
-	error_code = error_code >> 1;
-	int instruction_fetch = error_code & 0b1;
-	error_code = error_code >> 1;
-	int protection_key = error_code & 0b1;
-	error_code = error_code >> 1;
-	int shadow_stack = error_code & 0b1;
-	error_code = error_code >> 1;
-	int sgx = error_code & 0b1;
-
-	// Log the information
-	logger(ERROR, "Page fault Error Code: %s\n", err);
-	logger(ERROR, "Page fault at address (CR2): 0x%llx\n", cr2);
-	logger(ERROR, "Present: %d, Write: %d, User Mode: %d, Reserved: %d, Instruction Fetch: %d, Protection: %d, Shadow Stack: %d, SGX: %d\n", present, write, user_mode, reserved, instruction_fetch, protection_key, shadow_stack, sgx);
-	logger(ERROR, "Code that caused it: 0x%llx", regs->rip);
-
-	printf_serial("Page fault Error Code: %s\r\n", err);
-	printf_serial("Page fault at address (CR2): 0x%llx\r\n", cr2);
-	printf_serial("Present: %d, Write: %d, User Mode: %d, Reserved: %d, Instruction Fetch: %d, Protection: %d, Shadow Stack: %d, SGX: %d\r\n", present, write, user_mode, reserved, instruction_fetch, protection_key, shadow_stack, sgx);
-	printf_serial("Code that caused it: 0x%llx\r\n", regs->rip);
-	dump_regs(regs);
-
-	WALLOS_CLI();
-	while (true) {
-		WALLOS_HLT();
-	}
-}
+// I could just link this via header like a normal person, but whatever
+// It's in the vmm code somewhere, extern "C" linkage.
+extern WALLOS_INTERRUPT_HANDLER void page_fault_handler(struct interrupt_regs* regs);
 
 // ------------------------------------------------------------------------------------------------
 // ------------------------------------------------------------------------------------------------

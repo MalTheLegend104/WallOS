@@ -8,7 +8,6 @@ extern "C" {
 	// Common Kernel Panics
 	enum KERNEL_PANIC {
 		GENERAL_PURPOSE_PANIC,
-		WHAT_JUST_HAPPEN_PANIC
 	};
 
 	void panic();
@@ -19,4 +18,4 @@ extern "C" {
 }
 #endif
 
-#endif //PANIC_H
+#endif // PANIC_H

@@ -23,7 +23,7 @@ static void system_poll_raw() {
 
 void system_poll_once(void) {
 	// In a halted state (like a panic) we still need to poll for events from some subsystems.
-	// I will probably change this later to designate "critical" (ACPI) polling subsystems from "regular" (USB) ones.\
+	// I will probably change this later to designate "critical" (ACPI) polling subsystems from "regular" (USB) ones.
 	// In a halted state, there's a chance that more than one CPU might try to call this.
 	//
 	// We try once, skip on contention

@@ -111,10 +111,16 @@ protected_mode_entry:
     mov eax, [pml4_pointer]
     mov cr3, eax
 
-    ; Enable long mode
+    ; Enable long mode, plus NX only if the CPU has it
+    mov eax, 0x80000001
+    cpuid                ; clobbers eax, ebx, ecx, edx
+    bt edx, 20
     mov ecx, 0xC0000080
     rdmsr
-    or eax, (1 << 8)
+    jnc .no_nx
+    or eax, 1 << 11      ; NXE
+.no_nx:
+    or eax, 1 << 8       ; LME
     wrmsr
 
     ; Enable paging

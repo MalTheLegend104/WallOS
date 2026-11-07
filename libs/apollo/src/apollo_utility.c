@@ -6,6 +6,7 @@
  */
 
 #include <apollo.h>
+#include <stdlib.h>
 #include <string.h>
 
 // TODO: uncomment this
@@ -76,12 +77,12 @@ void apollo_switch_color(apollo_pixel_type target_type, apollo_color_t* color) {
 	 * It estimates the new one by saying "the old one is approximately this spot in the range of possible values."
 	 */
 
-	const uint8_t max_2bit = 3;		// Max value of 2 bit color
-	const uint8_t max_3bit = 7;		// Max value of 3 bit color
-	const uint8_t max_4bit = 15;   	// Max value of 4 bit color
-	const uint8_t max_5bit = 31;   	// Max value of 5 bit color
-	const uint8_t max_6bit = 63;   	// Max value of 6 bit color
-	const uint8_t max_8bit = 255;  	// Max value of 8 bit color
+	const uint8_t max_2bit = 3;  // Max value of 2 bit color
+	const uint8_t max_3bit = 7;  // Max value of 3 bit color
+	const uint8_t max_4bit = 15;    // Max value of 4 bit color
+	const uint8_t max_5bit = 31;    // Max value of 5 bit color
+	const uint8_t max_6bit = 63;    // Max value of 6 bit color
+	const uint8_t max_8bit = 255;   // Max value of 8 bit color
 
 	// This is a switch case with nested switch cases.
 	// It looks horrible, but is easy to follow.
@@ -481,13 +482,15 @@ void apollo_set_pixel(const framebuffer_info_t* info, uint8_t* pixel, const apol
 	}
 }
 
+uint32_t apollo_pack_color(const framebuffer_info_t* info, apollo_color_t c) {
+	if (c.type != info->type) apollo_switch_color(info->type, &c);
+	uint8_t px[4] = {0};
+	apollo_set_pixel(info, px, c);
+	return px[0] | (px[1] << 8) | (px[2] << 16) | ((uint32_t) px[3] << 24);
+}
+
 uint8_t* apollo_get_point(framebuffer_t* fb, coordinate_pair pair) {
-	if (fb == NULL || fb->info == NULL) {
-	//	printf("Null Framebuffer Info\n");
-		return NULL;
-	}
-	if (pair.x > fb->info->pitch || pair.y > fb->info->height) {
-	//	printf("Invalid point\n");
+	if (pair.x < 0 || pair.y < 0 || pair.x >= fb->info->width || pair.y >= fb->info->height) {
 		return NULL;
 	}
 
@@ -500,194 +503,47 @@ void apollo_set_point(framebuffer_t* fb, coordinate_pair p, apollo_color_t color
 	apollo_set_pixel(fb->info, apollo_get_point(fb, p), color);
 }
 
-void apollo_fill_buffer(framebuffer_t* fb, apollo_color_t color) {
-	if (fb == NULL || fb->info == NULL) return;
-
-	apollo_color_t current_color = color;
-
-	if (color.type != fb->info->type) {
-		apollo_switch_color(fb->info->type, &current_color);
+static void fill_row_raw(uint8_t* p, int len, uint32_t v, unsigned bpp) {
+	switch (bpp) {
+		case 4: {
+			uint32_t* d = (uint32_t*) p;
+			for (int i = 0; i < len; i++) d[i] = v;
+			break;
+		}
+		case 2: {
+			uint16_t* d = (uint16_t*) p;
+			for (int i = 0; i < len; i++) d[i] = (uint16_t) v;
+			break;
+		}
+		case 1: memset(p, (uint8_t) v, len); break;
+		default:
+			for (int i = 0; i < len; i++, p += 3) {
+				p[0] = v;
+				p[1] = v >> 8;
+				p[2] = v >> 16;
+			}
 	}
+}
 
-	size_t framebuffer_length = (fb->info->height * fb->info->width * fb->info->pixel_width);
+void apollo_fill_span(framebuffer_t* fb, int x, int y, int len, uint32_t packed) {
+	const framebuffer_info_t* i = fb->info;
+	if (y < 0 || y >= i->height) return;
+	if (x < 0) {
+		len += x;
+		x = 0;
+	}
+	if (x + len > i->width) len = i->width - x;
+	if (len <= 0) return;
+	fill_row_raw(fb->buffer + (size_t) y * i->pitch + (size_t) x * i->pixel_width, len, packed, i->pixel_width);
+}
 
-	size_t index = 0;
+void apollo_fill_buffer(framebuffer_t* fb, apollo_color_t color) {
+	if (fb == NULL || fb->info == NULL || fb->buffer == NULL) return;
+	if (fb->info->type == APOLLO_PIXEL_TYPE_UNKNOWN) return;
 
-	uint16_t full_color;
-	uint8_t lower_half;
-	uint8_t upper_half;
-
-	switch (fb->info->type) {
-		case APOLLO_PIXEL_TYPE_UNKNOWN:
-			// Handle unknown pixel type
-			// We do nothing for now (or probably ever)
-			break;
-
-		case APOLLO_PIXEL_TYPE_RGB32:
-			while (index < framebuffer_length - sizeof(uint32_t)) {
-				fb->buffer[index] = current_color.red;
-				fb->buffer[index + 1] = current_color.green;
-				fb->buffer[index + 2] = current_color.blue;
-				fb->buffer[index + 3] = 0;
-				index += sizeof(uint32_t);
-			}
-			break;
-
-		case APOLLO_PIXEL_TYPE_ARGB8888:
-			while (index < framebuffer_length - sizeof(uint32_t)) {
-				fb->buffer[index] = current_color.alpha;
-				fb->buffer[index + 1] = current_color.red;
-				fb->buffer[index + 2] = current_color.green;
-				fb->buffer[index + 3] = current_color.blue;
-				index += sizeof(uint32_t);
-			}
-			break;
-
-		case APOLLO_PIXEL_TYPE_RGBA32:
-			while (index < framebuffer_length - sizeof(uint32_t)) {
-				fb->buffer[index] = current_color.red;
-				fb->buffer[index + 1] = current_color.green;
-				fb->buffer[index + 2] = current_color.blue;
-				fb->buffer[index + 3] = current_color.alpha;
-				index += sizeof(uint32_t);
-			}
-			break;
-
-		case APOLLO_PIXEL_TYPE_BGR32:
-			while (index < framebuffer_length - sizeof(uint32_t)) {
-				fb->buffer[index] = current_color.blue;
-				fb->buffer[index + 1] = current_color.green;
-				fb->buffer[index + 2] = current_color.red;
-				fb->buffer[index + 3] = 0;
-				index += sizeof(uint32_t);
-			}
-			break;
-
-		case APOLLO_PIXEL_TYPE_BGRA32:
-			while (index < framebuffer_length - sizeof(uint32_t)) {
-				fb->buffer[index] = current_color.blue;
-				fb->buffer[index + 1] = current_color.green;
-				fb->buffer[index + 2] = current_color.red;
-				fb->buffer[index + 3] = current_color.alpha;
-				index += sizeof(uint32_t);
-			}
-			break;
-
-		case APOLLO_PIXEL_TYPE_RGB24:
-			// 24-bit RGB: 8 bits each for red, green, and blue (no alpha)
-			while (index < framebuffer_length - (sizeof(uint8_t) * 3)) {
-				fb->buffer[index] = current_color.red;
-				fb->buffer[index + 1] = current_color.green;
-				fb->buffer[index + 2] = current_color.blue;
-				index += (sizeof(uint8_t) * 3);
-			}
-			break;
-
-		case APOLLO_PIXEL_TYPE_BGR24:
-			// 24-bit BGR: 8 bits each for blue, green, and red (no alpha)
-			while (index < framebuffer_length - (sizeof(uint8_t) * 3)) {
-				fb->buffer[index] = current_color.blue;
-				fb->buffer[index + 1] = current_color.green;
-				fb->buffer[index + 2] = current_color.red;
-				index += (sizeof(uint8_t) * 3);
-			}
-			break;
-
-			// 16-bit is only a little cursed, at least with the 5's and 6's
-			// The easiest way to do it is to cast the pointer to uint16_t array and bit shift
-		case APOLLO_PIXEL_TYPE_RGB16_565:
-			// 16-bit RGB: 5 bits for red, 6 bits for green, 5 bits for blue
-			full_color = ((current_color.red & 0x1F) << 11) | ((current_color.green & 0x3F) << 5) | (current_color.blue & 0x1F);
-			lower_half = full_color & 0xFFFF;
-			upper_half = (full_color >> 8) & 0xFFFF;
-			while (index < framebuffer_length - sizeof(uint16_t)) {
-				fb->buffer[index] = lower_half;
-				fb->buffer[index + 1] = upper_half;
-				index += sizeof(uint16_t);
-			}
-			break;
-
-		case APOLLO_PIXEL_TYPE_RGB16_555:
-			full_color = ((current_color.red & 0x1F) << 10) | ((current_color.green & 0x1F) << 5) | (current_color.blue & 0x1F);
-			lower_half = full_color & 0xFFFF;
-			upper_half = (full_color >> 8) & 0xFFFF;
-			while (index < framebuffer_length - sizeof(uint16_t)) {
-				fb->buffer[index] = lower_half;
-				fb->buffer[index + 1] = upper_half;
-				index += sizeof(uint16_t);
-			}
-			break;
-
-		case APOLLO_PIXEL_TYPE_BGR16_565:
-			// 16-bit BGR: 5 bits for blue, 6 bits for green, 5 bits for red
-			full_color = ((current_color.blue & 0x1F) << 11) | ((current_color.green & 0x3F) << 5) | (current_color.red & 0x1F);
-			lower_half = full_color & 0xFFFF;
-			upper_half = (full_color >> 8) & 0xFFFF;
-			while (index < framebuffer_length - sizeof(uint16_t)) {
-				fb->buffer[index] = lower_half;
-				fb->buffer[index + 1] = upper_half;
-				index += sizeof(uint16_t);
-			}
-			break;
-
-		case APOLLO_PIXEL_TYPE_BGR16_555:
-			// 16-bit BGR: 5 bits each for blue, green, and red
-			full_color = ((current_color.blue & 0x1F) << 10) | ((current_color.green & 0x1F) << 5) | (current_color.red & 0x1F);
-			lower_half = full_color & 0xFFFF;
-			upper_half = (full_color >> 8) & 0xFFFF;
-			while (index < framebuffer_length - sizeof(uint16_t)) {
-				fb->buffer[index] = lower_half;
-				fb->buffer[index + 1] = upper_half;
-				index += sizeof(uint16_t);
-			}
-			break;
-
-		case APOLLO_PIXEL_TYPE_ARGB4444:
-			upper_half = ((current_color.alpha & 0xF) << 4) | (current_color.red & 0xF);
-			lower_half = ((current_color.green & 0xF) << 4) | (current_color.blue & 0xF);
-			while (index < framebuffer_length - sizeof(uint16_t)) {
-				fb->buffer[index] = lower_half;
-				fb->buffer[index + 1] = upper_half;
-				index += sizeof(uint16_t);
-			}
-			break;
-
-		case APOLLO_PIXEL_TYPE_ABGR4444:
-			upper_half = ((current_color.alpha & 0xF) << 4) | (current_color.blue & 0xF);
-			lower_half = ((current_color.green & 0xF) << 4) | (current_color.red & 0xF);
-			while (index < framebuffer_length - sizeof(uint16_t)) {
-				fb->buffer[index] = lower_half;
-				fb->buffer[index + 1] = upper_half;
-				index += sizeof(uint16_t);
-			}
-			break;
-
-		case APOLLO_PIXEL_TYPE_RGBA4444:
-			upper_half = ((current_color.red & 0xF) << 4) | (current_color.green & 0xF);
-			lower_half = ((current_color.blue & 0xF) << 4) | (current_color.alpha & 0xF);
-			while (index < framebuffer_length - sizeof(uint16_t)) {
-				fb->buffer[index] = lower_half;
-				fb->buffer[index + 1] = upper_half;
-				index += sizeof(uint16_t);
-			}
-			break;
-
-		case APOLLO_PIXEL_TYPE_BGRA4444:
-			upper_half = ((current_color.blue & 0xF) << 4) | (current_color.green & 0xF);
-			lower_half = ((current_color.red & 0xF) << 4) | (current_color.alpha & 0xF);
-			while (index < framebuffer_length - sizeof(uint16_t)) {
-				fb->buffer[index] = lower_half;
-				fb->buffer[index + 1] = upper_half;
-				index += sizeof(uint16_t);
-			}
-			break;
-
-		case APOLLO_PIXEL_TYPE_RGB332:
-			// This is nice, we can just memset it.
-			const int value = ((current_color.red & 0x7) << 5) | ((current_color.green & 0x7) << 2) | (current_color.blue & 0x3);
-			memset(fb->buffer, value, framebuffer_length);
-
-		default: break;
+	const uint32_t packed = apollo_pack_color(fb->info, color);
+	for (int y = 0; y < fb->info->height; y++) {
+		apollo_fill_span(fb, 0, y, fb->info->width, packed);
 	}
 }
 
@@ -700,164 +556,163 @@ apollo_color_t apollo_get_color(size_t color, apollo_pixel_type type) {
 		case APOLLO_PIXEL_TYPE_ARGB8888:
 			return (apollo_color_t) {
 				(uint8_t) ((color >> 24) & 0xFF),
-					(uint8_t) ((color >> 16) & 0xFF),
-					(uint8_t) ((color >> 8) & 0xFF),
-					(uint8_t) ((color & 0xFF)),
-					type
+				(uint8_t) ((color >> 16) & 0xFF),
+				(uint8_t) ((color >> 8) & 0xFF),
+				(uint8_t) ((color & 0xFF)),
+				type
 			};
 		case APOLLO_PIXEL_TYPE_RGB32:
 			return (apollo_color_t) {
 				0,
-					(uint8_t) ((color >> 24) & 0xFF),
-					(uint8_t) ((color >> 16) & 0xFF),
-					(uint8_t) ((color >> 8) & 0xFF),
-					type
+				(uint8_t) ((color >> 24) & 0xFF),
+				(uint8_t) ((color >> 16) & 0xFF),
+				(uint8_t) ((color >> 8) & 0xFF),
+				type
 			};
 
 		case APOLLO_PIXEL_TYPE_RGBA32:
 			return (apollo_color_t) {
 
 				(uint8_t) ((color & 0xFF)),
-					(uint8_t) ((color >> 24) & 0xFF),
-					(uint8_t) ((color >> 16) & 0xFF),
-					(uint8_t) ((color >> 8) & 0xFF),
-					type
+				(uint8_t) ((color >> 24) & 0xFF),
+				(uint8_t) ((color >> 16) & 0xFF),
+				(uint8_t) ((color >> 8) & 0xFF),
+				type
 			};
 
 		case APOLLO_PIXEL_TYPE_BGR32:
 			return (apollo_color_t) {
 
 				0,
-					(uint8_t) ((color >> 8) & 0xFF),
-					(uint8_t) ((color >> 16) & 0xFF),
-					(uint8_t) ((color >> 24) & 0xFF),
-					type
+				(uint8_t) ((color >> 8) & 0xFF),
+				(uint8_t) ((color >> 16) & 0xFF),
+				(uint8_t) ((color >> 24) & 0xFF),
+				type
 			};
 
 		case APOLLO_PIXEL_TYPE_BGRA32:
 			return (apollo_color_t) {
 
 				(uint8_t) ((color & 0xFF)),
-					(uint8_t) ((color >> 8) & 0xFF),
-					(uint8_t) ((color >> 16) & 0xFF),
-					(uint8_t) ((color >> 24) & 0xFF),
-					type
+				(uint8_t) ((color >> 8) & 0xFF),
+				(uint8_t) ((color >> 16) & 0xFF),
+				(uint8_t) ((color >> 24) & 0xFF),
+				type
 			};
 
 		case APOLLO_PIXEL_TYPE_RGB24:
 			return (apollo_color_t) {
 
 				0,
-					(uint8_t) ((color >> 16) & 0xFF),
-					(uint8_t) ((color >> 8) & 0xFF),
-					(uint8_t) ((color & 0xFF)),
-					type
+				(uint8_t) ((color >> 16) & 0xFF),
+				(uint8_t) ((color >> 8) & 0xFF),
+				(uint8_t) ((color & 0xFF)),
+				type
 			};
 
 		case APOLLO_PIXEL_TYPE_BGR24:
 			return (apollo_color_t) {
 
 				0,
-					(uint8_t) ((color & 0xFF)),
-					(uint8_t) ((color >> 8) & 0xFF),
-					(uint8_t) ((color >> 16) & 0xFF),
-					type
+				(uint8_t) ((color & 0xFF)),
+				(uint8_t) ((color >> 8) & 0xFF),
+				(uint8_t) ((color >> 16) & 0xFF),
+				type
 			};
 
 		case APOLLO_PIXEL_TYPE_RGB16_565:
 			return (apollo_color_t) {
 
 				0,
-					(uint8_t) ((color >> 11) & 0x1F),
-					(uint8_t) ((color >> 5) & 0x3F),
-					(uint8_t) ((color & 0x1F)),
-					type
+				(uint8_t) ((color >> 11) & 0x1F),
+				(uint8_t) ((color >> 5) & 0x3F),
+				(uint8_t) ((color & 0x1F)),
+				type
 			};
 
 		case APOLLO_PIXEL_TYPE_RGB16_555:
 			return (apollo_color_t) {
 
 				0,
-					(uint8_t) ((color >> 10) & 0x1F),
-					(uint8_t) ((color >> 5) & 0x1F),
-					(uint8_t) ((color & 0x1F)),
-					type
+				(uint8_t) ((color >> 10) & 0x1F),
+				(uint8_t) ((color >> 5) & 0x1F),
+				(uint8_t) ((color & 0x1F)),
+				type
 			};
 
 		case APOLLO_PIXEL_TYPE_BGR16_565:
 			return (apollo_color_t) {
 
 				0,
-					(uint8_t) ((color & 0x1F)),
-					(uint8_t) ((color >> 5) & 0x3F),
-					(uint8_t) ((color >> 11) & 0x1F),
-					type
+				(uint8_t) ((color & 0x1F)),
+				(uint8_t) ((color >> 5) & 0x3F),
+				(uint8_t) ((color >> 11) & 0x1F),
+				type
 			};
 
 		case APOLLO_PIXEL_TYPE_BGR16_555:
 			return (apollo_color_t) {
 
 				0,
-					(uint8_t) ((color & 0x1F)),
-					(uint8_t) ((color >> 5) & 0x1F),
-					(uint8_t) ((color >> 10) & 0x1F),
-					type
+				(uint8_t) ((color & 0x1F)),
+				(uint8_t) ((color >> 5) & 0x1F),
+				(uint8_t) ((color >> 10) & 0x1F),
+				type
 			};
 
 		case APOLLO_PIXEL_TYPE_ARGB4444:
 			return (apollo_color_t) {
 
 				(uint8_t) ((color >> 12) & 0xF),
-					(uint8_t) ((color >> 8) & 0xF),
-					(uint8_t) ((color >> 4) & 0xF),
-					(uint8_t) (color & 0xF),
-					type
+				(uint8_t) ((color >> 8) & 0xF),
+				(uint8_t) ((color >> 4) & 0xF),
+				(uint8_t) (color & 0xF),
+				type
 			};
 
 		case APOLLO_PIXEL_TYPE_RGBA4444:
 			return (apollo_color_t) {
 
 				(uint8_t) (color & 0xF),
-					(uint8_t) ((color >> 12) & 0xF),
-					(uint8_t) ((color >> 8) & 0xF),
-					(uint8_t) ((color >> 4) & 0xF),
-					type
+				(uint8_t) ((color >> 12) & 0xF),
+				(uint8_t) ((color >> 8) & 0xF),
+				(uint8_t) ((color >> 4) & 0xF),
+				type
 			};
 
 		case APOLLO_PIXEL_TYPE_ABGR4444:
 			return (apollo_color_t) {
 
 				(uint8_t) ((color >> 12) & 0xF),
-					(uint8_t) (color & 0xF),
-					(uint8_t) ((color >> 4) & 0xF),
-					(uint8_t) ((color >> 8) & 0xF),
-					type
+				(uint8_t) (color & 0xF),
+				(uint8_t) ((color >> 4) & 0xF),
+				(uint8_t) ((color >> 8) & 0xF),
+				type
 			};
 
 		case APOLLO_PIXEL_TYPE_BGRA4444:
 			return (apollo_color_t) {
 
 				(uint8_t) (color & 0xF),
-					(uint8_t) ((color >> 4) & 0xF),
-					(uint8_t) ((color >> 8) & 0xF),
-					(uint8_t) ((color >> 12) & 0xF),
-					type
+				(uint8_t) ((color >> 4) & 0xF),
+				(uint8_t) ((color >> 8) & 0xF),
+				(uint8_t) ((color >> 12) & 0xF),
+				type
 			};
 
 		case APOLLO_PIXEL_TYPE_RGB332:
 			return (apollo_color_t) {
 
 				0,
-					(uint8_t) ((color >> 5) & 0x7),
-					(uint8_t) ((color >> 2) & 0x7),
-					(uint8_t) (color & 0x3),
-					type
+				(uint8_t) ((color >> 5) & 0x7),
+				(uint8_t) ((color >> 2) & 0x7),
+				(uint8_t) (color & 0x3),
+				type
 			};
-
 	}
 	// This should be literally impossible.
 	// clang-tidy still complains.
-	return (apollo_color_t) { 0, 0, 0, 0, APOLLO_PIXEL_TYPE_UNKNOWN };
+	return (apollo_color_t) {0, 0, 0, 0, APOLLO_PIXEL_TYPE_UNKNOWN};
 }
 
 void apollo_set_rect(framebuffer_t* fb, coordinate_pair pair, pair_type type, int width, int height, const apollo_color_t color) {
@@ -897,229 +752,17 @@ void apollo_set_rect(framebuffer_t* fb, coordinate_pair pair, pair_type type, in
 		if (height % 2 != 0) height++;
 	}
 
-	uint8_t* pixel = apollo_get_point(fb, (coordinate_pair) { start_x, start_y });
-	const int row_width = width * fb->info->pixel_width;
-	const int pitch_offset = fb->info->pitch - row_width;
+	const uint32_t packed = apollo_pack_color(fb->info, color);
 
-	// Pre-compute pixel value based on type for maximum efficiency
-	switch (fb->info->type) {
-		case APOLLO_PIXEL_TYPE_UNKNOWN:
-			// Do nothing
-			break;
+	int x0 = start_x, y0 = start_y;
+	int x1 = start_x + width, y1 = start_y + height;
+	if (x0 < 0) x0 = 0;
+	if (y0 < 0) y0 = 0;
+	if (x1 > fb->info->width) x1 = fb->info->width;
+	if (y1 > fb->info->height) y1 = fb->info->height;
+	if (x1 <= x0 || y1 <= y0) return;
 
-		case APOLLO_PIXEL_TYPE_RGB32:
-			for (int i = 0; i < height; i++) {
-				for (int j = 0; j < width; j++) {
-					pixel[0] = current_color.red;
-					pixel[1] = current_color.green;
-					pixel[2] = current_color.blue;
-					pixel[3] = 0;
-					pixel += 4;
-				}
-				pixel += pitch_offset;
-			}
-			break;
-
-		case APOLLO_PIXEL_TYPE_ARGB8888:
-			for (int i = 0; i < height; i++) {
-				for (int j = 0; j < width; j++) {
-					pixel[0] = current_color.blue;
-					pixel[1] = current_color.green;
-					pixel[2] = current_color.red;
-					pixel[3] = current_color.alpha;
-					pixel += 4;
-				}
-				pixel += pitch_offset;
-			}
-			break;
-
-		case APOLLO_PIXEL_TYPE_RGBA32:
-			for (int i = 0; i < height; i++) {
-				for (int j = 0; j < width; j++) {
-					pixel[0] = current_color.red;
-					pixel[1] = current_color.green;
-					pixel[2] = current_color.blue;
-					pixel[3] = current_color.alpha;
-					pixel += 4;
-				}
-				pixel += pitch_offset;
-			}
-			break;
-
-		case APOLLO_PIXEL_TYPE_BGR32:
-			for (int i = 0; i < height; i++) {
-				for (int j = 0; j < width; j++) {
-					pixel[0] = current_color.blue;
-					pixel[1] = current_color.green;
-					pixel[2] = current_color.red;
-					pixel[3] = 0;
-					pixel += 4;
-				}
-				pixel += pitch_offset;
-			}
-			break;
-
-		case APOLLO_PIXEL_TYPE_BGRA32:
-			for (int i = 0; i < height; i++) {
-				for (int j = 0; j < width; j++) {
-					pixel[0] = current_color.blue;
-					pixel[1] = current_color.green;
-					pixel[2] = current_color.red;
-					pixel[3] = current_color.alpha;
-					pixel += 4;
-				}
-				pixel += pitch_offset;
-			}
-			break;
-
-		case APOLLO_PIXEL_TYPE_RGB24:
-			for (int i = 0; i < height; i++) {
-				for (int j = 0; j < width; j++) {
-					pixel[0] = current_color.red;
-					pixel[1] = current_color.green;
-					pixel[2] = current_color.blue;
-					pixel += 3;
-				}
-				pixel += pitch_offset;
-			}
-			break;
-
-		case APOLLO_PIXEL_TYPE_BGR24:
-			for (int i = 0; i < height; i++) {
-				for (int j = 0; j < width; j++) {
-					pixel[0] = current_color.blue;
-					pixel[1] = current_color.green;
-					pixel[2] = current_color.red;
-					pixel += 3;
-				}
-				pixel += pitch_offset;
-			}
-			break;
-
-		case APOLLO_PIXEL_TYPE_RGB16_565: {
-				uint16_t color_val = ((current_color.red & 0x1F) << 11) |
-					((current_color.green & 0x3F) << 5) |
-					(current_color.blue & 0x1F);
-				for (int i = 0; i < height; i++) {
-					for (int j = 0; j < width; j++) {
-						*(uint16_t*) pixel = color_val;
-						pixel += 2;
-					}
-					pixel += pitch_offset;
-				}
-				break;
-			}
-
-		case APOLLO_PIXEL_TYPE_RGB16_555: {
-				uint16_t color_val = ((current_color.red & 0x1F) << 10) |
-					((current_color.green & 0x1F) << 5) |
-					(current_color.blue & 0x1F);
-				for (int i = 0; i < height; i++) {
-					for (int j = 0; j < width; j++) {
-						*(uint16_t*) pixel = color_val;
-						pixel += 2;
-					}
-					pixel += pitch_offset;
-				}
-				break;
-			}
-
-		case APOLLO_PIXEL_TYPE_BGR16_565: {
-				uint16_t color_val = ((current_color.blue & 0x1F) << 11) |
-					((current_color.green & 0x3F) << 5) |
-					(current_color.red & 0x1F);
-				for (int i = 0; i < height; i++) {
-					for (int j = 0; j < width; j++) {
-						*(uint16_t*) pixel = color_val;
-						pixel += 2;
-					}
-					pixel += pitch_offset;
-				}
-				break;
-			}
-
-		case APOLLO_PIXEL_TYPE_BGR16_555: {
-				uint16_t color_val = ((current_color.blue & 0x1F) << 10) |
-					((current_color.green & 0x1F) << 5) |
-					(current_color.red & 0x1F);
-				for (int i = 0; i < height; i++) {
-					for (int j = 0; j < width; j++) {
-						*(uint16_t*) pixel = color_val;
-						pixel += 2;
-					}
-					pixel += pitch_offset;
-				}
-				break;
-			}
-
-		case APOLLO_PIXEL_TYPE_ARGB4444: {
-				uint8_t byte0 = ((current_color.alpha & 0xF) << 4) | (current_color.red & 0xF);
-				uint8_t byte1 = ((current_color.green & 0xF) << 4) | (current_color.blue & 0xF);
-				for (int i = 0; i < height; i++) {
-					for (int j = 0; j < width; j++) {
-						pixel[0] = byte0;
-						pixel[1] = byte1;
-						pixel += 2;
-					}
-					pixel += pitch_offset;
-				}
-				break;
-			}
-
-		case APOLLO_PIXEL_TYPE_ABGR4444: {
-				uint8_t byte0 = ((current_color.alpha & 0xF) << 4) | (current_color.blue & 0xF);
-				uint8_t byte1 = ((current_color.green & 0xF) << 4) | (current_color.red & 0xF);
-				for (int i = 0; i < height; i++) {
-					for (int j = 0; j < width; j++) {
-						pixel[0] = byte0;
-						pixel[1] = byte1;
-						pixel += 2;
-					}
-					pixel += pitch_offset;
-				}
-				break;
-			}
-
-		case APOLLO_PIXEL_TYPE_RGBA4444: {
-				uint8_t byte0 = ((current_color.red & 0xF) << 4) | (current_color.green & 0xF);
-				uint8_t byte1 = ((current_color.blue & 0xF) << 4) | (current_color.alpha & 0xF);
-				for (int i = 0; i < height; i++) {
-					for (int j = 0; j < width; j++) {
-						pixel[0] = byte0;
-						pixel[1] = byte1;
-						pixel += 2;
-					}
-					pixel += pitch_offset;
-				}
-				break;
-			}
-
-		case APOLLO_PIXEL_TYPE_BGRA4444: {
-				uint8_t byte0 = ((current_color.blue & 0xF) << 4) | (current_color.green & 0xF);
-				uint8_t byte1 = ((current_color.red & 0xF) << 4) | (current_color.alpha & 0xF);
-				for (int i = 0; i < height; i++) {
-					for (int j = 0; j < width; j++) {
-						pixel[0] = byte0;
-						pixel[1] = byte1;
-						pixel += 2;
-					}
-					pixel += pitch_offset;
-				}
-				break;
-			}
-
-		case APOLLO_PIXEL_TYPE_RGB332: {
-				uint8_t color_val = ((current_color.red & 0x7) << 5) |
-					((current_color.green & 0x7) << 2) |
-					(current_color.blue & 0x3);
-				for (int i = 0; i < height; i++) {
-					for (int j = 0; j < width; j++) {
-						pixel[0] = color_val;
-						pixel += 1;
-					}
-					pixel += pitch_offset;
-				}
-				break;
-			}
+	for (int y = y0; y < y1; y++) {
+		apollo_fill_span(fb, x0, y, x1 - x0, packed);
 	}
 }

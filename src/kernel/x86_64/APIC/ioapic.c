@@ -8,6 +8,10 @@ static IOAPIC_Device ioapics[WALLOS_IOAPIC_MAX];
 static uint32_t ioapic_count = 0;
 static MADTTable* madt_ref = NULL;
 
+// GSI of the ACPI SCI, set by ioapic_note_sci()
+// Used for panics
+static uint32_t sci_gsi = 0xFFFFFFFF;
+
 // Direct Register Access
 uint32_t ioapic_read_reg(uintptr_t base, uint32_t reg_index) {
 	*(volatile uint32_t*) (base + IOAPIC_REGSEL) = reg_index;
@@ -190,4 +194,60 @@ void ioapic_set_mask(uint32_t gsi, bool masked) {
 
 void ioapic_mask_irq(uint8_t irq) {
 	ioapic_set_mask(ioapic_irq_to_gsi(irq, NULL), true);
+}
+
+// ------------------------------------------------------------------------------------------------
+// Panic stuff
+// ------------------------------------------------------------------------------------------------
+
+void ioapic_note_sci(uint8_t irq) {
+	sci_gsi = ioapic_irq_to_gsi(irq, NULL);
+}
+
+// Same as ioapic_find_for_gsi() but silent
+static IOAPIC_Device* ioapic_find_for_gsi_quiet(uint32_t gsi) {
+	for (uint32_t i = 0; i < ioapic_count; i++) {
+		uint32_t start = ioapics[i].gsi_base;
+		if (gsi >= start && gsi < start + ioapics[i].max_redirection_entries) return &ioapics[i];
+	}
+	return NULL;
+}
+
+void ioapic_mask_all_except_sci(void) {
+	for (uint32_t i = 0; i < ioapic_count; i++) {
+		IOAPIC_Device* dev = &ioapics[i];
+		for (uint32_t pin = 0; pin < dev->max_redirection_entries; pin++) {
+			if (dev->gsi_base + pin == sci_gsi) continue;
+
+			uint32_t low = ioapic_read_reg(dev->mmio_base, IOAPIC_REDTBL(pin));
+			ioapic_write_reg(dev->mmio_base, IOAPIC_REDTBL(pin), low | IOAPIC_RTE_MASK);
+		}
+	}
+}
+
+void ioapic_route_sci_to(uint32_t apic_id) {
+	IOAPIC_Device* dev = ioapic_find_for_gsi_quiet(sci_gsi);
+	if (!dev) return;
+
+	uint32_t pin = sci_gsi - dev->gsi_base;
+	uint32_t low = ioapic_read_reg(dev->mmio_base, IOAPIC_REDTBL(pin));
+
+	// Mask first so nothing gets routed incorrectly while we're editing it
+	ioapic_write_reg(dev->mmio_base, IOAPIC_REDTBL(pin), low | IOAPIC_RTE_MASK);
+
+	// Level-triggered + Remote IRR set means a CPU we just halted was inside the SCI handler and never sent EOI, so the line would stay stuck forever
+	// Switching to edge and back clears Remote IRR
+	if ((low & IOAPIC_RTE_TRIGGER) && (low & IOAPIC_RTE_REMIRR)) {
+		ioapic_write_reg(dev->mmio_base, IOAPIC_REDTBL(pin), (low & ~IOAPIC_RTE_TRIGGER) | IOAPIC_RTE_MASK);
+	}
+
+	// Destination first
+	uint32_t high = (uint32_t) apic_id << 24;
+	ioapic_write_reg(dev->mmio_base, IOAPIC_REDTBL(pin) + 1, high);
+
+	// Keep vector, polarity and trigger exactly as ioapic_route_irq() programmed them
+	// Force fixed delivery, physical destination, and unmask
+	low &= ~(IOAPIC_RTE_DELMOD | IOAPIC_RTE_DESTMOD | IOAPIC_RTE_MASK | IOAPIC_RTE_REMIRR | IOAPIC_RTE_DELIVS);
+	low |= IOAPIC_DELMOD_FIXED;
+	ioapic_write_reg(dev->mmio_base, IOAPIC_REDTBL(pin), low);
 }

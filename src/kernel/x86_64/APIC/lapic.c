@@ -72,6 +72,10 @@ void bsp_init_lapic() {
 	// Task Priority Register = 0 (accept all interrupts)
 	lapic_write(LAPIC_TPR, 0);
 
+	// technically we should check the MADT to see if this is active low or level
+	// if that becomes a problem I'll deal with it
+	lapic_write(LAPIC_LVT_LINT1, LAPIC_ICR_DM_NMI); // NMI delivery mode, unmasked, vector ignored
+
 	// Clear any pending EOI
 	lapic_write(LAPIC_EOI, 0);
 }
@@ -98,6 +102,8 @@ void ap_init_lapic() {
 	// Clear ESR (Error Status Register) - requires two writes on some CPUs
 	lapic_write(LAPIC_ESR, 0);
 	lapic_write(LAPIC_ESR, 0);
+
+	lapic_write(LAPIC_LVT_LINT1, LAPIC_ICR_DM_NMI);
 
 	// Signal EOI just in case there's a stale interrupt from a warm reboot
 	lapic_write(LAPIC_EOI, 0);
@@ -133,4 +139,19 @@ uint64_t calibrate_lapic_timer_with_tsc(uint64_t tsc_freq) {
 
 	// return (uint64_t) elapsed * 100 * 16;            // LAPIC bus Hz
 	return (uint64_t) elapsed * 100;
+}
+
+/* These are for panics */
+
+uint32_t lapic_current_id(void) {
+	return lapic_read(LAPIC_ID) >> 24;
+}
+
+void lapic_broadcast_nmi_excluding_self(void) {
+	lapic_send_ipi(0, LAPIC_ICR_DM_NMI | LAPIC_ICR_LEVEL_ASSERT | LAPIC_ICR_SH_ALL_EXC);
+}
+
+void lapic_timer_stop(void) {
+	lapic_write(LAPIC_LVT_TIMER, 1 << 16);  // mask
+	lapic_write(LAPIC_INITIAL_COUNT, 0);    // stop counting
 }

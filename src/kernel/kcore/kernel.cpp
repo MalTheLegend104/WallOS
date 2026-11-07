@@ -24,7 +24,7 @@
 #include <klibc/multiboot.h>
 
 #include <memory/kernel_alloc.h>
-#include <memory/physical_mem.hpp>
+#include <memory/physical_mem.h>
 #include <memory/virtual_mem.h>
 
 #include <system/cpuid.h>
@@ -77,22 +77,6 @@ int bootdev_command(int argc, char** argv) {
 		default:   printf("Boot device unknown. How did you get here...? (seriously please let me know)\n");
 	}
 	display_set_colors_default();
-	return 0;
-}
-
-extern "C" {
-	extern uint64_t kernel_end;
-}
-
-// Tests for kalloc and physical/virtual mem
-int mem_alloc(int argc, char** argv) {
-	const uintptr_t ptr = Memory::NewKernelPage();
-	Logger::infof("Virtual Addr:        0x%llx\n", ptr);
-	Logger::infof("KERNEL_VIRTUAL_BASE: 0x%llx\n", KERNEL_VIRTUAL_BASE);
-	Logger::infof("Physical:            0x%llx\n", Memory::VirtToPhysBase(ptr));
-	Logger::infof("Kernel end:          0x%llx\n", kernel_end);
-	Logger::infof("Kernel mapping end:  0x%llx\n", Memory::Info::getPhysKernelEnd());
-
 	return 0;
 }
 
@@ -258,16 +242,20 @@ extern "C" {
 	extern const ws_command_argument_t device_cmd_args[];
 	extern const size_t device_cmd_args_count;
 
-	// extern const ws_command_argument_t virt_mem_cli_args[];
-	// extern const size_t virt_mem_cli_args_count;
+	extern const ws_command_argument_t virt_mem_cli_args[];
+	extern const size_t virt_mem_cli_args_count;
 
 	extern const ws_command_t kilo_cmd;
 
 	extern int cpu_info(int argc, char** argv);
 
-	// extern const ws_command_argument_t sched_test_args[];
-	// extern const size_t sched_test_args_count;
-	// extern int sched_test(int argc, char** argv);
+	extern const ws_command_argument_t sched_test_args[];
+	extern const size_t sched_test_args_count;
+	extern int sched_test(int argc, char** argv);
+
+	extern const ws_command_argument_t vmm_test_args[];
+	extern const size_t vmm_test_args_count;
+	extern int vmm_test(int argc, char** argv);
 
 	void system_poll_start(void);
 }
@@ -280,11 +268,6 @@ void setup_commands() {
 	kalloc_command.main_func = testKalloc;
 	kalloc_command.command_name = "kalloc";
 	ws_registerCommand(kalloc_command);
-
-	ws_command_t mem_alloc_command = {};
-	mem_alloc_command.main_func = mem_alloc;
-	mem_alloc_command.command_name = "mem_alloc";
-	ws_registerCommand(mem_alloc_command);
 
 	ws_command_t acpi_ws_command = {};
 	acpi_ws_command.main_func = acpi_command;
@@ -340,6 +323,13 @@ void setup_commands() {
 	// sched_test_command.arguments_count = sched_test_args_count;
 	// ws_registerCommand(sched_test_command);
 
+	// ws_command_t vmm_test_command = {};
+	// vmm_test_command.main_func = vmm_test;
+	// vmm_test_command.command_name = "vmmt";
+	// vmm_test_command.arguments = vmm_test_args;
+	// vmm_test_command.arguments_count = vmm_test_args_count;
+	// ws_registerCommand(vmm_test_command);
+
 	ws_command_t driver_command = {};
 	driver_command.main_func = driver_cli;
 	driver_command.command_name = "driver";
@@ -366,12 +356,16 @@ void kernel_main(unsigned int magic, multiboot_info* mbt_info) {
 	init_all_serial();
 
 	printf_serial("Welcome to WallOS!\r\n");
-	Memory::initVirtualMemory();
+	vmm_init();
 
 	MultibootManager::initialize(magic, mbt_info);
 	cpu_features f = cpuFeatures();
 	Features::checkFeatures(&f);
 	// Features::enableFeatures();
+
+	// random sidequest, I wanted to support a serial only output mode for a few PCs I have that I don't want to hook up to a monitor
+	// this is a rather large project so I'll leave this here for now
+	printf_serial("[MB] Serial only?: %s\r\n", str_contains(MultibootManager::getCmdLine(), "all_serial=1") ? "true" : "false");
 
 	rng_seed(rdtsc());
 
@@ -389,7 +383,7 @@ void kernel_main(unsigned int magic, multiboot_info* mbt_info) {
 	if (e->common.framebuffer_type == MULTIBOOT_FRAMEBUFFER_TYPE_RGB) display_mode = DISPLAY_MODE_FRAMEBUFFER;
 	if (e->common.framebuffer_type == MULTIBOOT_FRAMEBUFFER_TYPE_EGA_TEXT) display_mode = DISPLAY_MODE_VGA_TEXT;
 
-	Memory::mapFramebuffer(
+	vmm_map_framebuffer(
 		(uintptr_t) e->common.framebuffer_addr,
 		e->common.framebuffer_height * e->common.framebuffer_pitch,
 		display_mode == DISPLAY_MODE_VGA_TEXT
@@ -441,7 +435,7 @@ void kernel_main(unsigned int magic, multiboot_info* mbt_info) {
 	// ------------------------------------------------------------------------------------------------
 	// Physical Memory & Allocators
 	// ------------------------------------------------------------------------------------------------
-	Memory::PhysicalMemInit();
+	pmm_init(MultibootManager::getMMap());
 	initKernelAllocator();
 
 	// The last thing this requires is the allocator.
@@ -479,6 +473,9 @@ void kernel_main(unsigned int magic, multiboot_info* mbt_info) {
 	// TODO: I commented this out because initializing a specific drive on one of my test PCs takes FOREVER
 	// Need to re-enable this when done with AHCI
 	ahci_register_driver();
+
+	// TODO: the device manager doesn't see partitioned (or non-partitioned) sata devices as bound
+	// not a huge deal, just dont want to forget it
 
 	WDM_Init();
 	WDM_DriveHandle initrd = initrd_wdm_init(INITRD_FLAG_NONE);

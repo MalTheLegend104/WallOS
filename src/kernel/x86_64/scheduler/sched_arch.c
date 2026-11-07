@@ -1,6 +1,8 @@
 #include <scheduler/scheduler.h>
 #include <string.h>
 
+#include <memory/virtual_mem.h>
+
 #include <wallos_attributes.h>
 
 #include <x86_64/lapic.h>
@@ -92,7 +94,6 @@ static uint16_t apic_to_logical[256]; /* 0xFFFF means unknown */
 static volatile uint32_t next_logical = 0;
 static uint64_t tsc_per_us = 1;
 static uint16_t kernel_cs, kernel_ss;
-static uint64_t kernel_cr3;
 
 /* These are all read by sched_stubs.asm (and enable_features.asm) */
 uint8_t x86_fpu_use_xsave = 0;
@@ -200,7 +201,6 @@ static void bind_cpu(uint32_t apic_id, uint32_t logical) {
 	wrmsr64(MSR_GS_BASE, (uint64_t) (uintptr_t) c);
 	wrmsr64(MSR_KERNEL_GS_BASE, 0);
 
-	c->arch.cur_cr3 = read_cr(3);
 	x86_fpu_cpu_init(); // idempotent. BSP already did it, APs need it before their first trap
 	syscall_cpu_init();
 }
@@ -224,7 +224,6 @@ void x86_sched_arch_early_init(uint64_t tsc_freq_hz) {
 	__asm__ volatile("mov %%ss, %0" : "=r"(ss));
 	kernel_cs = cs;
 	kernel_ss = ss;
-	kernel_cr3 = read_cr(3);
 
 	fpu_global_init();
 }
@@ -281,8 +280,7 @@ void arch_timer_disarm(void) { lapic_write(LAPIC_INITIAL_COUNT, 0); }
 // ------------------------------------------------------------------------------------------------
 // ------------------------------------------------------------------------------------------------
 
-
-static void send_ipi(uint32_t logical, uint8_t vector) {
+void arch_send_ipi(uint32_t logical, uint8_t vector) {
 	uint32_t apic = system_cpus[logical].hw_id;
 	uint64_t f = arch_irq_save();       /* ICR high/low must not be interleaved */
 	while (lapic_read(LAPIC_ICR_LOW) & (1u << 12)) arch_cpu_relax();
@@ -290,8 +288,9 @@ static void send_ipi(uint32_t logical, uint8_t vector) {
 	lapic_write(LAPIC_ICR_LOW, (uint32_t) vector | (1u << 14));  /* fixed, assert */
 	arch_irq_restore(f);
 }
-void arch_send_resched_ipi(uint32_t cpu) { send_ipi(cpu, X86_VEC_RESCHED); }
-void arch_send_kpreempt_ipi(uint32_t cpu) { send_ipi(cpu, X86_VEC_KPREEMPT); }
+
+void arch_send_resched_ipi(uint32_t cpu) { arch_send_ipi(cpu, X86_VEC_RESCHED); }
+void arch_send_kpreempt_ipi(uint32_t cpu) { arch_send_ipi(cpu, X86_VEC_KPREEMPT); }
 
 void arch_yield(void) {
 	__asm__ volatile("int %0" ::"i"(X86_VEC_YIELD) : "memory");
@@ -370,25 +369,20 @@ void arch_task_switch(task_t* out, task_t* next) {
 		wrmsr64(MSR_FS_BASE, next->arch.user_fs);
 	}
 
-	// Kernel tasks run on the kernel's page tables, so a dead user address space is never left loaded on a CPU.
-	uint64_t want = next->arch.cr3 ? next->arch.cr3 : kernel_cr3;
-	if (c->arch.cur_cr3 != want) {
-		write_cr(3, want);
-		c->arch.cur_cr3 = want;
-	}
+	// Kernel tasks (as == NULL) run on the kernel address space, so a dead user address space is never left loaded on a CPU.
+	// The VMM tracks what each CPU has loaded, skips the CR3 write when nothing changes, and handles PCIDs and the TLB shootdowns.
+	// This only disables IRQs (already off) and takes no locks.
+	vmm_switch_address_space(next->arch.as);
 }
 
-void arch_enter_user(uintptr_t entry, uintptr_t user_sp, uint64_t cr3) {
+void arch_enter_user(uintptr_t entry, uintptr_t user_sp, address_space_t* as) {
 	arch_irq_save(); // stay masked until the iretq in x86_iret_user. Never restored on purpose
 	cpu_t* c = arch_cpu_self();
 	task_t* t = c->current;
 
 	t->arch.user_mode = true;
-	t->arch.cr3 = cr3;
-	if (cr3 && c->arch.cur_cr3 != cr3) {
-		write_cr(3, cr3);
-		c->arch.cur_cr3 = cr3;
-	}
+	t->arch.as = as;
+	vmm_switch_address_space(as);
 
 	// swapgs inside x86_iret_user swaps these
 	// GS_BASE <- user GS, KERNEL_GS_BASE <- cpu_t*

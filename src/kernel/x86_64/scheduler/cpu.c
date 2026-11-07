@@ -82,6 +82,8 @@ void x86_ap_main() {
 	__atomic_fetch_add(&ap_started_count, 1, __ATOMIC_SEQ_CST);
 	WALLOS_STI();
 
+	vmm_init_cpu();
+
 	sched_ap_entry(); // waits for sched_init(), then never returns
 
 	// Just in case we somehow get here, we don't want to leave this into unknown territory
@@ -117,6 +119,8 @@ WALLOS_INTERRUPT_HANDLER void lapic_spurious(struct interrupt_regs* regs) {
 	(void) regs;
 	//  A spurious interrupt must NOT be EOI'd (Intel SDM vol 3, 10.9)
 }
+
+extern WALLOS_INTERRUPT_HANDLER void vmm_tlb_shootdown_handler(struct interrupt_regs* regs);
 
 void arch_init_cpus() {
 	// We need to get the APIC from ACPI.
@@ -169,11 +173,20 @@ void arch_init_cpus() {
 	bsp->arch.lapic_freq_hz = lapic_timer_freq;
 	bsp->arch.lapic_ticks_per_ms = lapic_timer_freq / 1000;
 
+	struct tss_64* tss = set_gdt_and_tss();
+	x86_percpu_bind_tss((volatile uint64_t*) (uintptr_t) &tss->rsp0);
+
+	// We need to call this after the GS is setup on the BSP and before we enable any APs
+	vmm_enable_smp();
+
 	// Add our LAPIC timer interrupt.
 	// We reuse the IDT in the APs, so we need to do this before they all get started.
 	// add_interrupt_handler(0xFD, lapic_timer_int, 0, 0x8E);
 	x86_sched_register_vectors();
 	add_interrupt_handler(SPURIOUS_VECTOR, lapic_spurious, 0, 0x8E);
+
+	// TLB shootdowns
+	add_interrupt_handler(VMM_TLB_VECTOR, vmm_tlb_shootdown_handler, 0, 0x8E);
 
 	// We have two variables that need to be set for AP setup
 	// We need the kernel stack, and we need the RAW pointer for the page tables to load into CR3.
@@ -181,10 +194,8 @@ void arch_init_cpus() {
 	extern uint64_t pml4_pointer;
 	extern uint64_t ap_stack_pointer;
 
-	// We can just copy the current CR3
-	uint64_t current_pml4;
-	__asm__ volatile("mov %%cr3, %0" : "=r"(current_pml4));
-	pml4_pointer = current_pml4;
+	// APs boot on the kernel address space
+	pml4_pointer = vmm_address_space_cr3(vmm_kernel_address_space());
 
 	printf_serial("[SMP] APs will use PML4 at: %p\r\n", pml4_pointer);
 

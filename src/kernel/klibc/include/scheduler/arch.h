@@ -73,7 +73,7 @@ extern "C" {
 	 * Never returns.
 	 * The task keeps its kernel stack, which is used for every later trap from user mode.
 	 */
-	void arch_enter_user(uintptr_t entry, uintptr_t user_sp, uint64_t aspace) __attribute__((noreturn));
+	void arch_enter_user(uintptr_t entry, uintptr_t user_sp, address_space_t* as) __attribute__((noreturn));
 
 	/**
 	 * Initializes all CPUs on a system, and starts the scheduler.

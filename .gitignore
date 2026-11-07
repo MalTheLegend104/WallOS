@@ -27,3 +27,5 @@ targets/x86_64/iso/boot/initrd.img
 # This is a very crude test suite I wrote
 # I don't really want it committed, it shouldn't be part of the kernel
 src/kernel/klibc/scheduler/scheduler_test.c
+config/make/config.mk
+src/kernel/klibc/memory/vmm/test/

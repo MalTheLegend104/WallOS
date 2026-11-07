@@ -2310,10 +2310,24 @@ static bool ws_internal_hasUnmatchedQuotes(const char* str) {
 
 /**
  * @brief Execute a command with the provided buffer.
- * @param commandBuf Buffer containing the command to execute.
+ * @param command Buffer containing the command to execute.
  * @return WS_OUT_OF_MEMORY if malloc/realloc fails, or WS_NO_ERROR.
  */
-ws_error_t ws_executeCommand(char* commandBuf) {
+ws_error_t ws_executeCommand(char* command) {
+	if (!command) {
+		return WS_NO_ERROR;
+	}
+
+	// Tokenizing writes into the buffer, so we have to work on a private copy
+	// Callers may pass string literals
+	char commandBuf[MAX_COMMAND_BUF];
+	size_t len = strlen(command);
+	if (len >= sizeof(commandBuf)) {
+		len = sizeof(commandBuf) - 1;
+	}
+	memcpy(commandBuf, command, len);
+	commandBuf[len] = '\0';
+
 	// Before we even parse anything, we need to make sure we don't have an odd number of quotes
 	// Having an odd number means the user didn't close a quote somewhere
 	if (ws_internal_hasUnmatchedQuotes(commandBuf)) {

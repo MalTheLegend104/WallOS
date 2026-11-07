@@ -65,6 +65,20 @@ void ioapic_set_mask(uint32_t gsi, bool masked);
 
 IOAPIC_Device* ioapic_find_for_gsi(uint32_t gsi);
 
+/**
+ * @brief Record which IOAPIC input carries the ACPI SCI.
+ */
+void ioapic_note_sci(uint8_t irq);
 
+/**
+ * @brief Mask every IOAPIC input except the SCI. Lock-free, no serial output.
+ */
+void ioapic_mask_all_except_sci(void);
+
+/**
+ * @brief Retarget the SCI at the given CPU and make sure it is unmasked and able to fire.
+ * Keeps the existing vector, polarity and trigger mode. Lock-free, no serial output.
+ */
+void ioapic_route_sci_to(uint32_t apic_id);
 
 #endif // WALLOS_IOAPIC_H

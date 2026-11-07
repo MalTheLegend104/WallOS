@@ -92,6 +92,9 @@ extern "C" {
 	// Count of current CPUs. Should be used to iterate over all CPUs when needed.
 	uint32_t cpu_count(void);
 
+	// this really doesn't belong here, but I don't really feel like making a proper abstraction rn
+	void arch_send_ipi(uint32_t logical, uint8_t vector);
+
 #ifdef __cplusplus
 }
 #endif

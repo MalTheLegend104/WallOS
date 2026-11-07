@@ -383,6 +383,12 @@ WALLOS_INTERRUPT_HANDLER void serial_irq_handler(struct interrupt_regs* frame) {
 		char c = inb(REG_DATA(port));
 
 		write_serial_port(port, c); // echo input
+		if (c == 0x7F) {
+			// send backspace to the terminal
+			write_serial_port(port, '\b'); // move cursor back
+			write_serial_port(port, ' '); // overwrite the character
+			write_serial_port(port, '\b'); // re-move cursor back
+		}
 		if (c == '\r') write_serial_port(port, '\n'); // we need the \n
 
 		process_serial_byte(c);
